@@ -3,5 +3,5 @@
     <Platform Name="x64" />
     <Platform Name="x86" />
   </Configurations>
-  <Project Path="Bedrock/Bedrock.vcxproj" Id="35b3277f-fff0-4e4f-89a7-afe996625d40" />
+  <Project Path="Proxy/Proxy.vcxproj" Id="35b3277f-fff0-4e4f-89a7-afe996625d40" />
 </Solution>
