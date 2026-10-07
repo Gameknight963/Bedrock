@@ -20,7 +20,7 @@ export function start(ctx) {
                 return;
             }
             if (contents.isDevToolsOpened()) { contents.closeDevTools(); opened = false; }
-            else { contents.openDevTools({ mode: 'detach' }); opened = true; }
+            else { contents.openDevTools(); opened = true; }
         };
         contents.on('before-input-event', input);
         const dispose = ctx.cleanup(() => {

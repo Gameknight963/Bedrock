@@ -16,7 +16,8 @@ test('DevTools plugin enables new windows, requires restart for locked windows, 
         isDestroyed: () => false, getURL: () => url,
         getLastWebPreferences: () => ({ devTools: enabled }),
         isDevToolsOpened: () => opened,
-        openDevTools: () => { opened = true; }, closeDevTools: () => { opened = false; }
+        openDevTools: options => { assert.equal(options?.mode, undefined, 'allow docking and retain the preferred dock position'); opened = true; },
+        closeDevTools: () => { opened = false; }
     });
     const owned = createContext({ id: 'test.devtools' }, {
         log() {}, requireRestart: value => { reason = value; }, extra: { windows: {
