@@ -11,7 +11,13 @@ function install(options = {}) {
     if (globalThis.BedrockMain) return true;
     const electron = options.electron || require('electron');
     const { app, ipcMain, protocol, session, shell } = electron;
-    const root = options.root || path.join(process.env.LOCALAPPDATA, 'Bedrock');
+    const root = path.resolve(options.root || path.join(__dirname, '..', 'BedrockData'));
+    try {
+        fs.mkdirSync(root, { recursive: true });
+        fs.accessSync(root, fs.constants.W_OK);
+    } catch (error) {
+        throw new Error(`Cannot write Bedrock data at ${root}. Move Bedrock to a writable folder. ${error.message}`);
+    }
     const devtools = options.devtools ?? process.argv.includes('--bedrock-devtools');
     const sessions = new WeakSet();
     const windows = new Set();

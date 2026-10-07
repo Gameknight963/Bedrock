@@ -6,9 +6,13 @@ In Discord's User Settings, **Bedrock → Plugins** provides search, enable swit
 
 ## Locations
 
+`BedrockData` lives beside `BedrockLauncher.exe`, independently of the working directory. Each build has its own data folder. Builds update bundled plugin files without replacing settings, themes, or other installed plugins. Keep `BedrockData` when updating or moving Bedrock, and use a writable installation folder.
+
 ```text
-%LOCALAPPDATA%\Bedrock\
+BedrockData\
     settings.json
+    themes.json
+    themes\
     plugins\
         example\
             plugin.json
@@ -172,9 +176,9 @@ Definitions contain the UI data, while callbacks stay in JavaScript. Only values
 
 ## CSS themes
 
-Open **Bedrock → Themes**, then choose **Open themes folder**. Copy your CSS files into `%LOCALAPPDATA%\Bedrock\themes` and enable the themes you want. New files appear automatically and start disabled. Enabled themes apply in filename order, so later files can override earlier ones.
+Open **Bedrock → Themes**, then choose **Open themes folder**. Copy your CSS files into `BedrockData\themes` and enable the themes you want. New files appear automatically and start disabled. Enabled themes apply in filename order, so later files can override earlier ones.
 
-- Enable switches take effect immediately and are saved in `%LOCALAPPDATA%\Bedrock\themes.json`.
+- Enable switches take effect immediately and are saved in `BedrockData\themes.json`.
 - Editing CSS or local assets reloads enabled themes automatically. Adding and removing files updates the page without restarting Discord.
 - Relative `@import` and `url(...)` paths resolve within the themes folder. Keep imported stylesheets and assets in subfolders so they do not appear as separate themes.
 - A leading CSS comment can provide `@name`, `@description`, `@author`, `@version`, and `@website`, one per line. Metadata is optional; otherwise the filename supplies the display name. `@website` accepts an HTTP or HTTPS URL and adds a **Website** link that opens in your browser.

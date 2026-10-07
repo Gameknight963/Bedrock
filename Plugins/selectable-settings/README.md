@@ -10,5 +10,5 @@ and Bedrock plugin pages.
 
 ## Install
 
-Copy the `selectable-settings` folder to `%LOCALAPPDATA%\Bedrock\plugins`,
+Builds include this plugin automatically. For another installation, copy the `selectable-settings` folder to `BedrockData\plugins` beside the launcher,
 then choose **Refresh plugins** in Bedrock's Plugins page.

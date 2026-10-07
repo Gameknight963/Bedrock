@@ -52,9 +52,11 @@
     <None Include="@(NoticeFile)" />
   </ItemGroup>
   <ItemGroup><RuntimeFile Include="$(ProjectDir)..\Runtime\*.cjs;$(ProjectDir)..\Runtime\*.mjs" /></ItemGroup>
+  <ItemGroup><BundledPluginFile Include="$(ProjectDir)..\Plugins\**\*" /></ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <Target Name="CopyBedrockRuntime" AfterTargets="Build">
     <Copy SourceFiles="@(RuntimeFile)" DestinationFolder="$(OutDir)Runtime" SkipUnchangedFiles="true" />
     <Copy SourceFiles="@(NoticeFile)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(BundledPluginFile)" DestinationFiles="@(BundledPluginFile->'$(OutDir)BedrockData\plugins\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
   </Target>
 </Project>
