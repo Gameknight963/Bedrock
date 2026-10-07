@@ -25,8 +25,8 @@ console menu.
 
 ## Connect to Discord
 
-Copy `Plugins/developer-tools` into `%LOCALAPPDATA%\Bedrock\plugins` and choose
-**Load missing plugins**. The plugin can be enabled and disabled without a restart.
+Copy `Plugins/mcp-bridge` into `%LOCALAPPDATA%\Bedrock\plugins` and choose
+**Refresh plugins**. The plugin can be enabled and disabled without a restart.
 It has both main and renderer entrypoints; the main entrypoint hosts the named pipe.
 
 Start the MCP executable through your MCP client, then call `status`. It lists
