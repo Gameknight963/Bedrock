@@ -50,7 +50,7 @@ require('electron').protocol.registerSchemesAsPrivileged([{ scheme: 'fixtureextr
 const { BrowserWindow, session } = require('electron');
 let window;
 const failures = [];
-const html = `<!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline'"><style>*{user-select:none}</style></head><body style="background:#313338;padding:16px"><p id="outside-settings">Outside settings</p><div class="standardSidebarView_fixture"><p id="settings-label">Settings description</p><div id="root"></div></div><script src="/react-unused.js"></script><script src="/remember-unused.js"></script><script src="/react.js"></script><script src="/react-dom.js"></script><script src="/fixture.js"></script></body></html>`;
+const html = `<!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline'"><style>*{user-select:none}</style></head><body style="background:#313338;padding:16px"><p id="outside-settings">Outside settings</p><div class="standardSidebarView_fixture"><p id="legacy-settings-label">Legacy settings</p></div><div role="dialog"><nav class="breadcrumbsNav_fixture">Settings breadcrumb</nav><div class="contentBody_fixture"><p id="settings-label">Settings description</p><div id="root"></div></div></div><div role="dialog"><nav class="breadcrumbsNav_fixture">Unrelated breadcrumb</nav><p id="other-dialog-label">Other dialog</p></div><script src="/react-unused.js"></script><script src="/remember-unused.js"></script><script src="/react.js"></script><script src="/react-dom.js"></script><script src="/fixture.js"></script></body></html>`;
 const fixture = `
     globalThis.fixtureMethod = () => 1;
     globalThis.webpackChunkdiscord_app = [];
@@ -194,8 +194,11 @@ app.whenReady().then(async () => {
         await waitFor(`globalThis.Bedrock.plugins.list().find(plugin => plugin.manifest.id === 'bedrock.selectable-settings')?.rendererStatus === 'running'`);
         assert.equal(await evaluate(`getComputedStyle(document.querySelector('#settings-label')).userSelect`), 'text');
         assert.equal(await evaluate(`getComputedStyle(document.querySelector('#outside-settings')).userSelect`), 'none');
+        assert.equal(await evaluate(`getComputedStyle(document.querySelector('#legacy-settings-label')).userSelect`), 'text');
+        assert.equal(await evaluate(`getComputedStyle(document.querySelector('#other-dialog-label')).userSelect`), 'none');
         await evaluate(`globalThis.Bedrock.plugins.setEnabled('bedrock.selectable-settings', false)`);
         assert.equal(await evaluate(`getComputedStyle(document.querySelector('#settings-label')).userSelect`), 'none');
+        assert.equal(await evaluate(`getComputedStyle(document.querySelector('#legacy-settings-label')).userSelect`), 'none');
         await evaluate(`globalThis.Bedrock.plugins.setEnabled('bedrock.selectable-settings', true)`);
         assert.equal(await evaluate(`getComputedStyle(document.querySelector('#settings-label')).userSelect`), 'text');
 
@@ -209,7 +212,7 @@ app.whenReady().then(async () => {
         await waitFor(`globalThis.Bedrock.plugins.list().find(plugin => plugin.manifest.id === 'bedrock.developer-tools')?.rendererStatus === 'running'`);
         const inspected = await bridgeRequest({ operation: 'inspect', selector: '#settings-label', windowId: window.id });
         assert.equal(inspected.elements[0].text, 'Settings description');
-        assert.equal(inspected.elements[0].ancestors.some(node => node.classes.includes('standardSidebarView_fixture')), true);
+        assert.equal(inspected.elements[0].ancestors.some(node => node.classes.includes('contentBody_fixture')), true);
         const selection = await bridgeRequest({ operation: 'styles', selector: '#settings-label', windowId: window.id, properties: ['user-select'] });
         assert.equal(selection.elements[0].ancestors[0].computed['user-select'], 'text');
         assert.equal(selection.elements[0].ancestors[0].matchingRules.some(rule => rule.declarations['user-select']?.value === 'text'), true);
