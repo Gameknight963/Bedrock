@@ -34,7 +34,7 @@ The loader inspects only immediate plugin folders containing `plugin.json`. Ever
 {
     "manifestVersion": 1,
     "apiVersion": 1,
-    "id": "sebis.example",
+    "id": "example.plugin",
     "name": "Example",
     "version": "1.0.0",
     "description": "A short explanation for the plugin card.",
