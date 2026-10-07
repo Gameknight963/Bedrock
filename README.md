@@ -1,5 +1,8 @@
 # Bedrock
 
+Bedrock uses the [MIT license](LICENSE). Dependency licenses and attributions
+are collected in [third-party notices](third_party_notices.md).
+
 VERY wip.
 
 NOTHING permanant is changed, ever. NO files in Discord's installation are modified, 

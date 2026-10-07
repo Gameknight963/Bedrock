@@ -47,9 +47,14 @@
   <ItemGroup><ClInclude Include="inspector.h" /><ClInclude Include="fuse.h" /></ItemGroup>
   <ItemGroup><Manifest Include="app.manifest" /></ItemGroup>
   <ItemGroup><None Include="README.md" /></ItemGroup>
+  <ItemGroup>
+    <NoticeFile Include="$(MSBuildThisFileDirectory)..\third_party_notices.md" />
+    <None Include="@(NoticeFile)" />
+  </ItemGroup>
   <ItemGroup><RuntimeFile Include="$(ProjectDir)..\Runtime\*.cjs" /></ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <Target Name="CopyBedrockRuntime" AfterTargets="Build">
     <Copy SourceFiles="@(RuntimeFile)" DestinationFolder="$(OutDir)Runtime" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="@(NoticeFile)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />
   </Target>
 </Project>

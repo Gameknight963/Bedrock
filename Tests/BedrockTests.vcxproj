@@ -48,5 +48,12 @@
   </ItemGroup>
   <ItemGroup><ClInclude Include="..\Launcher\fuse.h" /></ItemGroup>
   <ItemGroup><None Include="README.md" /></ItemGroup>
+  <ItemGroup>
+    <NoticeFile Include="$(MSBuildThisFileDirectory)..\third_party_notices.md" />
+    <None Include="@(NoticeFile)" />
+  </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <Target Name="CopyThirdPartyNotices" AfterTargets="Build">
+    <Copy SourceFiles="@(NoticeFile)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />
+  </Target>
 </Project>
