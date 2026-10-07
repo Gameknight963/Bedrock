@@ -1,0 +1,10 @@
+{
+    "manifestVersion": 1,
+    "apiVersion": 1,
+    "id": "bedrock.devtools",
+    "name": "DevTools",
+    "version": "1.0.0",
+    "description": "Enables DevTools with Ctrl+Shift+I or F12",
+    "entrypoints": { "main": "main.js" },
+    "readme": "README.md"
+}
