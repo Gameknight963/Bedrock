@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <Import Project="../Launcher.vcxproj" />
+  <PropertyGroup>
+    <ProjectGuid>{823963DA-0AC3-4A12-938A-9BE7BFB62C86}</ProjectGuid>
+  </PropertyGroup>
+  <ItemGroup>
+    <ClCompile Remove="main.c;inspector.c" />
+    <ClCompile Include="inspector-smoke.c" />
+    <ClCompile Include="../inspector.c" />
+    <ClInclude Remove="inspector.h" />
+    <ClInclude Include="../inspector.h" />
+    <Manifest Remove="app.manifest" />
+    <Manifest Include="../app.manifest" />
+    <None Remove="README.md" />
+  </ItemGroup>
+  <ItemDefinitionGroup>
+    <Manifest>
+      <AdditionalManifestFiles>$(ProjectDir)../app.manifest</AdditionalManifestFiles>
+    </Manifest>
+  </ItemDefinitionGroup>
+</Project>

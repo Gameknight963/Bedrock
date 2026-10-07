@@ -7,6 +7,7 @@
 #include <stdint.h>
 #include <string.h>
 #include <wchar.h>
+#include "inspector.h"
 
 #define PATH_CAP 32768
 #define SENTINEL "dL7pKGdnNz796PbbjQWNKmHXBZaB9tsX"
@@ -231,47 +232,6 @@ static int port_available(unsigned short port)
     return available;
 }
 
-static int probe_inspector(HINTERNET session, unsigned short port)
-{
-    HINTERNET connection = WinHttpConnect(session, L"127.0.0.1", port, 0), request = NULL;
-    const DWORD body_capacity = 16384;
-    char *body = NULL;
-    DWORD status = 0, status_size = sizeof(status), read = 0, total = 0;
-    int result = 0;
-    if (!connection) return 0;
-    body = malloc(body_capacity);
-    if (!body) goto done;
-    request = WinHttpOpenRequest(connection, L"GET", L"/json/list", NULL, WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES, 0);
-    if (!request) goto done;
-    if (!WinHttpSendRequest(request, WINHTTP_NO_ADDITIONAL_HEADERS, 0, WINHTTP_NO_REQUEST_DATA, 0, 0, 0) ||
-        !WinHttpReceiveResponse(request, NULL) ||
-        !WinHttpQueryHeaders(request, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
-            WINHTTP_HEADER_NAME_BY_INDEX, &status, &status_size, WINHTTP_NO_HEADER_INDEX) || status != 200) goto done;
-    while (total < body_capacity - 1) {
-        if (!WinHttpReadData(request, body + total, body_capacity - 1 - total, &read)) goto done;
-        if (!read) break;
-        total += read;
-    }
-    body[total] = 0;
-    if (strstr(body, "webSocketDebuggerUrl")) {
-        wprintf(L"Inspector responded at http://127.0.0.1:%hu/json/list\n", port);
-        /* Print only the endpoint, not runtime data. */
-        {
-            char *start = strstr(body, "ws://"), *end;
-            if (start && (end = strchr(start, '"')) != NULL) {
-                *end = 0;
-                wprintf(L"Debugger WebSocket: %hs\n", start);
-            }
-        }
-        result = 1;
-    }
-done:
-    free(body);
-    if (request) WinHttpCloseHandle(request);
-    WinHttpCloseHandle(connection);
-    return result;
-}
-
 typedef struct LaunchPaths {
     wchar_t path[PATH_CAP];
     wchar_t directory[PATH_CAP];
@@ -288,6 +248,8 @@ static int launch(int argc, wchar_t **argv, LaunchPaths *paths)
     PROCESS_INFORMATION child = {0};
     HINTERNET session = NULL;
     ULONGLONG deadline;
+    wchar_t endpoint[512];
+    int found = 0;
     for (i = 1; i < argc; ++i) {
         if (wcscmp(argv[i], L"--check") == 0) check_only = 1;
         else if (wcscmp(argv[i], L"--exe") == 0 && i + 1 < argc) {
@@ -333,15 +295,15 @@ static int launch(int argc, wchar_t **argv, LaunchPaths *paths)
     deadline = GetTickCount64() + 15000;
     while (GetTickCount64() < deadline) {
         if (WaitForSingleObject(child.hProcess, 0) != WAIT_TIMEOUT) break;
-        if (probe_inspector(session, port)) { success = 1; break; }
+        if (inspector_endpoint(session, port, endpoint, 512)) { found = 1; break; }
         Sleep(100);
     }
-    if (success) {
-        wprintf(L"Success: Node inspector is reachable. JavaScript remains paused.\n"
-            L"In Chrome/Edge, open chrome://inspect or edge://inspect, configure localhost:%hu,\n"
-            L"then inspect the Node target and resume execution. Quit Discord before retrying.\n", port);
+    if (found) {
+        wprintf(L"Inspector discovered at ws://127.0.0.1:%hu%ls\n", port, endpoint);
+        success = inspector_test(session, port, endpoint, child.dwProcessId);
     } else fwprintf(stderr, L"Inspector did not appear within 15 seconds, or the child exited.\n"
         L"Quit any existing Discord instance before retrying.\n");
+
 done:
     if (!success) {
         /* Never leave an unsuccessful suspended/debugger-waiting child behind. */

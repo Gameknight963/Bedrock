@@ -43,7 +43,8 @@
       <AdditionalManifestFiles>$(ProjectDir)app.manifest;%(AdditionalManifestFiles)</AdditionalManifestFiles>
     </Manifest>
   </ItemDefinitionGroup>
-  <ItemGroup><ClCompile Include="main.c" /></ItemGroup>
+  <ItemGroup><ClCompile Include="main.c" /><ClCompile Include="inspector.c" /></ItemGroup>
+  <ItemGroup><ClInclude Include="inspector.h" /></ItemGroup>
   <ItemGroup><Manifest Include="app.manifest" /></ItemGroup>
   <ItemGroup><None Include="README.md" /></ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
