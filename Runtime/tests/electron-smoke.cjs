@@ -128,10 +128,41 @@ app.whenReady().then(async () => {
         await waitFor(`globalThis.Bedrock.plugins.list()[0].rendererStatus === 'running'`);
         assert.equal(await evaluate('globalThis.fixtureStarts'), 2);
         assert.equal(await evaluate('globalThis.fixtureMethod()'), 11);
-        await evaluate(`[...document.querySelectorAll('button')].find(button => button.textContent === 'Details').click()`);
+        await evaluate(`(() => {
+            const input = document.querySelector('input[type=search]');
+            Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, 'Example');
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+        })()`);
+        await waitFor(`document.querySelectorAll('.bedrock-card').length === 1`);
+        await evaluate(`(() => {
+            const container = document.querySelector('.bedrock-page').parentElement;
+            container.style.height = '160px'; container.style.overflowY = 'auto';
+            container.scrollTop = 60;
+            globalThis.savedPluginScroll = container.scrollTop;
+        })()`);
+        assert.equal(await evaluate('globalThis.savedPluginScroll > 0'), true);
+        await evaluate(`[...document.querySelectorAll('button')].find(button => button.textContent === 'Open').click()`);
         await waitFor(`document.querySelector('.bedrock-readme strong')`);
         assert.equal(await evaluate(`document.querySelector('.bedrock-readme h1').textContent`), 'Example documentation');
         assert.equal(await evaluate(`globalThis.badReadme === undefined && document.querySelector('.bedrock-readme a[href^="javascript:"]') === null`), true);
+        assert.equal(await evaluate(`document.querySelector('.bedrock-grid') === null && document.querySelector('[role=tab][aria-selected=true]').textContent === 'Details'`), true);
+        await evaluate(`document.querySelector('[role=switch]').click()`);
+        await waitFor(`globalThis.Bedrock.plugins.list()[0].rendererStatus === 'stopped'`);
+        assert.equal(await evaluate(`document.querySelector('.bedrock-readme h1').textContent`), 'Example documentation');
+        await evaluate(`document.querySelector('[role=switch]').click()`);
+        await waitFor(`globalThis.Bedrock.plugins.list()[0].rendererStatus === 'running'`);
+        await new Promise(resolve => setTimeout(resolve, 150));
+        fs.writeFileSync(path.join(__dirname, 'obj/plugin-details.png'), (await window.webContents.capturePage()).toPNG());
+        await evaluate(`[...document.querySelectorAll('button')].find(button => button.textContent === '\\u2190 Back to plugins').click()`);
+        await waitFor(`document.querySelector('input[type=search]')`);
+        assert.equal(await evaluate(`document.querySelector('input[type=search]').value`), 'Example');
+        assert.equal(await evaluate(`document.querySelectorAll('.bedrock-card').length`), 1);
+        assert.equal(await evaluate(`document.querySelector('.bedrock-page').parentElement.scrollTop`), await evaluate('globalThis.savedPluginScroll'));
+        window.setSize(900, 700);
+        await waitFor(`getComputedStyle(document.querySelector('.bedrock-grid')).gridTemplateColumns.split(' ').length === 2`);
+        window.setSize(580, 600);
+        await waitFor(`getComputedStyle(document.querySelector('.bedrock-grid')).gridTemplateColumns.split(' ').length === 1`);
+
         assert.equal(await evaluate(`(async () => (await fetch('bedrock://plugins/test.example/../outside')).status)()`), 404);
         await window.loadURL('https://unrelated.test/');
         assert.equal(await evaluate(`globalThis.Bedrock === undefined && globalThis.BedrockNative === undefined`), true, 'bridge must not appear on unrelated origins');
