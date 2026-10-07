@@ -11,4 +11,4 @@ and Bedrock plugin pages.
 ## Install
 
 Copy the `selectable-settings` folder to `%LOCALAPPDATA%\Bedrock\plugins`,
-then choose **Load missing plugins** in Bedrock's Plugins page.
+then choose **Refresh plugins** in Bedrock's Plugins page.
