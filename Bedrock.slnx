@@ -3,6 +3,5 @@
     <Platform Name="x64" />
     <Platform Name="x86" />
   </Configurations>
-  <Project Path="Proxy/Proxy.vcxproj" Id="35b3277f-fff0-4e4f-89a7-afe996625d40" />
   <Project Path="Launcher/Launcher.vcxproj" Id="92e08354-8697-438d-9fb9-0ddd4880e9c8" />
 </Solution>
