@@ -26,9 +26,16 @@ function createThemeManager(root, changed) {
                 try {
                     const css = fs.readFileSync(path.join(directory, item.name), 'utf8');
                     const comment = /^\s*\/\*([\s\S]*?)\*\//.exec(css)?.[1] || '';
-                    for (const field of ['name', 'description', 'author', 'version']) {
+                    for (const field of ['name', 'description', 'author', 'version', 'website']) {
                         const value = new RegExp(`^\\s*\\*?\\s*@${field}\\s+(.+)$`, 'm').exec(comment)?.[1]?.trim();
                         if (value) theme[field] = value;
+                    }
+                    if (theme.website) {
+                        try {
+                            const website = new URL(theme.website);
+                            if (!['http:', 'https:'].includes(website.protocol)) delete theme.website;
+                            else theme.website = website.href;
+                        } catch { delete theme.website; }
                     }
                 } catch (error) { theme.error = error.message; }
                 next.push(theme);

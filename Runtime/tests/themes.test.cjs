@@ -9,10 +9,11 @@ test('themes are discovered disabled, metadata is read, and enabled state surviv
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'Bedrock-themes-'));
     const manager = createThemeManager(root);
     t.after(() => { manager.close(); fs.rmSync(root, { recursive: true, force: true }); });
-    fs.writeFileSync(path.join(manager.directory, 'sample.theme.css'), '/**\n * @name My theme\n * @author Sebis\n * @description A sample theme.\n */\nbody { color: red; }');
+    fs.writeFileSync(path.join(manager.directory, 'sample.theme.css'), '/**\n * @name My theme\n * @author Sebis\n * @description A sample theme.\n * @website https://example.com/theme\n */\nbody { color: red; }');
     manager.scan();
     assert.equal(manager.list()[0].name, 'My theme');
     assert.equal(manager.list()[0].author, 'Sebis');
+    assert.equal(manager.list()[0].website, 'https://example.com/theme');
     assert.equal(manager.list()[0].enabled, false);
     assert.throws(() => manager.setEnabled('../missing.css', true), /Unknown theme/);
     manager.setEnabled('sample.theme.css', true);

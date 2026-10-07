@@ -71,7 +71,7 @@ globalThis.BedrockMain.scan();
 const themesDirectory = globalThis.BedrockMain.themes.directory;
 fs.mkdirSync(path.join(themesDirectory, 'assets'));
 fs.writeFileSync(path.join(themesDirectory, 'assets', 'import.css'), ':root { --theme-import: imported; }');
-fs.writeFileSync(path.join(themesDirectory, 'live.theme.css'), '/**\n * @name Live theme\n */\n@import "./assets/import.css"; :root { --live-theme: red; }');
+fs.writeFileSync(path.join(themesDirectory, 'live.theme.css'), '/**\n * @name Live theme\n * @website https://example.com/theme\n */\n@import "./assets/import.css"; :root { --live-theme: red; }');
 globalThis.BedrockMain.themes.scan();
 require('electron').protocol.registerSchemesAsPrivileged([{ scheme: 'fixtureextra', privileges: { standard: true, secure: true } }]);
 const { BrowserWindow, session } = require('electron');
@@ -390,6 +390,7 @@ app.whenReady().then(async () => {
         assert.equal(await evaluate(`(async () => (await fetch('bedrock://plugins/test.example/../outside')).status)()`), 404);
         await evaluate(`fixtureShowThemes()`);
         await waitFor(`document.querySelector('[aria-label="Search themes"]') && document.querySelector('[aria-label="Enable Live theme"]')`);
+        assert.equal(await evaluate(`document.querySelector('.bedrock-theme-website').href`), 'https://example.com/theme');
         assert.equal(await evaluate(`getComputedStyle(document.documentElement).getPropertyValue('--live-theme').trim()`), '');
         await evaluate(`document.querySelector('[aria-label="Enable Live theme"]').click()`);
         await waitFor(`getComputedStyle(document.documentElement).getPropertyValue('--live-theme').trim() === 'red'`);

@@ -302,6 +302,7 @@ function installRenderer(configuration) {
         .bedrock-readme{line-height:1.6;overflow-wrap:anywhere}.bedrock-readme pre{white-space:pre-wrap;background:var(--background-tertiary,#1e1f22);padding:14px;border-radius:6px}
         .bedrock-readme code{font-family:var(--font-code,monospace)}.bedrock-readme a{color:var(--text-link,#00a8fc)}
         .bedrock-card p{margin:10px 0}.bedrock-name{padding:0;border:0;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer}
+        .bedrock-theme-website{color:var(--text-link,#00a8fc)}
         .bedrock-detail-header{display:flex;align-items:center;gap:12px;margin:16px 0 8px}.bedrock-detail-header h2{margin:0;font-size:20px;flex:1}
         .bedrock-tabs{display:flex;gap:24px;border-bottom:1px solid var(--border-subtle,#41434a);margin:18px 0 24px}
         .bedrock-tab{padding:8px 0;background:none;border:0;border-bottom:2px solid var(--blurple-50,#5865f2);color:inherit;font:inherit}
@@ -561,6 +562,8 @@ function installRenderer(configuration) {
                         onClick: () => run(theme.id, async () => update(await native.request('themesEnable', theme.id, !theme.enabled))) }, h('span'))),
                 theme.description && h('p', null, theme.description),
                 h('p', { className: 'bedrock-muted' }, [theme.author, theme.version && `v${theme.version}`, theme.id].filter(Boolean).join(` ${metadataSeparator} `)),
+                theme.website && h('a', { className: 'bedrock-theme-website', href: theme.website, target: '_blank', rel: 'noreferrer',
+                    onClick: event => { event.preventDefault(); run(`website-${theme.id}`, () => native.request('themeWebsite', theme.id)); } }, 'Website'),
                 (theme.error || themeLoadErrors.get(theme.id)) && h('p', { className: 'bedrock-error', role: 'alert' }, theme.error || themeLoadErrors.get(theme.id))))),
             !themes.length && h('p', { className: 'bedrock-muted' }, 'No themes installed. Open the themes folder and add a CSS file.'),
             !!themes.length && !filtered.length && h('p', { className: 'bedrock-muted' }, 'No themes match your search.'));

@@ -154,6 +154,12 @@ function install(options = {}) {
         if (operation === 'enable') { await manager.setEnabled(id, key); return snapshot(); }
         if (operation === 'rescan') { manager.scan(); return snapshot(); }
         if (operation === 'themesEnable') { themes.setEnabled(id, key); return snapshot(); }
+        if (operation === 'themeWebsite') {
+            const theme = themes.list().find(theme => theme.id === id);
+            if (!theme?.website) throw new Error('This theme has no website');
+            await shell.openExternal(theme.website);
+            return true;
+        }
         if (operation === 'openThemesFolder') {
             const error = await shell.openPath(themes.directory);
             if (error) throw new Error(error);

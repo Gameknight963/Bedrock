@@ -177,7 +177,7 @@ Open **Bedrock → Themes**, then choose **Open themes folder**. Copy your CSS f
 - Enable switches take effect immediately and are saved in `%LOCALAPPDATA%\Bedrock\themes.json`.
 - Editing CSS or local assets reloads enabled themes automatically. Adding and removing files updates the page without restarting Discord.
 - Relative `@import` and `url(...)` paths resolve within the themes folder. Keep imported stylesheets and assets in subfolders so they do not appear as separate themes.
-- A leading CSS comment can provide `@name`, `@description`, `@author`, and `@version`, one per line. Metadata is optional; otherwise the filename supplies the display name.
+- A leading CSS comment can provide `@name`, `@description`, `@author`, `@version`, and `@website`, one per line. Metadata is optional; otherwise the filename supplies the display name. `@website` accepts an HTTP or HTTPS URL and adds a **Website** link that opens in your browser.
 
 Themes are CSS files, so no plugin manifest or JavaScript is required. Window transparency remains a separate feature; CSS alone cannot enable it.
 
