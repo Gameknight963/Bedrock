@@ -282,7 +282,9 @@ app.whenReady().then(async () => {
         assert.equal(await evaluate(`document.querySelector('.bedrock-grid') === null && document.querySelector('[role=tab][aria-selected=true]').textContent === 'Details'`), true);
         await evaluate(`document.querySelector('#bedrock-settings-tab').click()`);
         await waitFor(`document.querySelectorAll('.bedrock-setting').length === 6`);
-        assert.equal(await evaluate(`getComputedStyle(document.querySelector('#bedrock-settings-panel')).paddingLeft`), '12px');
+        assert.equal(await evaluate(`getComputedStyle(document.querySelector('#bedrock-settings-panel')).paddingLeft`), '0px');
+        assert.equal(await evaluate(`getComputedStyle(document.querySelector('#bedrock-details-tab')).paddingLeft`), '0px');
+        assert.equal(await evaluate(`getComputedStyle(document.querySelector('[aria-label="Reset Test feature"]')).cursor`), 'default');
         assert.equal(await evaluate(`document.querySelector('#bedrock-setting-title').value`), 'Example', 'main definitions render in the same settings page');
         assert.equal(await evaluate(`document.querySelector('#bedrock-setting-count').value`), '2');
         assert.equal(await evaluate(`document.querySelector('#bedrock-setting-volume').type`), 'range');

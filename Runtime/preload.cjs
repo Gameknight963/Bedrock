@@ -265,16 +265,15 @@ function installRenderer(configuration) {
         .bedrock-card-header{display:flex;align-items:center;justify-content:space-between;gap:12px}.bedrock-card h3{font-size:17px;margin:0;flex:1}.bedrock-icon{width:28px;height:28px;object-fit:contain;border-radius:5px}
         .bedrock-switch{width:42px;height:24px;border:0;border-radius:15px;background:var(--background-modifier-accent,#4e5058);padding:3px;cursor:pointer;flex-shrink:0}
         .bedrock-switch[aria-checked=true]{background:var(--status-positive,#23a559)}.bedrock-switch span{display:block;width:18px;height:18px;background:white;border-radius:50%;transition:transform .12s}
-        .bedrock-switch[aria-checked=true] span{transform:translateX(18px)}.bedrock-switch:disabled{opacity:.5;cursor:wait}
+        .bedrock-switch[aria-checked=true] span{transform:translateX(18px)}.bedrock-switch:disabled{opacity:.5;cursor:default}
         .bedrock-error{color:var(--text-danger,#fa777c);overflow-wrap:anywhere}.bedrock-restart{color:var(--text-warning,#f0b232)}
         .bedrock-readme,.bedrock-readme *{user-select:text!important;-webkit-user-select:text!important}
         .bedrock-readme{line-height:1.6;overflow-wrap:anywhere}.bedrock-readme pre{white-space:pre-wrap;background:var(--background-tertiary,#1e1f22);padding:14px;border-radius:6px}
         .bedrock-readme code{font-family:var(--font-code,monospace)}.bedrock-readme a{color:var(--text-link,#00a8fc)}
         .bedrock-card p{margin:10px 0}.bedrock-name{padding:0;border:0;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer}
         .bedrock-detail-header{display:flex;align-items:center;gap:12px;margin:16px 0 8px}.bedrock-detail-header h2{margin:0;font-size:20px;flex:1}
-        .bedrock-tabs{display:flex;border-bottom:1px solid var(--border-subtle,#41434a);margin:18px 0 24px}
-        .bedrock-tabs + [role=tabpanel]{padding-inline:12px}
-        .bedrock-tab{padding:8px 12px;background:none;border:0;border-bottom:2px solid var(--blurple-50,#5865f2);color:inherit;font:inherit}
+        .bedrock-tabs{display:flex;gap:24px;border-bottom:1px solid var(--border-subtle,#41434a);margin:18px 0 24px}
+        .bedrock-tab{padding:8px 0;background:none;border:0;border-bottom:2px solid var(--blurple-50,#5865f2);color:inherit;font:inherit}
         .bedrock-tab{border-bottom-color:transparent;cursor:pointer}.bedrock-tab[aria-selected=true]{border-bottom-color:var(--blurple-50,#5865f2)}
         .bedrock-setting{padding:16px 0;border-bottom:1px solid var(--border-subtle,#41434a)}
         .bedrock-setting-header{display:flex;align-items:center;justify-content:space-between;gap:16px}
@@ -287,7 +286,8 @@ function installRenderer(configuration) {
         .bedrock-readme :is(h1,h2,h3,h4,h5,h6){font-weight:600;line-height:1.3;margin:24px 0 12px}
         .bedrock-readme>:first-child{margin-top:0}.bedrock-readme p,.bedrock-readme ul{margin:12px 0}
         .bedrock-readme ul{padding-left:24px;list-style:disc}.bedrock-readme li{margin:4px 0}
-        .bedrock-button:disabled{opacity:.5;cursor:wait}.bedrock-name:focus-visible{outline:2px solid var(--blurple-50,#5865f2)}
+        .bedrock-button:disabled{opacity:.5;cursor:default}.bedrock-name:focus-visible{outline:2px solid var(--blurple-50,#5865f2)}
+        .bedrock-button[aria-busy=true],.bedrock-switch[aria-busy=true]{cursor:wait}
     `;
     function installStyles() {
         const style = document.createElement('style');
@@ -362,7 +362,7 @@ function installRenderer(configuration) {
             catch (error) { setError(error.message); }
             finally { setBusy(false); }
         };
-        const inputProps = { id, disabled: busy, 'aria-describedby': `${descriptionId}${error ? ` ${errorId}` : ''}`, 'aria-invalid': !!error };
+        const inputProps = { id, disabled: busy, 'aria-busy': busy, 'aria-describedby': `${descriptionId}${error ? ` ${errorId}` : ''}`, 'aria-invalid': !!error };
         const numeric = [settingsAPI.OptionType.NUMBER, settingsAPI.OptionType.SLIDER].includes(definition.type);
         const commit = input => {
             const value = numeric ? (input === '' ? NaN : Number(input)) : input;
@@ -396,7 +396,7 @@ function installRenderer(configuration) {
             h('div', { className: 'bedrock-setting-footer' },
                 h('span', { className: definition.restartNeeded ? 'bedrock-restart' : 'bedrock-muted' },
                     definition.restartNeeded ? 'Requires a restart.' : (numeric && definition.type === settingsAPI.OptionType.SLIDER ? String(draft) : '')),
-                h('button', { className: 'bedrock-button', disabled: busy || JSON.stringify(saved) === JSON.stringify(definition.default),
+                h('button', { className: 'bedrock-button', 'aria-busy': busy, disabled: busy || JSON.stringify(saved) === JSON.stringify(definition.default),
                     onClick: () => save(definition.default), 'aria-label': `Reset ${definition.label || settingKey}` }, 'Reset')));
     }
     function PluginSettings({ plugin }) {
