@@ -170,6 +170,17 @@ The exported object is bound before `start()` and unbound when the context stops
 
 Definitions contain the UI data, while callbacks stay in JavaScript. Only values are saved in the plugin's `data/<id>/settings.json`. This boundary lets a future native owner or another language use the same definitions and UI.
 
+## CSS themes
+
+Open **Bedrock → Themes**, then choose **Open themes folder**. Copy your CSS files into `%LOCALAPPDATA%\Bedrock\themes` and enable the themes you want. New files appear automatically and start disabled. Enabled themes apply in filename order, so later files can override earlier ones.
+
+- Enable switches take effect immediately and are saved in `%LOCALAPPDATA%\Bedrock\themes.json`.
+- Editing CSS or local assets reloads enabled themes automatically. Adding and removing files updates the page without restarting Discord.
+- Relative `@import` and `url(...)` paths resolve within the themes folder. Keep imported stylesheets and assets in subfolders so they do not appear as separate themes.
+- A leading CSS comment can provide `@name`, `@description`, `@author`, and `@version`, one per line. Metadata is optional; otherwise the filename supplies the display name.
+
+Themes are CSS files, so no plugin manifest or JavaScript is required. Window transparency remains a separate feature; CSS alone cannot enable it.
+
 ### Renderer APIs
 
 ```js

@@ -5,6 +5,7 @@ const { spawn } = require('node:child_process');
 const { createPluginManager } = require('./plugins.cjs');
 const { packagePath } = require('./storage.cjs');
 const { startControl } = require('./control.cjs');
+const { createThemeManager } = require('./themes.cjs');
 
 function install(options = {}) {
     if (globalThis.BedrockMain) return true;
@@ -24,7 +25,7 @@ function install(options = {}) {
         } catch { return false; }
     };
     let revision = 0;
-    const snapshot = () => ({ revision, plugins: manager.list(), errors: manager.errors() });
+    const snapshot = () => ({ revision, plugins: manager.list(), errors: manager.errors(), themes: themes.list(), themeErrors: themes.errors() });
     function broadcast(channel, value) {
         for (const window of windows) {
             const contents = window.webContents;
@@ -58,6 +59,8 @@ function install(options = {}) {
             } };
         }
     });
+    const themes = createThemeManager(root, () => { revision++; broadcast('bedrock:update', snapshot()); });
+    app.once('will-quit', () => themes.close());
     manager.events.on('settings.changed', () => { revision++; broadcast('bedrock:update', snapshot()); });
     manager.events.on('plugin.event', value => broadcast('bedrock:event', value));
     const bedrockScheme = { scheme: 'bedrock', privileges: {
@@ -81,6 +84,14 @@ function install(options = {}) {
                     return new Response(fs.readFileSync(path.join(__dirname, 'settings.mjs')), { headers: {
                         'Content-Type': 'text/javascript', 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-store'
                     } });
+                if (request.method === 'GET' && url.hostname === 'themes') {
+                    const relative = url.pathname.slice(1).split('/').map(decodeURIComponent).join('/');
+                    const file = packagePath(themes.directory, relative);
+                    const types = { '.css': 'text/css', '.png': 'image/png', '.svg': 'image/svg+xml', '.jpg': 'image/jpeg',
+                        '.jpeg': 'image/jpeg', '.webp': 'image/webp', '.gif': 'image/gif', '.woff': 'font/woff', '.woff2': 'font/woff2', '.ttf': 'font/ttf' };
+                    return new Response(fs.readFileSync(file), { headers: { 'Content-Type': types[path.extname(file).toLowerCase()] || 'application/octet-stream',
+                        'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-store' } });
+                }
                 if (request.method !== 'GET' || url.hostname !== 'plugins') return new Response(null, { status: 404 });
                 const parts = url.pathname.split('/').slice(1).map(decodeURIComponent);
                 const record = manager.records.get(parts.shift());
@@ -142,6 +153,12 @@ function install(options = {}) {
         if (operation === 'list') return snapshot();
         if (operation === 'enable') { await manager.setEnabled(id, key); return snapshot(); }
         if (operation === 'rescan') { manager.scan(); return snapshot(); }
+        if (operation === 'themesEnable') { themes.setEnabled(id, key); return snapshot(); }
+        if (operation === 'openThemesFolder') {
+            const error = await shell.openPath(themes.directory);
+            if (error) throw new Error(error);
+            return true;
+        }
         if (operation === 'restart') {
             if (options.restart) return options.restart();
             const launcher = path.join(__dirname, '..', 'BedrockLauncher.exe');
@@ -174,7 +191,9 @@ function install(options = {}) {
         throw new Error('Unknown Bedrock operation');
     });
     globalThis.BedrockMain = manager;
+    manager.themes = themes;
     globalThis.Bedrock = { definePluginSettings: manager.definePluginSettings, OptionType: manager.OptionType };
+    themes.scan();
     manager.scan();
     startControl(app);
     console.info(`[Bedrock] Bootstrap installed. Plugins: ${path.join(root, 'plugins')}`);

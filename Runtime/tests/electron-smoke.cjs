@@ -68,6 +68,11 @@ fs.cpSync(path.join(__dirname, '../../Examples/example'), path.join(root, 'plugi
 
 require('../bootstrap.cjs').install({ root, allowURL: url => url.origin === 'https://bedrock.test', restart: () => { globalThis.fixtureRestartRequested = true; return true; } });
 globalThis.BedrockMain.scan();
+const themesDirectory = globalThis.BedrockMain.themes.directory;
+fs.mkdirSync(path.join(themesDirectory, 'assets'));
+fs.writeFileSync(path.join(themesDirectory, 'assets', 'import.css'), ':root { --theme-import: imported; }');
+fs.writeFileSync(path.join(themesDirectory, 'live.theme.css'), '/**\n * @name Live theme\n */\n@import "./assets/import.css"; :root { --live-theme: red; }');
+globalThis.BedrockMain.themes.scan();
 require('electron').protocol.registerSchemesAsPrivileged([{ scheme: 'fixtureextra', privileges: { standard: true, secure: true } }]);
 const { BrowserWindow, session } = require('electron');
 let window;
@@ -104,7 +109,11 @@ const fixture = `
     const section = layout.find(node => node.key === 'bedrock_section');
     if (!section) throw new Error('Bedrock sidebar section missing');
     const Component = section.buildLayout()[0].buildLayout()[0].buildLayout()[0].buildLayout()[0].Component;
-    ReactDOM.createRoot(document.getElementById('root')).render(React.createElement(Component));
+    const ThemesComponent = section.buildLayout()[1].buildLayout()[0].buildLayout()[0].buildLayout()[0].Component;
+    globalThis.fixtureRoot = ReactDOM.createRoot(document.getElementById('root'));
+    fixtureRoot.render(React.createElement(Component));
+    globalThis.fixtureShowThemes = () => fixtureRoot.render(React.createElement(ThemesComponent));
+    globalThis.fixtureShowPlugins = () => fixtureRoot.render(React.createElement(Component));
     globalThis.fixtureLayout = layout.map(node => node.key);
     chunks.push([['test-late'], { late: function(module) { module.exports = { fixtureLate: true }; } }]);
     require('late');
@@ -379,10 +388,30 @@ app.whenReady().then(async () => {
         await waitFor(`getComputedStyle(document.querySelector('.bedrock-grid')).gridTemplateColumns.split(' ').length === 1`);
 
         assert.equal(await evaluate(`(async () => (await fetch('bedrock://plugins/test.example/../outside')).status)()`), 404);
+        await evaluate(`fixtureShowThemes()`);
+        await waitFor(`document.querySelector('[aria-label="Search themes"]') && document.querySelector('[aria-label="Enable Live theme"]')`);
+        assert.equal(await evaluate(`getComputedStyle(document.documentElement).getPropertyValue('--live-theme').trim()`), '');
+        await evaluate(`document.querySelector('[aria-label="Enable Live theme"]').click()`);
+        await waitFor(`getComputedStyle(document.documentElement).getPropertyValue('--live-theme').trim() === 'red'`);
+        await waitFor(`getComputedStyle(document.documentElement).getPropertyValue('--theme-import').trim() === 'imported'`);
+        fs.writeFileSync(path.join(themesDirectory, 'assets', 'import.css'), ':root { --theme-import: updated; }');
+        await waitFor(`getComputedStyle(document.documentElement).getPropertyValue('--theme-import').trim() === 'updated'`);
+        fs.writeFileSync(path.join(themesDirectory, 'live.theme.css'), '/**\n * @name Live theme\n */\n:root { --live-theme: green; }');
+        await waitFor(`getComputedStyle(document.documentElement).getPropertyValue('--live-theme').trim() === 'green'`);
+        fs.writeFileSync(path.join(themesDirectory, 'new.css'), ':root { --new-theme: yes; }');
+        await waitFor(`document.querySelector('[aria-label="Enable new"]')`);
+        await evaluate(`document.querySelector('[aria-label="Enable Live theme"]').click()`);
+        await waitFor(`getComputedStyle(document.documentElement).getPropertyValue('--live-theme').trim() === ''`);
+        await evaluate(`document.querySelector('[aria-label="Enable Live theme"]').click()`);
+        await waitFor(`getComputedStyle(document.documentElement).getPropertyValue('--live-theme').trim() === 'green'`);
+        fs.unlinkSync(path.join(themesDirectory, 'live.theme.css'));
+        await waitFor(`document.querySelector('[aria-label="Enable Live theme"]') === null && document.querySelector('[data-bedrock-theme="live.theme.css"]') === null`);
+        assert.equal(await evaluate(`(async () => (await fetch('bedrock://themes/%2e%2e/settings.json')).status)()`), 404);
         await window.loadURL('https://unrelated.test/');
         assert.equal(await evaluate(`globalThis.Bedrock === undefined && globalThis.BedrockNative === undefined`), true, 'bridge must not appear on unrelated origins');
         console.log('PASS: Real Electron preload, settings controls, validation, restart requests, persistence, React settings subscriptions, synchronization across main and two windows, live cleanup/re-enable, MCP bridge, safe Markdown and origin checks.');
         await globalThis.BedrockMain.stopAll();
+        globalThis.BedrockMain.themes.close();
         window.destroy();
         fs.rmSync(root, { recursive: true, force: true });
         app.exit(0);

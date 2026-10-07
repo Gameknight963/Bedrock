@@ -5,6 +5,8 @@ function installRenderer(configuration) {
     const subscribers = new Set();
     const listeners = new Map();
     const patchSlots = new WeakMap();
+    const themeLinks = new Map();
+    const themeLoadErrors = new Map();
     let settingsAPI;
     const settingsReady = import('bedrock://api/settings.mjs').then(api => {
         settingsAPI = api;
@@ -221,6 +223,7 @@ function installRenderer(configuration) {
     function update(next) {
         if (next.revision < snapshot.revision) return;
         snapshot = structuredClone(next);
+        applyThemes();
         for (const info of snapshot.plugins) {
             let record = records.get(info.manifest.id);
             if (!record) records.set(info.manifest.id, record = { info, status: info.renderer ? 'stopped' : 'main-only', pending: Promise.resolve() });
@@ -234,6 +237,34 @@ function installRenderer(configuration) {
                 record.pending = record.pending.catch(error => log(info.manifest.id, error)).then(() => reconcile(record));
         }
         notify();
+    }
+    function applyThemes() {
+        if (!document.documentElement) {
+            document.addEventListener('DOMContentLoaded', applyThemes, { once: true });
+            return;
+        }
+        const enabled = new Set();
+        const ordered = [];
+        for (const theme of snapshot.themes || []) {
+            if (!theme.enabled || theme.error) continue;
+            enabled.add(theme.id);
+            let link = themeLinks.get(theme.id);
+            if (!link) {
+                link = document.createElement('link');
+                link.rel = 'stylesheet'; link.dataset.bedrockTheme = theme.id;
+                link.onload = () => { themeLoadErrors.delete(theme.id); notify(); };
+                link.onerror = () => { themeLoadErrors.set(theme.id, 'Cannot load this theme. Check its CSS file and imports.'); notify(); };
+                themeLinks.set(theme.id, link);
+            }
+            if (link.href !== theme.url) { themeLoadErrors.delete(theme.id); link.href = theme.url; }
+            ordered.push(link);
+        }
+        for (const [id, link] of themeLinks) if (!enabled.has(id)) {
+            link.remove(); themeLinks.delete(id); themeLoadErrors.delete(id);
+        }
+        const existing = [...document.querySelectorAll('link[data-bedrock-theme]')];
+        if (ordered.some((link, index) => existing[index] !== link))
+            for (const link of ordered) document.documentElement.append(link);
     }
     function list() {
         return [...records.values()].map(record => ({ ...record.info, rendererStatus: record.status,
@@ -502,6 +533,38 @@ function installRenderer(configuration) {
             plugins.length > 0 && !plugins.some(plugin => `${plugin.manifest.name} ${plugin.manifest.id} ${plugin.manifest.description || ''}`.toLowerCase().includes(search.toLowerCase())) && h('p', { className: 'bedrock-muted' }, 'No plugins match your search.'));
 
     }
+    function ThemesPage() {
+        React = renderingReact() || React;
+        const h = React.createElement;
+        const [, refresh] = React.useState(0);
+        const [search, setSearch] = React.useState('');
+        const [busy, setBusy] = React.useState(null);
+        const [error, setError] = React.useState('');
+        React.useEffect(() => subscribe(() => refresh(value => value + 1)), []);
+        const run = async (id, operation) => {
+            setBusy(id); setError('');
+            try { await operation(); } catch (error) { setError(error.message); } finally { setBusy(null); }
+        };
+        const themes = snapshot.themes || [];
+        const filtered = themes.filter(theme => `${theme.name} ${theme.id} ${theme.author || ''} ${theme.description || ''}`.toLowerCase().includes(search.toLowerCase()));
+        return h('section', { className: 'bedrock-page' },
+            h('div', { className: 'bedrock-toolbar' },
+                h('input', { type: 'search', placeholder: 'Search themes', 'aria-label': 'Search themes', value: search, onChange: event => setSearch(event.target.value) }),
+                h('button', { className: 'bedrock-button', disabled: !!busy, onClick: () => run('folder', () => native.request('openThemesFolder')) }, 'Open themes folder')),
+            h('p', { className: 'bedrock-muted' }, 'Add CSS files to your themes folder. File changes apply automatically; no restart needed.'),
+            error && h('p', { className: 'bedrock-error', role: 'alert' }, error),
+            ...(snapshot.themeErrors || []).map((error, key) => h('p', { key, className: 'bedrock-error', role: 'alert' }, error)),
+            h('div', { className: 'bedrock-grid' }, filtered.map(theme => h('article', { key: theme.id, className: 'bedrock-card' },
+                h('div', { className: 'bedrock-card-header' }, h('h3', null, theme.name),
+                    h('button', { className: 'bedrock-switch', role: 'switch', 'aria-label': `Enable ${theme.name}`, 'aria-checked': theme.enabled,
+                        'aria-busy': busy === theme.id, disabled: !!busy,
+                        onClick: () => run(theme.id, async () => update(await native.request('themesEnable', theme.id, !theme.enabled))) }, h('span'))),
+                theme.description && h('p', null, theme.description),
+                h('p', { className: 'bedrock-muted' }, [theme.author, theme.version && `v${theme.version}`, theme.id].filter(Boolean).join(` ${metadataSeparator} `)),
+                (theme.error || themeLoadErrors.get(theme.id)) && h('p', { className: 'bedrock-error', role: 'alert' }, theme.error || themeLoadErrors.get(theme.id))))),
+            !themes.length && h('p', { className: 'bedrock-muted' }, 'No themes installed. Open the themes folder and add a CSS file.'),
+            !!themes.length && !filtered.length && h('p', { className: 'bedrock-muted' }, 'No themes match your search.'));
+    }
     function settingsLayout(builder) {
         const original = builder.buildLayout();
         if (builder.key !== '$Root' || !Array.isArray(original) || original.some(node => node?.key === 'bedrock_section')) return original;
@@ -520,7 +583,13 @@ function installRenderer(configuration) {
         const entry = node(T.SIDEBAR_ITEM, 'bedrock_plugins', 'Plugins', [panel]);
         entry.icon = () => React.createElement('svg', { width: 20, height: 20, viewBox: '0 0 20 20', fill: 'currentColor' },
             React.createElement('path', { d: 'M3 3h6v6H3zm8 0h6v6h-6zM3 11h6v6H3zm8 0h6v6h-6z' }));
-        const section = node(T.SECTION, 'bedrock_section', 'Bedrock', [entry]);
+        const themesContent = { type: T.CUSTOM, key: 'bedrock_themes_content', Component: ThemesPage, useSearchTerms: () => ['Bedrock', 'Themes', 'CSS'] };
+        const themesCategory = node(T.CATEGORY, 'bedrock_themes_category', 'Themes', [themesContent]);
+        const themesPanel = node(T.PANEL, 'bedrock_themes_panel', 'Bedrock Themes', [themesCategory]);
+        const themesEntry = node(T.SIDEBAR_ITEM, 'bedrock_themes', 'Themes', [themesPanel]);
+        themesEntry.icon = () => React.createElement('svg', { width: 20, height: 20, viewBox: '0 0 20 20', fill: 'currentColor' },
+            React.createElement('path', { d: 'M10 2a8 8 0 1 0 0 16h1a3 3 0 0 0 0-6h-1a1 1 0 0 1 0-2h4a4 4 0 0 0 4-4c0-2-4-4-8-4ZM5 9a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3Zm4-3a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3Zm4 1a1.5 1.5 0 1 1 0-3 1.5 1.5 0 0 1 0 3Z' }));
+        const section = node(T.SECTION, 'bedrock_section', 'Bedrock', [entry, themesEntry]);
         const result = [...original];
         const billing = result.findIndex(item => item?.key === 'billing_section');
         result.splice(billing >= 0 ? billing : Math.min(2, result.length), 0, section);
