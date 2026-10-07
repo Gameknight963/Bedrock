@@ -291,7 +291,7 @@ function installRenderer(configuration) {
         .bedrock-page input[type=search]{flex:1;min-width:180px;height:32px;box-sizing:border-box;padding:5px 10px;border-radius:6px;border:1px solid var(--border-subtle,#41434a);background:var(--input-background,#1e1f22);color:inherit}
         .bedrock-button{min-height:30px;padding:5px 10px;border:0;border-radius:5px;background:var(--background-modifier-hover,#35373c);color:inherit;cursor:pointer}
         .bedrock-button:focus-visible,.bedrock-switch:focus-visible{outline:2px solid var(--blurple-50,#5865f2);outline-offset:3px}
-        .bedrock-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,280px),1fr));gap:14px}
+        .bedrock-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,280px),1fr));gap:14px}
         .bedrock-card{border:1px solid var(--border-subtle,#41434a);border-radius:8px;padding:14px;background:var(--background-secondary,#2b2d31)}
         .bedrock-card-header{display:flex;align-items:center;justify-content:space-between;gap:12px}.bedrock-card h3{font-size:17px;margin:0;flex:1}.bedrock-icon{width:28px;height:28px;object-fit:contain;border-radius:5px}
         .bedrock-switch{width:42px;height:24px;border:0;border-radius:15px;background:var(--background-modifier-accent,#4e5058);padding:3px;cursor:pointer;flex-shrink:0}

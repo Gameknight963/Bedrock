@@ -384,6 +384,11 @@ app.whenReady().then(async () => {
         assert.equal(await evaluate(`document.querySelector('.bedrock-page').parentElement.scrollTop`), await evaluate('globalThis.savedPluginScroll'));
         window.setSize(900, 700);
         await waitFor(`getComputedStyle(document.querySelector('.bedrock-grid')).gridTemplateColumns.split(' ').length === 2`);
+        assert.equal(await evaluate(`(() => {
+            const grid = document.querySelector('.bedrock-grid');
+            const card = grid.querySelector('.bedrock-card');
+            return Math.abs(card.getBoundingClientRect().width * 2 + 14 - grid.getBoundingClientRect().width) < 1;
+        })()`), true, 'a single card keeps the width of one column');
         window.setSize(580, 600);
         await waitFor(`getComputedStyle(document.querySelector('.bedrock-grid')).gridTemplateColumns.split(' ').length === 1`);
 
