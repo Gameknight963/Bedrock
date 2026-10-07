@@ -123,15 +123,21 @@ done:
 
 static int discover_discord(wchar_t *path)
 {
-    wchar_t root[PATH_CAP], pattern[PATH_CAP], candidate[PATH_CAP];
+    wchar_t *buffers = malloc(3 * PATH_CAP * sizeof(wchar_t));
+    wchar_t *root, *pattern, *candidate;
     WIN32_FIND_DATAW entry;
     HANDLE search;
     unsigned best[4] = {0}, version[4];
-    DWORD n = GetEnvironmentVariableW(L"LOCALAPPDATA", root, PATH_CAP);
+    DWORD n;
     int have_best = 0;
-    if (!n || n >= PATH_CAP || swprintf_s(pattern, PATH_CAP, L"%ls\\Discord\\app-*", root) < 0) return 0;
+    if (!buffers) { fwprintf(stderr, L"Cannot allocate discovery path buffers.\n"); return 0; }
+    root = buffers;
+    pattern = buffers + PATH_CAP;
+    candidate = buffers + 2 * PATH_CAP;
+    n = GetEnvironmentVariableW(L"LOCALAPPDATA", root, PATH_CAP);
+    if (!n || n >= PATH_CAP || swprintf_s(pattern, PATH_CAP, L"%ls\\Discord\\app-*", root) < 0) goto done;
     search = FindFirstFileW(pattern, &entry);
-    if (search == INVALID_HANDLE_VALUE) return 0;
+    if (search == INVALID_HANDLE_VALUE) goto done;
     do {
         wchar_t extra;
         int newer = !have_best, j;
@@ -149,6 +155,8 @@ static int discover_discord(wchar_t *path)
         have_best = 1;
     } while (FindNextFileW(search, &entry));
     FindClose(search);
+done:
+    free(buffers);
     return have_best;
 }
 
@@ -157,7 +165,8 @@ static int discover_discord(wchar_t *path)
 static int patch_child(HANDLE process, const FuseLocation *fuse)
 {
     typedef NTSTATUS (NTAPI *QueryProcess)(HANDLE, PROCESSINFOCLASS, PVOID, ULONG, PULONG);
-    QueryProcess query = (QueryProcess)GetProcAddress(GetModuleHandleW(L"ntdll.dll"), "NtQueryInformationProcess");
+    HMODULE ntdll = GetModuleHandleW(L"ntdll.dll");
+    QueryProcess query;
     PROCESS_BASIC_INFORMATION basic;
     uintptr_t image_base = 0;
     BYTE actual[255], enabled = '1', verify = 0;
@@ -166,6 +175,8 @@ static int patch_child(HANDLE process, const FuseLocation *fuse)
     BYTE *wire, *target;
     NTSTATUS status;
     int written, restored;
+    if (!ntdll) { win_error(L"GetModuleHandleW"); return 0; }
+    query = (QueryProcess)GetProcAddress(ntdll, "NtQueryInformationProcess");
     if (!query) { win_error(L"Resolve NtQueryInformationProcess"); return 0; }
     status = query(process, ProcessBasicInformation, &basic, sizeof(basic), NULL);
     if (status < 0) { fwprintf(stderr, L"NtQueryInformationProcess failed: 0x%08lX\n", (ULONG)status); return 0; }
@@ -223,18 +234,21 @@ static int port_available(unsigned short port)
 static int probe_inspector(HINTERNET session, unsigned short port)
 {
     HINTERNET connection = WinHttpConnect(session, L"127.0.0.1", port, 0), request = NULL;
-    char body[16384];
+    const DWORD body_capacity = 16384;
+    char *body = NULL;
     DWORD status = 0, status_size = sizeof(status), read = 0, total = 0;
     int result = 0;
     if (!connection) return 0;
+    body = malloc(body_capacity);
+    if (!body) goto done;
     request = WinHttpOpenRequest(connection, L"GET", L"/json/list", NULL, WINHTTP_NO_REFERER, WINHTTP_DEFAULT_ACCEPT_TYPES, 0);
     if (!request) goto done;
     if (!WinHttpSendRequest(request, WINHTTP_NO_ADDITIONAL_HEADERS, 0, WINHTTP_NO_REQUEST_DATA, 0, 0, 0) ||
         !WinHttpReceiveResponse(request, NULL) ||
         !WinHttpQueryHeaders(request, WINHTTP_QUERY_STATUS_CODE | WINHTTP_QUERY_FLAG_NUMBER,
             WINHTTP_HEADER_NAME_BY_INDEX, &status, &status_size, WINHTTP_NO_HEADER_INDEX) || status != 200) goto done;
-    while (total < sizeof(body) - 1) {
-        if (!WinHttpReadData(request, body + total, (DWORD)sizeof(body) - 1 - total, &read)) goto done;
+    while (total < body_capacity - 1) {
+        if (!WinHttpReadData(request, body + total, body_capacity - 1 - total, &read)) goto done;
         if (!read) break;
         total += read;
     }
@@ -252,14 +266,21 @@ static int probe_inspector(HINTERNET session, unsigned short port)
         result = 1;
     }
 done:
+    free(body);
     if (request) WinHttpCloseHandle(request);
     WinHttpCloseHandle(connection);
     return result;
 }
 
-int wmain(int argc, wchar_t **argv)
+typedef struct LaunchPaths {
+    wchar_t path[PATH_CAP];
+    wchar_t directory[PATH_CAP];
+    wchar_t command[PATH_CAP + 128];
+} LaunchPaths;
+
+static int launch(int argc, wchar_t **argv, LaunchPaths *paths)
 {
-    wchar_t path[PATH_CAP] = {0}, directory[PATH_CAP], command[PATH_CAP + 128];
+    wchar_t *path = paths->path, *directory = paths->directory, *command = paths->command;
     unsigned short port = 9229;
     int check_only = 0, i, success = 0;
     FuseLocation fuse = {0};
@@ -332,4 +353,14 @@ done:
     CloseHandle(child.hThread);
     CloseHandle(child.hProcess);
     return success ? 0 : 1;
+}
+
+int wmain(int argc, wchar_t **argv)
+{
+    LaunchPaths *paths = calloc(1, sizeof(*paths));
+    int result;
+    if (!paths) { fwprintf(stderr, L"Cannot allocate launcher path buffers.\n"); return 1; }
+    result = launch(argc, argv, paths);
+    free(paths);
+    return result;
 }
