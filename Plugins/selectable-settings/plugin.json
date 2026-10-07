@@ -1,0 +1,12 @@
+{
+    "manifestVersion": 1,
+    "apiVersion": 1,
+    "id": "bedrock.selectable-settings",
+    "name": "Selectable Settings",
+    "version": "1.0.0",
+    "description": "Select and copy text throughout Discord settings.",
+    "entrypoints": {
+        "renderer": "renderer.js"
+    },
+    "readme": "README.md"
+}

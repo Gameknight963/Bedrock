@@ -3,6 +3,8 @@ const path = require('node:path');
 const os = require('node:os');
 const assert = require('node:assert/strict');
 const { app } = require('electron');
+const net = require('node:net');
+const { spawn } = require('node:child_process');
 const { writeJson } = require('../storage.cjs');
 const root = globalThis.BedrockMain?.root || fs.mkdtempSync(path.join(os.tmpdir(), 'Bedrock-electron-'));
 const directory = path.join(root, 'plugins', 'example');
@@ -37,13 +39,18 @@ fs.writeFileSync(path.join(pendingDirectory, 'renderer.js'), `export async funct
     await ctx.webpack.waitFor(value => value?.neverAvailable);
 } export function stop() { globalThis.fixturePendingStopped = true; }`);
 
+const selectableDirectory = path.join(root, 'plugins', 'selectable-settings');
+fs.cpSync(path.join(__dirname, '../../Plugins/selectable-settings'), selectableDirectory, { recursive: true });
+
+fs.cpSync(path.join(__dirname, '../../Plugins/developer-tools'), path.join(root, 'plugins', 'developer-tools'), { recursive: true });
+
 require('../bootstrap.cjs').install({ root, allowURL: url => url.origin === 'https://bedrock.test' });
 globalThis.BedrockMain.scan();
 require('electron').protocol.registerSchemesAsPrivileged([{ scheme: 'fixtureextra', privileges: { standard: true, secure: true } }]);
 const { BrowserWindow, session } = require('electron');
 let window;
 const failures = [];
-const html = `<!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline'"><style>*{user-select:none}</style></head><body style="background:#313338;padding:16px"><div id="root"></div><script src="/react-unused.js"></script><script src="/remember-unused.js"></script><script src="/react.js"></script><script src="/react-dom.js"></script><script src="/fixture.js"></script></body></html>`;
+const html = `<!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline'"><style>*{user-select:none}</style></head><body style="background:#313338;padding:16px"><p id="outside-settings">Outside settings</p><div class="standardSidebarView_fixture"><p id="settings-label">Settings description</p><div id="root"></div></div><script src="/react-unused.js"></script><script src="/remember-unused.js"></script><script src="/react.js"></script><script src="/react-dom.js"></script><script src="/fixture.js"></script></body></html>`;
 const fixture = `
     globalThis.fixtureMethod = () => 1;
     globalThis.webpackChunkdiscord_app = [];
@@ -88,6 +95,81 @@ async function waitFor(script) {
     }
     throw new Error(`Timed out: ${script}\n${failures.join('\n')}`);
 }
+function bridgeRequest(request) {
+    return new Promise((resolve, reject) => {
+        const socket = net.connect(`\\\\.\\pipe\\Bedrock-Dev-${process.pid}`);
+        socket.setEncoding('utf8');
+        socket.setTimeout(5000, () => socket.destroy(new Error('Inspection timeout')));
+        socket.on('error', reject);
+        let buffer = '';
+        socket.on('data', chunk => {
+            buffer += chunk;
+            if (buffer.includes('\n')) {
+                socket.destroy();
+                const response = JSON.parse(buffer.split('\n')[0]);
+                if (response.error) reject(new Error(response.error)); else resolve(response.result);
+            }
+        });
+        socket.on('connect', () => socket.write(JSON.stringify(request) + '\n'));
+    });
+}
+
+async function mcpSmoke() {
+    const child = spawn('dotnet', [path.join(__dirname, '../../MCP/bin/Debug/net10.0/Bedrock.Mcp.dll')], { windowsHide: true });
+    const pending = new Map();
+    const errors = [];
+    let buffer = '', nextId = 0;
+    child.stdout.setEncoding('utf8');
+    child.stderr.on('data', chunk => errors.push(chunk.toString()));
+    child.on('error', error => { for (const handler of pending.values()) handler.reject(error); });
+    child.stdout.on('data', chunk => {
+        buffer += chunk;
+        while (buffer.includes('\n')) {
+            const index = buffer.indexOf('\n');
+            const response = JSON.parse(buffer.slice(0, index));
+            buffer = buffer.slice(index + 1);
+            const handler = pending.get(response.id);
+            if (handler) {
+                clearTimeout(handler.timer); pending.delete(response.id);
+                if (response.error) handler.reject(new Error(JSON.stringify(response.error))); else handler.resolve(response.result);
+            }
+        }
+    });
+    const request = (method, params) => new Promise((resolve, reject) => {
+        const id = ++nextId;
+        const timer = setTimeout(() => { pending.delete(id); reject(new Error(`MCP timeout: ${method} ${errors.join('')}`)); }, 10000);
+        pending.set(id, { resolve, reject, timer });
+        child.stdin.write(JSON.stringify({ jsonrpc: '2.0', id, method, params }) + '\n');
+    });
+    try {
+        const initialized = await request('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'Bedrock test', version: '1.0' } });
+        assert.equal(initialized.serverInfo.name, 'Bedrock');
+        child.stdin.write(JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }) + '\n');
+        const tools = await request('tools/list', {});
+        assert.deepEqual(tools.tools.map(tool => tool.name).sort(), ['get_styles', 'inspect_element', 'screenshot', 'status']);
+        const status = await request('tools/call', { name: 'status', arguments: {} });
+        assert.equal(JSON.parse(status.content[0].text).instances.some(instance => instance.processId === process.pid), true);
+        const inspected = await request('tools/call', { name: 'inspect_element', arguments: { selector: '#settings-label', processId: process.pid, windowId: window.id } });
+        assert.equal(JSON.parse(inspected.content[0].text).elements[0].id, 'settings-label');
+        const styles = await request('tools/call', { name: 'get_styles', arguments: { selector: '#settings-label', processId: process.pid, windowId: window.id, properties: ['user-select'] } });
+        assert.equal(JSON.parse(styles.content[0].text).elements[0].ancestors[0].computed['user-select'], 'text');
+        const image = await request('tools/call', { name: 'screenshot', arguments: { processId: process.pid, windowId: window.id } });
+        assert.equal(image.content[0].type, 'image');
+        assert.equal(image.content[0].mimeType, 'image/png');
+        assert.equal(Buffer.from(image.content[0].data, 'base64').subarray(1, 4).toString(), 'PNG');
+        const bad = await request('tools/call', { name: 'inspect_element', arguments: { selector: '[', processId: process.pid, windowId: window.id } });
+        assert.equal(bad.isError, true);
+        const exited = new Promise(resolve => child.once('exit', resolve));
+        child.stdin.end();
+        const timeout = setTimeout(() => child.kill(), 5000);
+        try { assert.equal(await exited, 0); } finally { clearTimeout(timeout); }
+        console.log('PASS: C# MCP to named pipe to real Electron DOM, CSS, screenshots and error responses.');
+    } finally {
+        for (const handler of pending.values()) clearTimeout(handler.timer);
+        if (child.exitCode === null) child.kill();
+    }
+}
+
 app.whenReady().then(async () => {
     try {
         session.defaultSession.protocol.handle('https', request => {
@@ -107,25 +189,48 @@ app.whenReady().then(async () => {
         window.webContents.on('preload-error', (_, file, error) => failures.push(`${file}: ${error.stack}`));
         assert.equal(window.getSize()[0], 580, 'main plugin must intercept window creation options');
         await window.loadURL('https://bedrock.test/');
-        await waitFor(`globalThis.Bedrock?.plugins.list()[0]?.rendererStatus === 'running' && document.querySelector('[role=switch]')`);
+        await waitFor(`globalThis.Bedrock?.plugins.list().find(plugin => plugin.manifest.id === 'test.example')?.rendererStatus === 'running' && document.querySelector('[role=switch][aria-label="Enable Example plugin"]')`);
         assert.equal(await evaluate('globalThis.originalPreload'), true, 'existing Discord preload must be preserved');
+        await waitFor(`globalThis.Bedrock.plugins.list().find(plugin => plugin.manifest.id === 'bedrock.selectable-settings')?.rendererStatus === 'running'`);
+        assert.equal(await evaluate(`getComputedStyle(document.querySelector('#settings-label')).userSelect`), 'text');
+        assert.equal(await evaluate(`getComputedStyle(document.querySelector('#outside-settings')).userSelect`), 'none');
+        await evaluate(`globalThis.Bedrock.plugins.setEnabled('bedrock.selectable-settings', false)`);
+        assert.equal(await evaluate(`getComputedStyle(document.querySelector('#settings-label')).userSelect`), 'none');
+        await evaluate(`globalThis.Bedrock.plugins.setEnabled('bedrock.selectable-settings', true)`);
+        assert.equal(await evaluate(`getComputedStyle(document.querySelector('#settings-label')).userSelect`), 'text');
+
         assert.deepEqual(await evaluate('globalThis.fixtureLayout'), ['user_section', 'bedrock_section', 'billing_section']);
         assert.equal(await evaluate('globalThis.fixtureMethod()'), 11);
-        assert.equal(await evaluate('globalThis.Bedrock.plugins.list()[0].restartReason'), null, 'startup window options should already be applied');
+        assert.equal(await evaluate(`globalThis.Bedrock.plugins.list().find(plugin => plugin.manifest.id === 'test.example').restartReason`), null, 'startup window options should already be applied');
         await new Promise(resolve => setTimeout(resolve, 150));
         fs.writeFileSync(path.join(__dirname, 'obj/settings.png'), (await window.webContents.capturePage()).toPNG());
         assert.equal(await evaluate(`globalThis.Bedrock.webpack.find(value => value?.fixtureLate)?.fixtureLate`), true);
         assert.equal(globalThis.BedrockMain.settings('test.example').get('event'), 'cross-process');
+        await waitFor(`globalThis.Bedrock.plugins.list().find(plugin => plugin.manifest.id === 'bedrock.developer-tools')?.rendererStatus === 'running'`);
+        const inspected = await bridgeRequest({ operation: 'inspect', selector: '#settings-label', windowId: window.id });
+        assert.equal(inspected.elements[0].text, 'Settings description');
+        assert.equal(inspected.elements[0].ancestors.some(node => node.classes.includes('standardSidebarView_fixture')), true);
+        const selection = await bridgeRequest({ operation: 'styles', selector: '#settings-label', windowId: window.id, properties: ['user-select'] });
+        assert.equal(selection.elements[0].ancestors[0].computed['user-select'], 'text');
+        assert.equal(selection.elements[0].ancestors[0].matchingRules.some(rule => rule.declarations['user-select']?.value === 'text'), true);
+        await assert.rejects(bridgeRequest({ operation: 'inspect', selector: '[', windowId: window.id }));
+        if (process.argv.includes('--bedrock-mcp-smoke')) await mcpSmoke();
+        await globalThis.BedrockMain.setEnabled('bedrock.developer-tools', false);
+        await waitFor(`globalThis.BedrockInspector === undefined`);
+        await assert.rejects(bridgeRequest({ operation: 'status' }));
+        await globalThis.BedrockMain.setEnabled('bedrock.developer-tools', true);
+        await waitFor(`globalThis.BedrockInspector !== undefined`);
+        assert.equal((await bridgeRequest({ operation: 'status' })).processId, process.pid);
         await evaluate(`globalThis.Bedrock.plugins.setEnabled('test.pending', false)`);
         assert.equal(await evaluate(`globalThis.Bedrock.plugins.list().find(plugin => plugin.manifest.id === 'test.pending').rendererStatus`), 'stopped');
         assert.equal(await evaluate(`globalThis.fixturePendingStopped === true && document.querySelector('[data-bedrock-plugin="test.pending"]') === null`), true);
-        await evaluate(`document.querySelector('[role=switch]').click()`);
-        await waitFor(`globalThis.Bedrock.plugins.list()[0].rendererStatus === 'stopped'`);
+        await evaluate(`document.querySelector('[role=switch][aria-label="Enable Example plugin"]').click()`);
+        await waitFor(`globalThis.Bedrock.plugins.list().find(plugin => plugin.manifest.id === 'test.example').rendererStatus === 'stopped'`);
         assert.equal(await evaluate('globalThis.fixtureMethod()'), 1);
-        assert.equal(await evaluate(`document.querySelector('[data-bedrock-plugin]') === null`), true);
+        assert.equal(await evaluate(`document.querySelector('[data-bedrock-plugin="test.example"]') === null`), true);
         assert.equal(await evaluate('globalThis.fixtureStops'), 1);
-        await evaluate(`document.querySelector('[role=switch]').click()`);
-        await waitFor(`globalThis.Bedrock.plugins.list()[0].rendererStatus === 'running'`);
+        await evaluate(`document.querySelector('[role=switch][aria-label="Enable Example plugin"]').click()`);
+        await waitFor(`globalThis.Bedrock.plugins.list().find(plugin => plugin.manifest.id === 'test.example').rendererStatus === 'running'`);
         assert.equal(await evaluate('globalThis.fixtureStarts'), 2);
         assert.equal(await evaluate('globalThis.fixtureMethod()'), 11);
         await evaluate(`(() => {
@@ -147,11 +252,11 @@ app.whenReady().then(async () => {
         assert.equal(await evaluate(`getComputedStyle(document.querySelector('.bedrock-readme strong')).userSelect`), 'text');
         assert.equal(await evaluate(`globalThis.badReadme === undefined && document.querySelector('.bedrock-readme a[href^="javascript:"]') === null`), true);
         assert.equal(await evaluate(`document.querySelector('.bedrock-grid') === null && document.querySelector('[role=tab][aria-selected=true]').textContent === 'Details'`), true);
-        await evaluate(`document.querySelector('[role=switch]').click()`);
-        await waitFor(`globalThis.Bedrock.plugins.list()[0].rendererStatus === 'stopped'`);
+        await evaluate(`document.querySelector('[role=switch][aria-label="Enable Example plugin"]').click()`);
+        await waitFor(`globalThis.Bedrock.plugins.list().find(plugin => plugin.manifest.id === 'test.example').rendererStatus === 'stopped'`);
         assert.equal(await evaluate(`document.querySelector('.bedrock-readme h1').textContent`), 'Example documentation');
-        await evaluate(`document.querySelector('[role=switch]').click()`);
-        await waitFor(`globalThis.Bedrock.plugins.list()[0].rendererStatus === 'running'`);
+        await evaluate(`document.querySelector('[role=switch][aria-label="Enable Example plugin"]').click()`);
+        await waitFor(`globalThis.Bedrock.plugins.list().find(plugin => plugin.manifest.id === 'test.example').rendererStatus === 'running'`);
         await new Promise(resolve => setTimeout(resolve, 150));
         fs.writeFileSync(path.join(__dirname, 'obj/plugin-details.png'), (await window.webContents.capturePage()).toPNG());
         await evaluate(`[...document.querySelectorAll('button')].find(button => button.textContent === '\\u2190 Back to plugins').click()`);

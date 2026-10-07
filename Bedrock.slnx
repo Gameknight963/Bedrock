@@ -8,4 +8,7 @@
   <Project Path="Runtime/Runtime.esproj">
     <Platform Project="AnyCPU" />
   </Project>
+  <Project Path="MCP/Bedrock.Mcp.csproj">
+    <Platform Project="AnyCPU" />
+  </Project>
 </Solution>
