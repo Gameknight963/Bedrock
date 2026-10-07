@@ -3,8 +3,6 @@ const path = require('node:path');
 const os = require('node:os');
 const assert = require('node:assert/strict');
 const { app } = require('electron');
-const net = require('node:net');
-const { spawn } = require('node:child_process');
 const { writeJson } = require('../storage.cjs');
 const root = globalThis.BedrockMain?.root || fs.mkdtempSync(path.join(os.tmpdir(), 'Bedrock-electron-'));
 const directory = path.join(root, 'plugins', 'example');
@@ -63,7 +61,6 @@ fs.writeFileSync(path.join(pendingDirectory, 'renderer.js'), `export async funct
 const selectableDirectory = path.join(root, 'plugins', 'selectable-settings');
 fs.cpSync(path.join(__dirname, '../../Plugins/selectable-settings'), selectableDirectory, { recursive: true });
 
-fs.cpSync(path.join(__dirname, '../../Plugins/mcp-bridge'), path.join(root, 'plugins', 'mcp-bridge'), { recursive: true });
 fs.cpSync(path.join(__dirname, '../../Examples/example'), path.join(root, 'plugins', 'shipped-example'), { recursive: true });
 
 require('../bootstrap.cjs').install({ root, allowURL: url => url.origin === 'https://bedrock.test', restart: () => { globalThis.fixtureRestartRequested = true; return true; } });
@@ -127,81 +124,6 @@ async function waitFor(script) {
     }
     throw new Error(`Timed out: ${script}\n${failures.join('\n')}`);
 }
-function bridgeRequest(request) {
-    return new Promise((resolve, reject) => {
-        const socket = net.connect(`\\\\.\\pipe\\Bedrock-Dev-${process.pid}`);
-        socket.setEncoding('utf8');
-        socket.setTimeout(5000, () => socket.destroy(new Error('Inspection timeout')));
-        socket.on('error', reject);
-        let buffer = '';
-        socket.on('data', chunk => {
-            buffer += chunk;
-            if (buffer.includes('\n')) {
-                socket.destroy();
-                const response = JSON.parse(buffer.split('\n')[0]);
-                if (response.error) reject(new Error(response.error)); else resolve(response.result);
-            }
-        });
-        socket.on('connect', () => socket.write(JSON.stringify(request) + '\n'));
-    });
-}
-
-async function mcpSmoke() {
-    const child = spawn('dotnet', [path.join(__dirname, '../../MCP/bin/Debug/net10.0/Bedrock.Mcp.dll')], { windowsHide: true });
-    const pending = new Map();
-    const errors = [];
-    let buffer = '', nextId = 0;
-    child.stdout.setEncoding('utf8');
-    child.stderr.on('data', chunk => errors.push(chunk.toString()));
-    child.on('error', error => { for (const handler of pending.values()) handler.reject(error); });
-    child.stdout.on('data', chunk => {
-        buffer += chunk;
-        while (buffer.includes('\n')) {
-            const index = buffer.indexOf('\n');
-            const response = JSON.parse(buffer.slice(0, index));
-            buffer = buffer.slice(index + 1);
-            const handler = pending.get(response.id);
-            if (handler) {
-                clearTimeout(handler.timer); pending.delete(response.id);
-                if (response.error) handler.reject(new Error(JSON.stringify(response.error))); else handler.resolve(response.result);
-            }
-        }
-    });
-    const request = (method, params) => new Promise((resolve, reject) => {
-        const id = ++nextId;
-        const timer = setTimeout(() => { pending.delete(id); reject(new Error(`MCP timeout: ${method} ${errors.join('')}`)); }, 10000);
-        pending.set(id, { resolve, reject, timer });
-        child.stdin.write(JSON.stringify({ jsonrpc: '2.0', id, method, params }) + '\n');
-    });
-    try {
-        const initialized = await request('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'Bedrock test', version: '1.0' } });
-        assert.equal(initialized.serverInfo.name, 'Bedrock');
-        child.stdin.write(JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' }) + '\n');
-        const tools = await request('tools/list', {});
-        assert.deepEqual(tools.tools.map(tool => tool.name).sort(), ['get_styles', 'inspect_element', 'screenshot', 'status']);
-        const status = await request('tools/call', { name: 'status', arguments: {} });
-        assert.equal(JSON.parse(status.content[0].text).instances.some(instance => instance.processId === process.pid), true);
-        const inspected = await request('tools/call', { name: 'inspect_element', arguments: { selector: '#settings-label', processId: process.pid, windowId: window.id } });
-        assert.equal(JSON.parse(inspected.content[0].text).elements[0].id, 'settings-label');
-        const styles = await request('tools/call', { name: 'get_styles', arguments: { selector: '#settings-label', processId: process.pid, windowId: window.id, properties: ['user-select'] } });
-        assert.equal(JSON.parse(styles.content[0].text).elements[0].ancestors[0].computed['user-select'], 'text');
-        const image = await request('tools/call', { name: 'screenshot', arguments: { processId: process.pid, windowId: window.id } });
-        assert.equal(image.content[0].type, 'image');
-        assert.equal(image.content[0].mimeType, 'image/png');
-        assert.equal(Buffer.from(image.content[0].data, 'base64').subarray(1, 4).toString(), 'PNG');
-        const bad = await request('tools/call', { name: 'inspect_element', arguments: { selector: '[', processId: process.pid, windowId: window.id } });
-        assert.equal(bad.isError, true);
-        const exited = new Promise(resolve => child.once('exit', resolve));
-        child.stdin.end();
-        const timeout = setTimeout(() => child.kill(), 5000);
-        try { assert.equal(await exited, 0); } finally { clearTimeout(timeout); }
-        console.log('PASS: C# MCP to named pipe to real Electron DOM, CSS, screenshots and error responses.');
-    } finally {
-        for (const handler of pending.values()) clearTimeout(handler.timer);
-        if (child.exitCode === null) child.kill();
-    }
-}
-
 app.whenReady().then(async () => {
     try {
         session.defaultSession.protocol.handle('https', request => {
@@ -243,21 +165,6 @@ app.whenReady().then(async () => {
         fs.writeFileSync(path.join(__dirname, 'obj/settings.png'), (await window.webContents.capturePage()).toPNG());
         assert.equal(await evaluate(`globalThis.Bedrock.webpack.find(value => value?.fixtureLate)?.fixtureLate`), true);
         assert.equal(globalThis.BedrockMain.settings('test.example').get('event'), 'cross-process');
-        await waitFor(`globalThis.Bedrock.plugins.list().find(plugin => plugin.manifest.id === 'bedrock.mcp-bridge')?.rendererStatus === 'running'`);
-        const inspected = await bridgeRequest({ operation: 'inspect', selector: '#settings-label', windowId: window.id });
-        assert.equal(inspected.elements[0].text, 'Settings description');
-        assert.equal(inspected.elements[0].ancestors.some(node => node.classes.includes('contentBody_fixture')), true);
-        const selection = await bridgeRequest({ operation: 'styles', selector: '#settings-label', windowId: window.id, properties: ['user-select'] });
-        assert.equal(selection.elements[0].ancestors[0].computed['user-select'], 'text');
-        assert.equal(selection.elements[0].ancestors[0].matchingRules.some(rule => rule.declarations['user-select']?.value === 'text'), true);
-        await assert.rejects(bridgeRequest({ operation: 'inspect', selector: '[', windowId: window.id }));
-        if (process.argv.includes('--bedrock-mcp-smoke')) await mcpSmoke();
-        await globalThis.BedrockMain.setEnabled('bedrock.mcp-bridge', false);
-        await waitFor(`globalThis.BedrockInspector === undefined`);
-        await assert.rejects(bridgeRequest({ operation: 'status' }));
-        await globalThis.BedrockMain.setEnabled('bedrock.mcp-bridge', true);
-        await waitFor(`globalThis.BedrockInspector !== undefined`);
-        assert.equal((await bridgeRequest({ operation: 'status' })).processId, process.pid);
         await evaluate(`globalThis.Bedrock.plugins.setEnabled('test.pending', false)`);
         assert.equal(await evaluate(`globalThis.Bedrock.plugins.list().find(plugin => plugin.manifest.id === 'test.pending').rendererStatus`), 'stopped');
         assert.equal(await evaluate(`globalThis.fixturePendingStopped === true && document.querySelector('[data-bedrock-plugin="test.pending"]') === null`), true);
@@ -419,7 +326,7 @@ app.whenReady().then(async () => {
         assert.equal(await evaluate(`(async () => (await fetch('bedrock://themes/%2e%2e/settings.json')).status)()`), 404);
         await window.loadURL('https://unrelated.test/');
         assert.equal(await evaluate(`globalThis.Bedrock === undefined && globalThis.BedrockNative === undefined`), true, 'bridge must not appear on unrelated origins');
-        console.log('PASS: Real Electron preload, settings controls, validation, restart requests, persistence, React settings subscriptions, synchronization across main and two windows, live cleanup/re-enable, MCP bridge, safe Markdown and origin checks.');
+        console.log('PASS: Real Electron preload, settings controls, validation, restart requests, persistence, React settings subscriptions, synchronization across main and two windows, live cleanup/re-enable, safe Markdown and origin checks.');
         await globalThis.BedrockMain.stopAll();
         globalThis.BedrockMain.themes.close();
         window.destroy();

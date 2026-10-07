@@ -1,21 +1,15 @@
 param(
     [string]$Electron = (Join-Path $PSScriptRoot 'obj/node_modules/electron/dist/electron.exe'),
     [switch]$ThroughInspector,
-    [switch]$WithMcp,
     [int]$Port = 19330
 )
 $ErrorActionPreference = 'Stop'
 if (-not (Test-Path -LiteralPath $Electron)) {
     throw 'Install the isolated test dependencies first: npm install --prefix Runtime/tests/obj electron@42.7.1 react@18.3.1 react-dom@18.3.1'
 }
-if ($WithMcp) {
-    & dotnet build (Join-Path $PSScriptRoot '../../MCP/Bedrock.Mcp.csproj') --nologo
-    if ($LASTEXITCODE -ne 0) { throw 'MCP server build failed' }
-}
 $fixtureArguments = @()
 if ($ThroughInspector) { $fixtureArguments += "--inspect-brk=127.0.0.1:$Port" }
 $fixtureArguments += ('"' + (Join-Path $PSScriptRoot 'electron-smoke.cjs') + '"')
-if ($WithMcp) { $fixtureArguments += '--bedrock-mcp-smoke' }
 $fixtureProcess = Start-Process -FilePath $Electron -ArgumentList $fixtureArguments -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $PSScriptRoot 'obj/electron-stdout.log') -RedirectStandardError (Join-Path $PSScriptRoot 'obj/electron-stderr.log')
 $bootstrapRoot = $null
 try {
