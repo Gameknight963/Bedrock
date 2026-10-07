@@ -43,7 +43,7 @@ require('electron').protocol.registerSchemesAsPrivileged([{ scheme: 'fixtureextr
 const { BrowserWindow, session } = require('electron');
 let window;
 const failures = [];
-const html = `<!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline'"></head><body style="background:#313338;padding:16px"><div id="root"></div><script src="/react-unused.js"></script><script src="/remember-unused.js"></script><script src="/react.js"></script><script src="/react-dom.js"></script><script src="/fixture.js"></script></body></html>`;
+const html = `<!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline'"><style>*{user-select:none}</style></head><body style="background:#313338;padding:16px"><div id="root"></div><script src="/react-unused.js"></script><script src="/remember-unused.js"></script><script src="/react.js"></script><script src="/react-dom.js"></script><script src="/fixture.js"></script></body></html>`;
 const fixture = `
     globalThis.fixtureMethod = () => 1;
     globalThis.webpackChunkdiscord_app = [];
@@ -144,6 +144,7 @@ app.whenReady().then(async () => {
         await evaluate(`[...document.querySelectorAll('button')].find(button => button.textContent === 'Open').click()`);
         await waitFor(`document.querySelector('.bedrock-readme strong')`);
         assert.equal(await evaluate(`document.querySelector('.bedrock-readme h1').textContent`), 'Example documentation');
+        assert.equal(await evaluate(`getComputedStyle(document.querySelector('.bedrock-readme strong')).userSelect`), 'text');
         assert.equal(await evaluate(`globalThis.badReadme === undefined && document.querySelector('.bedrock-readme a[href^="javascript:"]') === null`), true);
         assert.equal(await evaluate(`document.querySelector('.bedrock-grid') === null && document.querySelector('[role=tab][aria-selected=true]').textContent === 'Details'`), true);
         await evaluate(`document.querySelector('[role=switch]').click()`);

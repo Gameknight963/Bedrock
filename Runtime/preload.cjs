@@ -247,6 +247,7 @@ function installRenderer(configuration) {
         .bedrock-switch[aria-checked=true]{background:var(--status-positive,#23a559)}.bedrock-switch span{display:block;width:18px;height:18px;background:white;border-radius:50%;transition:transform .12s}
         .bedrock-switch[aria-checked=true] span{transform:translateX(18px)}.bedrock-switch:disabled{opacity:.5;cursor:wait}
         .bedrock-error{color:var(--text-danger,#fa777c);overflow-wrap:anywhere}.bedrock-restart{color:var(--text-warning,#f0b232)}
+        .bedrock-readme,.bedrock-readme *{user-select:text!important;-webkit-user-select:text!important}
         .bedrock-readme{line-height:1.6;overflow-wrap:anywhere}.bedrock-readme pre{white-space:pre-wrap;background:var(--background-tertiary,#1e1f22);padding:14px;border-radius:6px}
         .bedrock-readme code{font-family:var(--font-code,monospace)}.bedrock-readme a{color:var(--text-link,#00a8fc)}
         .bedrock-card p{margin:10px 0}.bedrock-name{padding:0;border:0;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer}

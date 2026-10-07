@@ -3,6 +3,21 @@
     <Platform Name="x64" />
     <Platform Name="x86" />
   </Configurations>
+  <Folder Name="/Runtime/">
+    <File Path="Runtime/bootstrap.cjs" />
+    <File Path="Runtime/context.cjs" />
+    <File Path="Runtime/control.cjs" />
+    <File Path="Runtime/plugins.cjs" />
+    <File Path="Runtime/preload.cjs" />
+    <File Path="Runtime/storage.cjs" />
+    <File Path="Runtime/README.md" />
+  </Folder>
+  <Folder Name="/Runtime/tests/">
+    <File Path="Runtime/tests/control.test.cjs" />
+    <File Path="Runtime/tests/plugins.test.cjs" />
+    <File Path="Runtime/tests/electron-smoke.cjs" />
+    <File Path="Runtime/tests/electron-smoke.ps1" />
+  </Folder>
   <Project Path="Launcher/Launcher.vcxproj" Id="92e08354-8697-438d-9fb9-0ddd4880e9c8" />
   <Project Path="Tests/BedrockTests.vcxproj" Id="4a781370-71da-4492-989d-10be3655472b" />
 </Solution>
