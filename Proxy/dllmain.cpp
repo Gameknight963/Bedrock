@@ -1,8 +1,11 @@
+#define WIN32_LEAN_AND_MEAN             // Exclude rarely-used stuff from Windows headers
+
 #include <Windows.h>
 #include <MinHook.h>
 #include <iostream>
 #include <fstream>
 #include <string>
+#pragma once
 
 #pragma comment(linker, "/export:GetFileVersionInfoA=C:\\Windows\\System32\\version.GetFileVersionInfoA")
 #pragma comment(linker, "/export:GetFileVersionInfoByHandle=C:\\Windows\\System32\\version.GetFileVersionInfoByHandle")
@@ -75,8 +78,6 @@ DWORD WINAPI Initialize(void*)
     Log(L"PID: " + std::to_wstring(GetCurrentProcessId()));
     Log(L"Command line: " + std::wstring(GetCommandLineW()));
     Log(L"--------------------");
-
-    
 
     return 0;
 }
