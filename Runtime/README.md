@@ -2,7 +2,7 @@
 
 Build and run the Launcher project after quitting Discord. Its build copies the runtime next to the executable. No browser debugger, separate Node installation, or JavaScript build step is needed to use Bedrock. The launcher installs `bootstrap.cjs` before Discord's application entry point, then closes the inspector port. The bootstrap supplies the plugin loader and renderer preload for the rest of the session.
 
-In Discord's User Settings, **Bedrock → Plugins** provides search, enable switches, and a detail page with **Details** and **Settings** tabs. **Open plugins folder** opens your installed packages; **Load missing plugins** discovers new ones. This is independently implemented; Equicord's settings behavior informed the design, but its GPL source is not included.
+In Discord's User Settings, **Bedrock → Plugins** provides search, enable switches, and a detail page with **Details** and **Settings** tabs. **Open plugins folder** opens your installed packages; **Refresh plugins** discovers new ones and unloads removed or invalid packages. This is independently implemented; Equicord's settings behavior informed the design, but its GPL source is not included.
 
 ## Locations
 
@@ -20,7 +20,7 @@ In Discord's User Settings, **Bedrock → Plugins** provides search, enable swit
             settings.json
 ```
 
-Copy `Examples/example` into the plugins directory and choose **Load missing plugins**. New packages are enabled by default. Enable state and plugin settings survive restarts. Rescanning discovers additions; editing or removing already loaded packages currently requires restarting Discord. Disable a plugin before editing its files.
+Copy `Examples/example` into the plugins directory and choose **Refresh plugins**. New packages are enabled by default. Enable state and plugin settings survive restarts. Refreshing discovers additions and unloads removed or invalid packages, including their owned resources. Saved data is retained if you reinstall a plugin. Editing an already loaded package still requires restarting Discord; disable it before editing its files.
 
 ## Package files
 

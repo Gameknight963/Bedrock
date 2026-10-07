@@ -63,7 +63,7 @@ fs.writeFileSync(path.join(pendingDirectory, 'renderer.js'), `export async funct
 const selectableDirectory = path.join(root, 'plugins', 'selectable-settings');
 fs.cpSync(path.join(__dirname, '../../Plugins/selectable-settings'), selectableDirectory, { recursive: true });
 
-fs.cpSync(path.join(__dirname, '../../Plugins/developer-tools'), path.join(root, 'plugins', 'developer-tools'), { recursive: true });
+fs.cpSync(path.join(__dirname, '../../Plugins/mcp-bridge'), path.join(root, 'plugins', 'mcp-bridge'), { recursive: true });
 fs.cpSync(path.join(__dirname, '../../Examples/example'), path.join(root, 'plugins', 'shipped-example'), { recursive: true });
 
 require('../bootstrap.cjs').install({ root, allowURL: url => url.origin === 'https://bedrock.test', restart: () => { globalThis.fixtureRestartRequested = true; return true; } });
@@ -243,7 +243,7 @@ app.whenReady().then(async () => {
         fs.writeFileSync(path.join(__dirname, 'obj/settings.png'), (await window.webContents.capturePage()).toPNG());
         assert.equal(await evaluate(`globalThis.Bedrock.webpack.find(value => value?.fixtureLate)?.fixtureLate`), true);
         assert.equal(globalThis.BedrockMain.settings('test.example').get('event'), 'cross-process');
-        await waitFor(`globalThis.Bedrock.plugins.list().find(plugin => plugin.manifest.id === 'bedrock.developer-tools')?.rendererStatus === 'running'`);
+        await waitFor(`globalThis.Bedrock.plugins.list().find(plugin => plugin.manifest.id === 'bedrock.mcp-bridge')?.rendererStatus === 'running'`);
         const inspected = await bridgeRequest({ operation: 'inspect', selector: '#settings-label', windowId: window.id });
         assert.equal(inspected.elements[0].text, 'Settings description');
         assert.equal(inspected.elements[0].ancestors.some(node => node.classes.includes('contentBody_fixture')), true);
@@ -252,10 +252,10 @@ app.whenReady().then(async () => {
         assert.equal(selection.elements[0].ancestors[0].matchingRules.some(rule => rule.declarations['user-select']?.value === 'text'), true);
         await assert.rejects(bridgeRequest({ operation: 'inspect', selector: '[', windowId: window.id }));
         if (process.argv.includes('--bedrock-mcp-smoke')) await mcpSmoke();
-        await globalThis.BedrockMain.setEnabled('bedrock.developer-tools', false);
+        await globalThis.BedrockMain.setEnabled('bedrock.mcp-bridge', false);
         await waitFor(`globalThis.BedrockInspector === undefined`);
         await assert.rejects(bridgeRequest({ operation: 'status' }));
-        await globalThis.BedrockMain.setEnabled('bedrock.developer-tools', true);
+        await globalThis.BedrockMain.setEnabled('bedrock.mcp-bridge', true);
         await waitFor(`globalThis.BedrockInspector !== undefined`);
         assert.equal((await bridgeRequest({ operation: 'status' })).processId, process.pid);
         await evaluate(`globalThis.Bedrock.plugins.setEnabled('test.pending', false)`);
@@ -393,6 +393,10 @@ app.whenReady().then(async () => {
         await waitFor(`getComputedStyle(document.querySelector('.bedrock-grid')).gridTemplateColumns.split(' ').length === 1`);
 
         assert.equal(await evaluate(`(async () => (await fetch('bedrock://plugins/test.example/../outside')).status)()`), 404);
+        fs.rmSync(directory, { recursive: true });
+        await evaluate(`Bedrock.plugins.rescan()`);
+        await waitFor(`!Bedrock.plugins.list().some(plugin => plugin.manifest.id === 'test.example') && fixtureMethod() === 1 && document.querySelector('[data-bedrock-plugin="test.example"]') === null`);
+        assert.equal(globalThis.BedrockMain.records.has('test.example'), false);
         await evaluate(`fixtureShowThemes()`);
         await waitFor(`document.querySelector('[aria-label="Search themes"]') && document.querySelector('[aria-label="Enable Live theme"]')`);
         assert.equal(await evaluate(`document.querySelector('.bedrock-theme-website').href`), 'https://example.com/theme');

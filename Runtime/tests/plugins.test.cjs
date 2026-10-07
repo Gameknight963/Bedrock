@@ -21,6 +21,25 @@ function plugin(root, id, source, overrides = {}, folder = id) {
 }
 const quiet = { log() {} };
 
+test('refresh unloads removed plugins and retains their saved settings', async t => {
+    const root = fixture(t);
+    globalThis.bedrockRemoved = { method: () => 1, stopped: false };
+    t.after(() => { delete globalThis.bedrockRemoved; });
+    const directory = plugin(root, 'test.removed', `export function start(ctx) {
+        ctx.patches.after(globalThis.bedrockRemoved, 'method', () => 2);
+        ctx.settings.set('keep', 42);
+    } export function stop() { globalThis.bedrockRemoved.stopped = true; }`);
+    const manager = createPluginManager(root, quiet);
+    manager.scan();
+    assert.equal(globalThis.bedrockRemoved.method(), 2);
+    fs.rmSync(directory, { recursive: true });
+    await manager.refresh();
+    assert.deepEqual(manager.list(), []);
+    assert.equal(globalThis.bedrockRemoved.method(), 1);
+    assert.equal(globalThis.bedrockRemoved.stopped, true);
+    assert.equal(manager.settings('test.removed').get('keep'), 42);
+});
+
 test('disabled packages are inspected without executing; state and settings survive a new manager', async t => {
     const root = fixture(t);
     const marker = path.join(root, 'executed');

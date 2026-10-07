@@ -224,6 +224,13 @@ function installRenderer(configuration) {
         if (next.revision < snapshot.revision) return;
         snapshot = structuredClone(next);
         applyThemes();
+        const present = new Set(snapshot.plugins.map(info => info.manifest.id));
+        for (const [id, record] of records) if (!present.has(id)) {
+            record.info = { ...record.info, enabled: false };
+            record.instance?.dispose();
+            records.delete(id);
+            record.pending = record.pending.catch(error => log(id, error)).then(() => reconcile(record));
+        }
         for (const info of snapshot.plugins) {
             let record = records.get(info.manifest.id);
             if (!record) records.set(info.manifest.id, record = { info, status: info.renderer ? 'stopped' : 'main-only', pending: Promise.resolve() });
@@ -515,7 +522,7 @@ function installRenderer(configuration) {
             h('div', { className: 'bedrock-toolbar' },
                 h('input', { type: 'search', placeholder: 'Search plugins', 'aria-label': 'Search plugins', value: search, onChange: event => setSearch(event.target.value) }),
                 h('button', { className: 'bedrock-button', disabled: !!busy, onClick: () => run('folder', () => native.request('openFolder')) }, 'Open plugins folder'),
-                h('button', { className: 'bedrock-button', disabled: !!busy, onClick: () => run('rescan', async () => update(await native.request('rescan'))) }, 'Load missing plugins')),
+                h('button', { className: 'bedrock-button', disabled: !!busy, onClick: () => run('rescan', async () => update(await native.request('rescan'))) }, 'Refresh list')),
             error && h('p', { className: 'bedrock-error', role: 'alert' }, error),
             ...snapshot.errors.map((item, key) => h('p', { key: `error-${key}`, className: 'bedrock-error' }, `${item.folder}: ${item.error}`)),
             h('div', { className: 'bedrock-grid' }, plugins.filter(plugin =>
@@ -530,7 +537,7 @@ function installRenderer(configuration) {
                 plugin.error && h('p', { className: 'bedrock-error', role: 'alert' }, plugin.error),
                 plugin.restartReason && h('p', { className: 'bedrock-restart' }, `Restart needed: ${plugin.restartReason}`),
                 h('button', { className: 'bedrock-button', onClick: () => open(plugin.manifest.id) }, 'Open')))),
-            plugins.length === 0 && h('p', { className: 'bedrock-muted' }, 'No plugins installed. Open the plugins folder, add a plugin folder, then choose Load missing plugins.'),
+            plugins.length === 0 && h('p', { className: 'bedrock-muted' }, 'No plugins installed. Open the plugins folder, add a plugin folder, then choose Refresh plugins.'),
             plugins.length > 0 && !plugins.some(plugin => `${plugin.manifest.name} ${plugin.manifest.id} ${plugin.manifest.description || ''}`.toLowerCase().includes(search.toLowerCase())) && h('p', { className: 'bedrock-muted' }, 'No plugins match your search.'));
 
     }

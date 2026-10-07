@@ -161,8 +161,7 @@ function createPluginManager(root, options = {}) {
         finally { instance.dispose(); record.instance = null; record.startPromise = null; record.status = 'stopped'; }
     }
 
-    function scan() {
-        const discovered = discover(root);
+    function scan(discovered = discover(root)) {
         discoveryErrors = discovered.errors;
         for (const error of discoveryErrors) log('error', 'loader', [`${error.folder}: ${error.error}`]);
         for (const [id, plugin] of discovered.plugins) {
@@ -177,6 +176,25 @@ function createPluginManager(root, options = {}) {
     }
 
     const transitions = new Map();
+    let refreshWork = Promise.resolve();
+    function refresh() {
+        refreshWork = refreshWork.catch(() => {}).then(async () => {
+            const discovered = discover(root);
+            for (const [id, record] of records) {
+                if (discovered.plugins.has(id)) continue;
+                const removal = (transitions.get(id) || Promise.resolve()).catch(() => {}).then(async () => {
+                    await stop(record);
+                    records.delete(id);
+                    definitions.delete(id);
+                    for (const key of restartBaselines.keys()) if (key.startsWith(`${id}/`)) restartBaselines.delete(key);
+                });
+                transitions.set(id, removal);
+                await removal;
+            }
+            return scan(discovered);
+        });
+        return refreshWork;
+    }
     function setEnabled(id, value) {
         const work = (transitions.get(id) || Promise.resolve()).catch(() => {}).then(async () => {
             const record = records.get(id);
@@ -190,7 +208,7 @@ function createPluginManager(root, options = {}) {
         transitions.set(id, work);
         return work;
     }
-    return { root, records, events, settings, list, scan, setEnabled, registerSettings, definePluginSettings, OptionType, errors: () => discoveryErrors,
+    return { root, records, events, settings, list, scan, refresh, setEnabled, registerSettings, definePluginSettings, OptionType, errors: () => discoveryErrors,
         stopAll: () => Promise.all([...records.values()].map(stop)) };
 }
 
