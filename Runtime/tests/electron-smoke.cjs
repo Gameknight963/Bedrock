@@ -64,6 +64,7 @@ const selectableDirectory = path.join(root, 'plugins', 'selectable-settings');
 fs.cpSync(path.join(__dirname, '../../Plugins/selectable-settings'), selectableDirectory, { recursive: true });
 
 fs.cpSync(path.join(__dirname, '../../Plugins/developer-tools'), path.join(root, 'plugins', 'developer-tools'), { recursive: true });
+fs.cpSync(path.join(__dirname, '../../Examples/example'), path.join(root, 'plugins', 'shipped-example'), { recursive: true });
 
 require('../bootstrap.cjs').install({ root, allowURL: url => url.origin === 'https://bedrock.test', restart: () => { globalThis.fixtureRestartRequested = true; return true; } });
 globalThis.BedrockMain.scan();
@@ -213,6 +214,8 @@ app.whenReady().then(async () => {
         await window.loadURL('https://bedrock.test/');
         await waitFor(`globalThis.Bedrock?.plugins.list().find(plugin => plugin.manifest.id === 'test.example')?.rendererStatus === 'running' && document.querySelector('[role=switch][aria-label="Enable Example plugin"]')`);
         assert.equal(await evaluate('globalThis.originalPreload'), true, 'existing Discord preload must be preserved');
+        await waitFor(`Bedrock.plugins.list().find(plugin => plugin.manifest.id === 'bedrock.example')?.rendererStatus === 'running'`);
+        assert.deepEqual(await evaluate(`Object.keys(Bedrock.plugins.list().find(plugin => plugin.manifest.id === 'bedrock.example').settingsDefinitions)`), ['accent', 'color']);
         await waitFor(`globalThis.Bedrock.plugins.list().find(plugin => plugin.manifest.id === 'bedrock.selectable-settings')?.rendererStatus === 'running'`);
         assert.equal(await evaluate(`getComputedStyle(document.querySelector('#settings-label')).userSelect`), 'text');
         assert.equal(await evaluate(`getComputedStyle(document.querySelector('#outside-settings')).userSelect`), 'none');
@@ -260,7 +263,7 @@ app.whenReady().then(async () => {
         assert.equal(await evaluate('globalThis.fixtureMethod()'), 11);
         await evaluate(`(() => {
             const input = document.querySelector('input[type=search]');
-            Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, 'Example');
+            Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, 'Example plugin');
             input.dispatchEvent(new Event('input', { bubbles: true }));
         })()`);
         await waitFor(`document.querySelectorAll('.bedrock-card').length === 1`);
@@ -279,6 +282,7 @@ app.whenReady().then(async () => {
         assert.equal(await evaluate(`document.querySelector('.bedrock-grid') === null && document.querySelector('[role=tab][aria-selected=true]').textContent === 'Details'`), true);
         await evaluate(`document.querySelector('#bedrock-settings-tab').click()`);
         await waitFor(`document.querySelectorAll('.bedrock-setting').length === 6`);
+        assert.equal(await evaluate(`getComputedStyle(document.querySelector('#bedrock-settings-panel')).paddingLeft`), '12px');
         assert.equal(await evaluate(`document.querySelector('#bedrock-setting-title').value`), 'Example', 'main definitions render in the same settings page');
         assert.equal(await evaluate(`document.querySelector('#bedrock-setting-count').value`), '2');
         assert.equal(await evaluate(`document.querySelector('#bedrock-setting-volume').type`), 'range');
@@ -364,7 +368,7 @@ app.whenReady().then(async () => {
         fs.writeFileSync(path.join(__dirname, 'obj/plugin-details.png'), (await window.webContents.capturePage()).toPNG());
         await evaluate(`[...document.querySelectorAll('button')].find(button => button.textContent === '\\u2190 Back to plugins').click()`);
         await waitFor(`document.querySelector('input[type=search]')`);
-        assert.equal(await evaluate(`document.querySelector('input[type=search]').value`), 'Example');
+        assert.equal(await evaluate(`document.querySelector('input[type=search]').value`), 'Example plugin');
         assert.equal(await evaluate(`document.querySelectorAll('.bedrock-card').length`), 1);
         assert.equal(await evaluate(`document.querySelector('.bedrock-page').parentElement.scrollTop`), await evaluate('globalThis.savedPluginScroll'));
         window.setSize(900, 700);

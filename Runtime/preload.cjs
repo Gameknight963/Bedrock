@@ -273,6 +273,7 @@ function installRenderer(configuration) {
         .bedrock-card p{margin:10px 0}.bedrock-name{padding:0;border:0;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer}
         .bedrock-detail-header{display:flex;align-items:center;gap:12px;margin:16px 0 8px}.bedrock-detail-header h2{margin:0;font-size:20px;flex:1}
         .bedrock-tabs{display:flex;border-bottom:1px solid var(--border-subtle,#41434a);margin:18px 0 24px}
+        .bedrock-tabs + [role=tabpanel]{padding-inline:12px}
         .bedrock-tab{padding:8px 12px;background:none;border:0;border-bottom:2px solid var(--blurple-50,#5865f2);color:inherit;font:inherit}
         .bedrock-tab{border-bottom-color:transparent;cursor:pointer}.bedrock-tab[aria-selected=true]{border-bottom-color:var(--blurple-50,#5865f2)}
         .bedrock-setting{padding:16px 0;border-bottom:1px solid var(--border-subtle,#41434a)}
