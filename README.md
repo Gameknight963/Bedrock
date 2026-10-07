@@ -5,7 +5,7 @@ VERY wip.
 NOTHING permanant is changed, ever. NO files in Discord's installation are modified, 
 NO environment variables are modified, NO registry settings are changed. 
 
-The only thing that technically falls under this list is the data folder %LOCALAPPDATA%.
+The only thing that technically falls under this list is the data folder in %LOCALAPPDATA%.
 
 ## Get started
 
