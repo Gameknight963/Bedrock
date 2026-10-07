@@ -5,10 +5,10 @@
     <ProjectGuid>{823963DA-0AC3-4A12-938A-9BE7BFB62C86}</ProjectGuid>
   </PropertyGroup>
   <ItemGroup>
-    <ClCompile Remove="main.c;inspector.c;fuse.c" />
+    <ClCompile Remove="main.c;inspector.c;fuse.c;shutdown.c" />
     <ClCompile Include="inspector-smoke.c" />
     <ClCompile Include="../inspector.c" />
-    <ClInclude Remove="inspector.h;fuse.h" />
+    <ClInclude Remove="inspector.h;fuse.h;shutdown.h" />
     <ClInclude Include="../inspector.h" />
     <Manifest Remove="app.manifest" />
     <Manifest Include="../app.manifest" />

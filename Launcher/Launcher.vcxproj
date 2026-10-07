@@ -43,8 +43,8 @@
       <AdditionalManifestFiles>$(ProjectDir)app.manifest;%(AdditionalManifestFiles)</AdditionalManifestFiles>
     </Manifest>
   </ItemDefinitionGroup>
-  <ItemGroup><ClCompile Include="main.c" /><ClCompile Include="inspector.c" /><ClCompile Include="fuse.c" /></ItemGroup>
-  <ItemGroup><ClInclude Include="inspector.h" /><ClInclude Include="fuse.h" /></ItemGroup>
+  <ItemGroup><ClCompile Include="main.c" /><ClCompile Include="inspector.c" /><ClCompile Include="fuse.c" /><ClCompile Include="shutdown.c" /></ItemGroup>
+  <ItemGroup><ClInclude Include="inspector.h" /><ClInclude Include="fuse.h" /><ClInclude Include="shutdown.h" /></ItemGroup>
   <ItemGroup><Manifest Include="app.manifest" /></ItemGroup>
   <ItemGroup><None Include="README.md" /></ItemGroup>
   <ItemGroup>

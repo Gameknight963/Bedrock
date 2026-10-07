@@ -42,9 +42,11 @@
   </ItemDefinitionGroup>
   <ItemGroup>
     <ClCompile Include="fuse-tests.cpp" />
+    <ClCompile Include="shutdown-tests.cpp" />
+    <ClCompile Include="..\Launcher\shutdown.c"><CompileAs>CompileAsC</CompileAs></ClCompile>
     <ClCompile Include="..\Launcher\fuse.c"><CompileAs>CompileAsC</CompileAs></ClCompile>
     <ClCompile Include="..\lib\googletest\src\gtest-all.cc"><WarningLevel>Level3</WarningLevel></ClCompile>
-    <ClCompile Include="..\lib\googletest\src\gtest_main.cc"><WarningLevel>Level3</WarningLevel></ClCompile>
+    <ClCompile Include="test-main.cpp" />
   </ItemGroup>
   <ItemGroup><ClInclude Include="..\Launcher\fuse.h" /></ItemGroup>
   <ItemGroup><None Include="README.md" /></ItemGroup>

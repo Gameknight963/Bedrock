@@ -9,6 +9,7 @@
 #include <wchar.h>
 #include "inspector.h"
 #include "fuse.h"
+#include "shutdown.h"
 
 #define PATH_CAP 32768
 #define INSPECTOR_INDEX FUSE_INSPECTOR_INDEX
@@ -271,6 +272,7 @@ static int launch(int argc, wchar_t **argv, LaunchPaths *paths)
             fwprintf(stderr, L"Runtime\\bootstrap.cjs must be beside the launcher. Build the Launcher project first.\n"); return 1;
         }
     }
+    if (!shutdown_discord(path)) return 1;
     if (!port_available(port)) {
         fwprintf(stderr, L"Loopback port %hu unavailable. Choose another with --port.\n", port); return 1;
     }
@@ -298,8 +300,7 @@ static int launch(int argc, wchar_t **argv, LaunchPaths *paths)
     if (found) {
         wprintf(L"Inspector discovered at ws://127.0.0.1:%hu%ls\n", port, endpoint);
         success = inspector_bootstrap(session, port, endpoint, child.dwProcessId, paths->bootstrap);
-    } else fwprintf(stderr, L"Inspector did not appear within 15 seconds, or the child exited.\n"
-        L"Quit any existing Discord instance before retrying.\n");
+    } else fwprintf(stderr, L"Inspector did not appear within 15 seconds, or the child exited.\n");
 
 done:
     if (!success) {

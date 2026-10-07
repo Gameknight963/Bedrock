@@ -3,6 +3,7 @@ const path = require('node:path');
 const Module = require('node:module');
 const { createPluginManager } = require('./plugins.cjs');
 const { packagePath } = require('./storage.cjs');
+const { startControl } = require('./control.cjs');
 
 function install(options = {}) {
     if (globalThis.BedrockMain) return true;
@@ -150,6 +151,7 @@ function install(options = {}) {
     });
     globalThis.BedrockMain = manager;
     manager.scan();
+    startControl(app);
     console.info(`[Bedrock] Bootstrap installed. Plugins: ${path.join(root, 'plugins')}`);
     return true;
 }

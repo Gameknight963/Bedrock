@@ -2,6 +2,8 @@
 
 `BedrockTests` uses Google Test. It tests the same C fuse parser used by the launcher, with valid and malformed input. These tests do not start Discord or change its files.
 
+Windows shutdown tests start isolated copies of the test executable. They cover graceful quit, missing or unresponsive bootstraps, and leaving processes at other paths alone. Child processes run in a separate helper mode before the test runner starts.
+
 ## Run in Visual Studio
 
 - Open `Bedrock.slnx` and build `BedrockTests`.

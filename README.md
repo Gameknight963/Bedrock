@@ -14,7 +14,13 @@ The only thing that technically falls under this list is the data folder in %LOC
 
 Build `Launcher.vcxproj` (C17, Visual Studio v145).
 
-The launcher locates Discord and starts it suspended. It enables the inspector
+The launcher first closes processes using the selected Discord executable in your
+Windows session. Existing Bedrock instances receive a graceful quit request over
+a local named pipe, with a two-second timeout. If the bootstrap cannot be reached
+or Discord stays running, the launcher terminates the matching processes.
+`--check` remains read-only and leaves running instances alone.
+
+The launcher then starts Discord suspended. It enables the inspector
 fuse in memory, and resumes the initial thread. 
 
 Then it discovers the Node inspector through `/json/list`, enables the debugger,
@@ -39,6 +45,7 @@ search and README details. See [the API documentation](../Runtime/README.md) and
 ### What file does what
 
  - `main.c` owns process creation and the fuse patch
+ - `shutdown.c` closes existing instances before launching.
  - `fuse.c` validates the Electron fuse wire and is shared with the native tests.
  - `inspector.c` owns discovery, the WebSocket connection, JSON commands/replies, and shutdown. 
  - WinHTTP handles the handshake and WebSocket framing. 
