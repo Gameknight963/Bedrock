@@ -1,4 +1,30 @@
+import { createRequire } from 'node:module';
+
+const { definePluginSettings, OptionType } = Bedrock;
+const require = createRequire(import.meta.url);
+
+export const settings = definePluginSettings({
+    remoteDebugging: {
+        type: OptionType.BOOLEAN,
+        label: 'Enable remote debugging',
+        description: 'Allow tools such as Chrome DevTools MCP to connect at localhost:9222. The port stays open until Discord exits.',
+        default: false,
+        restartNeeded: true
+    }
+});
+
 export function start(ctx) {
+    const { app } = require('electron');
+    if (settings.store.remoteDebugging) {
+        if (app.isReady()) ctx.requireRestart('Restart Discord to enable remote debugging.');
+        else app.commandLine.appendSwitch('remote-debugging-port', '9222');
+    } else if (app.commandLine.hasSwitch('remote-debugging-port')) {
+        ctx.requireRestart('Restart Discord to close the remote debugging port.');
+    }
+    ctx.cleanup(() => {
+        if (app.commandLine.hasSwitch('remote-debugging-port'))
+            ctx.requireRestart('Restart Discord to close the remote debugging port.');
+    });
     ctx.windows.beforeCreate(options => { options.webPreferences.devTools = true; });
     const attached = new Set();
     const attach = window => {
