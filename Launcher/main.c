@@ -236,13 +236,14 @@ typedef struct LaunchPaths {
     wchar_t path[PATH_CAP];
     wchar_t directory[PATH_CAP];
     wchar_t command[PATH_CAP + 128];
+    wchar_t bootstrap[PATH_CAP];
 } LaunchPaths;
 
 static int launch(int argc, wchar_t **argv, LaunchPaths *paths)
 {
     wchar_t *path = paths->path, *directory = paths->directory, *command = paths->command;
     unsigned short port = 9229;
-    int check_only = 0, i, success = 0;
+    int check_only = 0, devtools = 0, i, success = 0;
     FuseLocation fuse = {0};
     STARTUPINFOW startup = {0};
     PROCESS_INFORMATION child = {0};
@@ -252,6 +253,7 @@ static int launch(int argc, wchar_t **argv, LaunchPaths *paths)
     int found = 0;
     for (i = 1; i < argc; ++i) {
         if (wcscmp(argv[i], L"--check") == 0) check_only = 1;
+        else if (wcscmp(argv[i], L"--devtools") == 0) devtools = 1;
         else if (wcscmp(argv[i], L"--exe") == 0 && i + 1 < argc) {
             DWORD length = GetFullPathNameW(argv[++i], PATH_CAP, path, NULL);
             if (!length) { win_error(L"Resolve executable"); return 1; }
@@ -262,7 +264,7 @@ static int launch(int argc, wchar_t **argv, LaunchPaths *paths)
             if (*end || value < 1 || value > 65535) { fwprintf(stderr, L"Invalid port.\n"); return 1; }
             port = (unsigned short)value;
         } else {
-            wprintf(L"Usage: BedrockLauncher [--check] [--exe <Discord.exe>] [--port <1-65535>]\n");
+            wprintf(L"Usage: BedrockLauncher [--check] [--devtools] [--exe <Discord.exe>] [--port <1-65535>]\n");
             return wcscmp(argv[i], L"--help") == 0 ? 0 : 1;
         }
     }
@@ -275,12 +277,25 @@ static int launch(int argc, wchar_t **argv, LaunchPaths *paths)
     wprintf(L"Fuse format %u, %u settings; inspector %lc; wire RVA 0x%08lX.\n",
         fuse.version, fuse.count, fuse.wire[INSPECTOR_INDEX], fuse.rva);
     if (check_only) { wprintf(L"Read-only check passed. No process started or memory changed.\n"); return 0; }
+    {
+        DWORD length = GetModuleFileNameW(NULL, paths->bootstrap, PATH_CAP);
+        wchar_t *slash;
+        if (!length || length >= PATH_CAP) { win_error(L"Locate launcher"); return 1; }
+        slash = wcsrchr(paths->bootstrap, L'\\');
+        if (!slash) return 1;
+        slash[1] = 0;
+        if (wcscat_s(paths->bootstrap, PATH_CAP, L"Runtime\\bootstrap.cjs") ||
+            GetFileAttributesW(paths->bootstrap) == INVALID_FILE_ATTRIBUTES) {
+            fwprintf(stderr, L"Runtime\\bootstrap.cjs must be beside the launcher. Build the Launcher project first.\n"); return 1;
+        }
+    }
     if (!port_available(port)) {
         fwprintf(stderr, L"Loopback port %hu unavailable. Choose another with --port.\n", port); return 1;
     }
     wcscpy_s(directory, PATH_CAP, path);
     { wchar_t *slash = wcsrchr(directory, L'\\'); if (!slash) return 1; *slash = 0; }
-    if (swprintf_s(command, PATH_CAP + 128, L"\"%ls\" --inspect-brk=127.0.0.1:%hu", path, port) < 0) return 1;
+    if (swprintf_s(command, PATH_CAP + 128, L"\"%ls\" --inspect-brk=127.0.0.1:%hu%ls", path, port,
+        devtools ? L" --bedrock-devtools" : L"") < 0) return 1;
     startup.cb = sizeof(startup);
     if (!CreateProcessW(path, command, NULL, NULL, FALSE, CREATE_SUSPENDED, NULL, directory, &startup, &child)) {
         win_error(L"CreateProcessW"); return 1;
@@ -300,7 +315,7 @@ static int launch(int argc, wchar_t **argv, LaunchPaths *paths)
     }
     if (found) {
         wprintf(L"Inspector discovered at ws://127.0.0.1:%hu%ls\n", port, endpoint);
-        success = inspector_test(session, port, endpoint, child.dwProcessId);
+        success = inspector_bootstrap(session, port, endpoint, child.dwProcessId, paths->bootstrap);
     } else fwprintf(stderr, L"Inspector did not appear within 15 seconds, or the child exited.\n"
         L"Quit any existing Discord instance before retrying.\n");
 

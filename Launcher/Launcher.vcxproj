@@ -47,5 +47,9 @@
   <ItemGroup><ClInclude Include="inspector.h" /></ItemGroup>
   <ItemGroup><Manifest Include="app.manifest" /></ItemGroup>
   <ItemGroup><None Include="README.md" /></ItemGroup>
+  <ItemGroup><RuntimeFile Include="$(ProjectDir)..\Runtime\*.cjs" /></ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <Target Name="CopyBedrockRuntime" AfterTargets="Build">
+    <Copy SourceFiles="@(RuntimeFile)" DestinationFolder="$(OutDir)Runtime" SkipUnchangedFiles="true" />
+  </Target>
 </Project>

@@ -11,8 +11,6 @@ The only thing that technically falls under this list is the data folder %LOCALA
 
 Build `Launcher.vcxproj` (C17, Visual Studio v145).
 
-### How it works
-
 The launcher locates Discord and starts it suspended. It enables the inspector
 fuse in memory, and resumes the initial thread. 
 

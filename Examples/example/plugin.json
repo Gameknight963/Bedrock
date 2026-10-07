@@ -1,0 +1,12 @@
+{
+    "manifestVersion": 1,
+    "apiVersion": 1,
+    "id": "bedrock.example",
+    "name": "Example",
+    "version": "1.0.0",
+    "description": "Adds a small accent to the plugin cards. Toggle it to try live CSS cleanup.",
+    "entrypoints": {
+        "renderer": "renderer.js"
+    },
+    "readme": "README.md"
+}

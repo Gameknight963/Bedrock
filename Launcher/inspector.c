@@ -253,7 +253,51 @@ static int inspector_port_closed(INTERNET_PORT port)
     return closed;
 }
 
-int inspector_test(HINTERNET session, INTERNET_PORT port, const wchar_t *endpoint, DWORD expected_pid)
+static char *json_string(const char *text)
+{
+    size_t length = strlen(text), index;
+    char *result = malloc(length * 6 + 3), *out;
+    if (!result) return NULL;
+    out = result; *out++ = '"';
+    for (index = 0; index < length; ++index) {
+        unsigned char byte = (unsigned char)text[index];
+        if (byte == '"' || byte == '\\') { *out++ = '\\'; *out++ = (char)byte; }
+        else if (byte < 32) { sprintf_s(out, 7, "\\u%04x", byte); out += 6; }
+        else *out++ = (char)byte;
+    }
+    *out++ = '"'; *out = 0;
+    return result;
+}
+
+static int load_bootstrap(Inspector *inspector, const wchar_t *path)
+{
+    int length = WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, path, -1, NULL, 0, NULL, NULL);
+    char *utf8 = NULL, *quoted_path = NULL, *expression = NULL, *quoted_expression = NULL, *params = NULL, *reply = NULL;
+    size_t capacity;
+    int success = 0;
+    if (!length) goto done;
+    utf8 = malloc((size_t)length);
+    if (!utf8 || !WideCharToMultiByte(CP_UTF8, WC_ERR_INVALID_CHARS, path, -1, utf8, length, NULL, NULL)) goto done;
+    quoted_path = json_string(utf8);
+    if (!quoted_path) goto done;
+    capacity = strlen(quoted_path) * 2 + 256;
+    expression = malloc(capacity);
+    if (!expression) goto done;
+    sprintf_s(expression, capacity, "(() => { const file = %s; const require = process.getBuiltinModule('module').createRequire(file); if (require(file).install() !== true) throw new Error('Bootstrap installation failed'); return true; })()", quoted_path);
+    quoted_expression = json_string(expression);
+    if (!quoted_expression) goto done;
+    capacity = strlen(quoted_expression) + strlen(inspector->frame) + 128;
+    params = malloc(capacity);
+    if (!params) goto done;
+    sprintf_s(params, capacity, "{\"callFrameId\":\"%s\",\"expression\":%s,\"returnByValue\":true}", inspector->frame, quoted_expression);
+    reply = command(inspector, "Debugger.evaluateOnCallFrame", params);
+    success = reply != NULL;
+done:
+    free(utf8); free(quoted_path); free(expression); free(quoted_expression); free(params); free(reply);
+    return success;
+}
+
+static int inspector_run(HINTERNET session, INTERNET_PORT port, const wchar_t *endpoint, DWORD expected_pid, const wchar_t *bootstrap_path)
 {
     Inspector inspector = {0};
     Json json = {0};
@@ -296,6 +340,10 @@ int inspector_test(HINTERNET session, INTERNET_PORT port, const wchar_t *endpoin
     wprintf(L"JavaScript test: 1 + 2 = 3 (inside process %lu).\n", expected_pid);
     free(json.tokens); json.tokens = NULL;
     free(reply); reply = NULL;
+    if (bootstrap_path) {
+        if (!load_bootstrap(&inspector, bootstrap_path)) goto done;
+        wprintf(L"Bedrock bootstrap installed from %ls.\n", bootstrap_path);
+    }
     /* Closing synchronously while paused would interrupt our own command.
        Schedule shutdown for the first event-loop turn after resuming instead. */
     sprintf_s(params, sizeof(params),
@@ -326,4 +374,14 @@ done:
     free(reply);
     if (inspector.socket) WinHttpCloseHandle(inspector.socket);
     return success;
+}
+
+int inspector_test(HINTERNET session, INTERNET_PORT port, const wchar_t *endpoint, DWORD expected_pid)
+{
+    return inspector_run(session, port, endpoint, expected_pid, NULL);
+}
+
+int inspector_bootstrap(HINTERNET session, INTERNET_PORT port, const wchar_t *endpoint, DWORD expected_pid, const wchar_t *bootstrap_path)
+{
+    return inspector_run(session, port, endpoint, expected_pid, bootstrap_path);
 }

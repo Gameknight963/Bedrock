@@ -1,0 +1,157 @@
+const fs = require('node:fs');
+const path = require('node:path');
+const Module = require('node:module');
+const { createPluginManager } = require('./plugins.cjs');
+const { packagePath } = require('./storage.cjs');
+
+function install(options = {}) {
+    if (globalThis.BedrockMain) return true;
+    const electron = options.electron || require('electron');
+    const { app, ipcMain, protocol, session, shell } = electron;
+    const root = options.root || path.join(process.env.LOCALAPPDATA, 'Bedrock');
+    const devtools = options.devtools ?? process.argv.includes('--bedrock-devtools');
+    const sessions = new WeakSet();
+    const windows = new Set();
+    const beforeCreate = new Set();
+    const created = new Set();
+    const allowed = url => {
+        try {
+            const parsed = new URL(url);
+            return options.allowURL ? options.allowURL(parsed) : parsed.protocol === 'https:' &&
+                ['discord.com', 'canary.discord.com', 'ptb.discord.com'].includes(parsed.hostname);
+        } catch { return false; }
+    };
+    const snapshot = () => ({ plugins: manager.list(), errors: manager.errors() });
+    function broadcast(channel, value) {
+        for (const window of windows) {
+            const contents = window.webContents;
+            if (!contents.isDestroyed() && allowed(contents.getURL())) contents.send(channel, value);
+        }
+    }
+    const manager = createPluginManager(root, {
+        changed() { broadcast('bedrock:update', snapshot()); },
+        context(record, own) {
+            return { windows: {
+                beforeCreate(callback) {
+                    if (typeof callback !== 'function') throw new Error('Expected callback');
+                    let applied = false;
+                    if (windows.size) record.restartReason = 'Restart Discord to apply window creation options.';
+                    const guarded = options => {
+                        callback(options);
+                        applied = true;
+                    };
+                    beforeCreate.add(guarded);
+                    return own(() => {
+                        beforeCreate.delete(guarded);
+                        if (applied && windows.size) record.restartReason = 'Restart Discord to restore window creation options.';
+                    });
+                },
+                onCreated(callback) {
+                    if (typeof callback !== 'function') throw new Error('Expected callback');
+                    created.add(callback);
+                    return own(() => created.delete(callback));
+                },
+                all: () => [...windows]
+            } };
+        }
+    });
+    manager.events.on('settings.changed', () => broadcast('bedrock:update', snapshot()));
+    manager.events.on('plugin.event', value => broadcast('bedrock:event', value));
+    const bedrockScheme = { scheme: 'bedrock', privileges: {
+        standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, bypassCSP: true
+    } };
+    const registerSchemes = protocol.registerSchemesAsPrivileged;
+    // Later registrations replace privilege lists; retain Bedrock when Discord registers its own schemes.
+    protocol.registerSchemesAsPrivileged = function (schemes) {
+        return registerSchemes.call(this, [...schemes.filter(item => item.scheme !== 'bedrock'), bedrockScheme]);
+    };
+    protocol.registerSchemesAsPrivileged([]);
+
+    function registerSession(ses) {
+        if (sessions.has(ses)) return;
+        sessions.add(ses);
+        ses.registerPreloadScript({ type: 'frame', filePath: path.join(__dirname, 'preload.cjs') });
+        ses.protocol.handle('bedrock', request => {
+            try {
+                const url = new URL(request.url);
+                if (request.method !== 'GET' || url.hostname !== 'plugins') return new Response(null, { status: 404 });
+                const parts = url.pathname.split('/').slice(1).map(decodeURIComponent);
+                const record = manager.records.get(parts.shift());
+                if (!record) return new Response(null, { status: 404 });
+                const file = packagePath(record.folder, parts.join('/'));
+                const types = { '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css',
+                    '.json': 'application/json', '.md': 'text/plain', '.png': 'image/png', '.svg': 'image/svg+xml',
+                    '.jpg': 'image/jpeg', '.webp': 'image/webp', '.woff2': 'font/woff2' };
+                return new Response(fs.readFileSync(file), { headers: {
+                    'Content-Type': types[path.extname(file)] || 'application/octet-stream',
+                    'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-store'
+                } });
+            } catch { return new Response(null, { status: 404 }); }
+        });
+    }
+    app.on('session-created', registerSession);
+    app.whenReady().then(() => registerSession(session.defaultSession)).catch(console.error);
+    const BrowserWindow = new Proxy(electron.BrowserWindow, {
+        construct(target, args, newTarget) {
+            const preferences = { ...(args[0] || {}), webPreferences: { ...args[0]?.webPreferences } };
+            for (const callback of beforeCreate) {
+                try { callback(preferences); } catch (error) { console.error('[Bedrock:windows]', error); }
+            }
+            if (devtools) preferences.webPreferences.devTools = true;
+            const ses = preferences.webPreferences.session || session.fromPartition(preferences.webPreferences.partition || '');
+            registerSession(ses);
+            args[0] = preferences;
+            return Reflect.construct(target, args, newTarget);
+        }
+    });
+    const facade = new Proxy({}, { get: (_, key) => key === 'BrowserWindow' ? BrowserWindow : electron[key],
+        ownKeys: () => Reflect.ownKeys(electron), getOwnPropertyDescriptor: () => ({ configurable: true, enumerable: true }) });
+    if (!options.electron) {
+        const load = Module._load;
+        // Electron exports can have nonconfigurable properties; substitute a facade at the require boundary.
+        Module._load = function (request, ...args) {
+            if (request === 'electron' || request === 'electron/main') return facade;
+            return load.call(this, request, ...args);
+        };
+    }
+    app.on('browser-window-created', (_, window) => {
+        windows.add(window);
+        window.once('closed', () => windows.delete(window));
+        if (devtools) window.webContents.on('did-finish-load', () => {
+            if (allowed(window.webContents.getURL())) window.webContents.openDevTools({ mode: 'detach' });
+        });
+        for (const callback of created) {
+            try { callback(window); } catch (error) { console.error('[Bedrock:windows]', error); }
+        }
+        manager.events.emit('window.created', window);
+    });
+    function authorized(event) {
+        return event.senderFrame === event.sender.mainFrame && allowed(event.senderFrame.url);
+    }
+    ipcMain.on('bedrock:config', event => { event.returnValue = authorized(event) ? snapshot() : null; });
+    ipcMain.handle('bedrock:request', async (event, operation, ...args) => {
+        if (!authorized(event)) throw new Error('Bedrock is only available in Discord');
+        const [id, key, value] = args;
+        if (operation === 'list') return snapshot();
+        if (operation === 'enable') { await manager.setEnabled(id, key); return snapshot(); }
+        if (operation === 'rescan') { manager.scan(); return snapshot(); }
+        if (operation === 'openFolder') {
+            const error = await shell.openPath(path.join(root, 'plugins'));
+            if (error) throw new Error(error);
+            return true;
+        }
+        const record = manager.records.get(id);
+        if (!record) throw new Error('Unknown plugin');
+        if (operation === 'settingsSet') { manager.settings(id).set(key, value); return manager.settings(id).all(); }
+        if (operation === 'settingsDelete') { manager.settings(id).delete(key); broadcast('bedrock:update', snapshot()); return manager.settings(id).all(); }
+        if (operation === 'readme') return record.manifest.readme ? fs.readFileSync(packagePath(record.folder, record.manifest.readme), 'utf8') : '';
+        if (operation === 'emit') { manager.events.emit('plugin.event', { id, name: key, value }); return true; }
+        throw new Error('Unknown Bedrock operation');
+    });
+    globalThis.BedrockMain = manager;
+    manager.scan();
+    console.info(`[Bedrock] Bootstrap installed. Plugins: ${path.join(root, 'plugins')}`);
+    return true;
+}
+
+module.exports = { install };
