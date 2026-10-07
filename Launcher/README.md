@@ -38,6 +38,7 @@ search and README details. See [the API documentation](../Runtime/README.md) and
 ### What file does what
 
  - `main.c` owns process creation and the fuse patch
+ - `fuse.c` validates the Electron fuse wire and is shared with the native tests.
  - `inspector.c` owns discovery, the WebSocket connection, JSON commands/replies, and shutdown. 
  - WinHTTP handles the handshake and WebSocket framing. 
  - The MIT-licensed jsmn parser is licensed under `lib/jsmn` 

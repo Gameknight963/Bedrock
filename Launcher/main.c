@@ -8,18 +8,10 @@
 #include <string.h>
 #include <wchar.h>
 #include "inspector.h"
+#include "fuse.h"
 
 #define PATH_CAP 32768
-#define SENTINEL "dL7pKGdnNz796PbbjQWNKmHXBZaB9tsX"
-#define SENTINEL_SIZE (sizeof(SENTINEL) - 1)
-#define INSPECTOR_INDEX 3
-
-typedef struct FuseLocation {
-    DWORD rva;
-    BYTE version;
-    BYTE count;
-    BYTE wire[255];
-} FuseLocation;
+#define INSPECTOR_INDEX FUSE_INSPECTOR_INDEX
 
 static void win_error(const wchar_t *operation)
 {
@@ -41,7 +33,7 @@ static int locate_fuse(const wchar_t *path, FuseLocation *fuse)
     HANDLE file = INVALID_HANDLE_VALUE, mapping = NULL;
     const BYTE *data = NULL;
     LARGE_INTEGER length;
-    size_t size, i, found = 0, wire_offset = 0, section_offset;
+    size_t size, i, wire_offset = 0, section_offset;
     IMAGE_DOS_HEADER dos;
     IMAGE_FILE_HEADER header;
     DWORD signature;
@@ -80,28 +72,18 @@ static int locate_fuse(const wchar_t *path, FuseLocation *fuse)
 #endif
     section_offset += header.SizeOfOptionalHeader;
     if (!range_ok(section_offset, (size_t)header.NumberOfSections * sizeof(IMAGE_SECTION_HEADER), size)) goto invalid;
-    for (i = 0; range_ok(i, SENTINEL_SIZE + 2, size); ++i) {
-        if (data[i] == SENTINEL[0] && memcmp(data + i, SENTINEL, SENTINEL_SIZE) == 0) {
-            ++found;
-            wire_offset = i + SENTINEL_SIZE;
-        }
-    }
-    if (found != 1) {
-        fwprintf(stderr, L"Expected exactly one Electron fuse sentinel; found %zu.\n", found); goto done;
-    }
-    fuse->version = data[wire_offset];
-    fuse->count = data[wire_offset + 1];
-    if (fuse->version != 1 || fuse->count <= INSPECTOR_INDEX ||
-        !range_ok(wire_offset + 2, fuse->count, size)) goto invalid;
-    memcpy(fuse->wire, data + wire_offset + 2, fuse->count);
-    for (i = 0; i < fuse->count; ++i)
-        if (fuse->wire[i] != '0' && fuse->wire[i] != '1' && fuse->wire[i] != 'r') goto invalid;
-    if (fuse->wire[INSPECTOR_INDEX] == 'r') {
+    switch (fuse_find_wire(data, size, fuse, &wire_offset)) {
+    case FUSE_OK: break;
+    case FUSE_NOT_FOUND:
+    case FUSE_AMBIGUOUS:
+        fwprintf(stderr, L"Expected exactly one Electron fuse sentinel.\n"); goto done;
+    case FUSE_INSPECTOR_REMOVED:
         fwprintf(stderr, L"The inspector fuse has been removed in this executable.\n"); goto done;
+    default: goto invalid;
     }
     for (i = 0; i < header.NumberOfSections; ++i) {
         IMAGE_SECTION_HEADER section;
-        size_t offset = wire_offset + 2;
+        size_t offset = wire_offset;
         memcpy(&section, data + section_offset + i * sizeof(section), sizeof(section));
         if (offset >= section.PointerToRawData &&
             offset - section.PointerToRawData <= section.SizeOfRawData &&
@@ -275,7 +257,7 @@ static int launch(int argc, wchar_t **argv, LaunchPaths *paths)
     wprintf(L"Executable: %ls\n", path);
     if (!locate_fuse(path, &fuse)) return 1;
     wprintf(L"Fuse format %u, %u settings; inspector %lc; wire RVA 0x%08lX.\n",
-        fuse.version, fuse.count, fuse.wire[INSPECTOR_INDEX], fuse.rva);
+        fuse.version, fuse.count, fuse.wire[INSPECTOR_INDEX], (unsigned long)fuse.rva);
     if (check_only) { wprintf(L"Read-only check passed. No process started or memory changed.\n"); return 0; }
     {
         DWORD length = GetModuleFileNameW(NULL, paths->bootstrap, PATH_CAP);

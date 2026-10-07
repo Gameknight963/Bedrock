@@ -8,8 +8,9 @@
   </ItemGroup>
   <PropertyGroup Label="Globals">
     <VCProjectVersion>18.0</VCProjectVersion>
-    <ProjectGuid>{92E08354-8697-438D-9FB9-0DDD4880E9C8}</ProjectGuid>
-    <RootNamespace>BedrockLauncher</RootNamespace>
+    <ProjectGuid>{4A781370-71DA-4492-989D-10BE3655472B}</ProjectGuid>
+    <RootNamespace>BedrockTests</RootNamespace>
+    <Keyword>Win32Proj</Keyword>
     <WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
@@ -22,7 +23,7 @@
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
   <PropertyGroup>
-    <TargetName>BedrockLauncher</TargetName>
+    <TargetName>BedrockTests</TargetName>
     <OutDir>$(ProjectDir)bin\$(Platform)\$(Configuration)\</OutDir>
     <IntDir>$(ProjectDir)obj\$(Platform)\$(Configuration)\</IntDir>
   </PropertyGroup>
@@ -30,26 +31,22 @@
     <ClCompile>
       <WarningLevel>Level4</WarningLevel>
       <SDLCheck>true</SDLCheck>
-      <CompileAs>CompileAsC</CompileAs>
+      <LanguageStandard>stdcpp17</LanguageStandard>
       <LanguageStandard_C>stdc17</LanguageStandard_C>
-      <PreprocessorDefinitions>UNICODE;_UNICODE;WIN32_LEAN_AND_MEAN;_WIN32_WINNT=0x0A00;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <AdditionalIncludeDirectories>$(ProjectDir)..\Launcher;$(ProjectDir)..\lib\googletest\include;$(ProjectDir)..\lib\googletest;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories>
+      <PreprocessorDefinitions>WIN32_LEAN_AND_MEAN;NOMINMAX;%(PreprocessorDefinitions)</PreprocessorDefinitions>
+      <RuntimeLibrary Condition="'$(Configuration)'=='Debug'">MultiThreadedDebugDLL</RuntimeLibrary>
+      <RuntimeLibrary Condition="'$(Configuration)'=='Release'">MultiThreadedDLL</RuntimeLibrary>
     </ClCompile>
-    <Link>
-      <SubSystem>Console</SubSystem>
-      <AdditionalDependencies>winhttp.lib;ws2_32.lib;%(AdditionalDependencies)</AdditionalDependencies>
-      <GenerateDebugInformation>true</GenerateDebugInformation>
-    </Link>
-    <Manifest>
-      <AdditionalManifestFiles>$(ProjectDir)app.manifest;%(AdditionalManifestFiles)</AdditionalManifestFiles>
-    </Manifest>
+    <Link><SubSystem>Console</SubSystem><GenerateDebugInformation>true</GenerateDebugInformation></Link>
   </ItemDefinitionGroup>
-  <ItemGroup><ClCompile Include="main.c" /><ClCompile Include="inspector.c" /><ClCompile Include="fuse.c" /></ItemGroup>
-  <ItemGroup><ClInclude Include="inspector.h" /><ClInclude Include="fuse.h" /></ItemGroup>
-  <ItemGroup><Manifest Include="app.manifest" /></ItemGroup>
+  <ItemGroup>
+    <ClCompile Include="fuse-tests.cpp" />
+    <ClCompile Include="..\Launcher\fuse.c"><CompileAs>CompileAsC</CompileAs></ClCompile>
+    <ClCompile Include="..\lib\googletest\src\gtest-all.cc"><WarningLevel>Level3</WarningLevel></ClCompile>
+    <ClCompile Include="..\lib\googletest\src\gtest_main.cc"><WarningLevel>Level3</WarningLevel></ClCompile>
+  </ItemGroup>
+  <ItemGroup><ClInclude Include="..\Launcher\fuse.h" /></ItemGroup>
   <ItemGroup><None Include="README.md" /></ItemGroup>
-  <ItemGroup><RuntimeFile Include="$(ProjectDir)..\Runtime\*.cjs" /></ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
-  <Target Name="CopyBedrockRuntime" AfterTargets="Build">
-    <Copy SourceFiles="@(RuntimeFile)" DestinationFolder="$(OutDir)Runtime" SkipUnchangedFiles="true" />
-  </Target>
 </Project>

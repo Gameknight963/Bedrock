@@ -4,4 +4,5 @@
     <Platform Name="x86" />
   </Configurations>
   <Project Path="Launcher/Launcher.vcxproj" Id="92e08354-8697-438d-9fb9-0ddd4880e9c8" />
+  <Project Path="Tests/BedrockTests.vcxproj" Id="4a781370-71da-4492-989d-10be3655472b" />
 </Solution>

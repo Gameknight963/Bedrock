@@ -36,6 +36,7 @@ search and README details. See [the API documentation](../Runtime/README.md) and
 ### What file does what
 
  - `main.c` owns process creation and the fuse patch
+ - `fuse.c` validates the Electron fuse wire and is shared with the native tests.
  - `inspector.c` owns discovery, the WebSocket connection, JSON commands/replies, and shutdown. 
  - WinHTTP handles the handshake and WebSocket framing. 
  - The MIT-licensed jsmn parser is licensed under `lib/jsmn` 
@@ -58,6 +59,10 @@ Other options:
 
 Large buffers use the heap. The manifest enables long paths when Windows policy
 also enables them. The image-base lookup uses Windows x86/x64 PEB offsets.
+
+Native unit tests use Google Test. Build `BedrockTests` in the solution, then run
+them from **Test → Test Explorer** or with `Tests\bin\x64\Debug\BedrockTests.exe`.
+See [the test README](Tests/README.md) for details.
 
 Run the inspector integration test with an installed Node.js and Visual Studio:
 
