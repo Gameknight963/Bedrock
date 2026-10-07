@@ -2,6 +2,7 @@ const path = require('node:path');
 const { EventEmitter } = require('node:events');
 const { discover, readJson, writeJson } = require('./storage.cjs');
 const { createContext, createPatcher } = require('./context.cjs');
+const { definePluginSettings, OptionType, normalizeDefinitions, validateSetting, bindPluginSettings } = require('./settings.mjs');
 
 function createPluginManager(root, options = {}) {
     const configurationPath = path.join(root, 'settings.json');
@@ -15,6 +16,33 @@ function createPluginManager(root, options = {}) {
     const log = options.log || ((level, id, args) => console[level](`[Bedrock:${id}]`, ...args));
     let discoveryErrors = [];
     const settingsStores = new Map();
+    const definitions = new Map();
+    const restartBaselines = new Map();
+
+    function registerSettings(id, schema) {
+        if (!records.has(id)) throw new Error('Unknown plugin');
+        const incoming = normalizeDefinitions(schema);
+        const existing = definitions.get(id) || {};
+        for (const [key, definition] of Object.entries(incoming)) {
+            if (existing[key] && JSON.stringify(existing[key]) !== JSON.stringify(definition))
+                throw new Error(`Main and renderer definitions disagree for ${key}`);
+        }
+        const store = settings(id);
+        for (const [key, definition] of Object.entries(incoming)) {
+            if (validateSetting(definition, store.get(key, definition.default)))
+                throw new Error(`Saved setting ${key} is incompatible with its definition`);
+            const baselineKey = `${id}/${key}`;
+            if (!restartBaselines.has(baselineKey)) restartBaselines.set(baselineKey, store.get(key, definition.default));
+        }
+        definitions.set(id, { ...existing, ...incoming });
+        notify();
+    }
+
+    function restartSettings(id) {
+        const store = settings(id);
+        return Object.entries(definitions.get(id) || {}).filter(([key, definition]) => definition.restartNeeded &&
+            JSON.stringify(store.get(key, definition.default)) !== JSON.stringify(restartBaselines.get(`${id}/${key}`))).map(([key]) => key);
+    }
 
     function settings(id) {
         if (!settingsStores.has(id)) {
@@ -30,11 +58,23 @@ function createPluginManager(root, options = {}) {
                 if (typeof key !== 'string' || ['__proto__', 'constructor', 'prototype'].includes(key)) throw new Error('Invalid settings key');
                 const serialized = JSON.stringify(value);
                 if (serialized === undefined) throw new Error('Settings must be JSON values');
-                store.values[key] = JSON.parse(serialized);
-                writeJson(store.file, store.values);
+                const definition = definitions.get(id)?.[key];
+                const error = definition && validateSetting(definition, value);
+                if (error) throw new Error(error);
+                const record = records.get(id);
+                if (record?.settingsBinding && Object.hasOwn(record.module.settings.definitions, key))
+                    record.settingsBinding.validate(key, value);
+                const next = { ...store.values, [key]: JSON.parse(serialized) };
+                writeJson(store.file, next);
+                store.values = next;
                 events.emit('settings.changed', { id, key, value: store.values[key] });
             },
-            delete(key) { delete store.values[key]; writeJson(store.file, store.values); events.emit('settings.changed', { id, key, deleted: true }); },
+            delete(key) {
+                if (typeof key !== 'string' || ['__proto__', 'constructor', 'prototype'].includes(key)) throw new Error('Invalid settings key');
+                const next = { ...store.values };
+                delete next[key]; writeJson(store.file, next); store.values = next;
+                events.emit('settings.changed', { id, key, deleted: true });
+            },
             all() { return structuredClone(store.values); }
         };
     }
@@ -46,6 +86,8 @@ function createPluginManager(root, options = {}) {
             manifest: record.manifest, enabled: enabled(record.manifest.id),
             mainStatus: record.status, error: record.error || null,
             restartReason: record.restartReason || null,
+            settingsDefinitions: definitions.get(record.manifest.id) || {},
+            restartSettings: restartSettings(record.manifest.id),
             renderer: record.manifest.entrypoints.renderer ? `bedrock://plugins/${record.manifest.id}/${(typeof record.manifest.entrypoints.renderer === 'string' ? record.manifest.entrypoints.renderer : record.manifest.entrypoints.renderer.path).replaceAll('\\', '/').split('/').map(encodeURIComponent).join('/')}` : null,
             settings: settings(record.manifest.id).all()
         }));
@@ -75,6 +117,16 @@ function createPluginManager(root, options = {}) {
             services.extra = options.context?.(record, owned.own) || {};
             Object.assign(owned.context, services.extra);
             record.instance = owned;
+            if (record.module.settings) {
+                registerSettings(record.manifest.id, record.module.settings.definitions);
+                const binding = bindPluginSettings(record.module.settings, {
+                    ...services.settings, signal: owned.context.signal, log: error => log('error', record.manifest.id, [error])
+                });
+                record.settingsBinding = binding;
+                const listener = event => { if (event.id === record.manifest.id) binding.refresh(); };
+                events.on('settings.changed', listener);
+                owned.own(() => { events.off('settings.changed', listener); binding.dispose(); record.settingsBinding = null; });
+            }
             const completion = record.module.start(owned.context);
             if (completion && typeof completion.then === 'function') {
                 record.startPromise = Promise.race([Promise.resolve(completion), new Promise(resolve =>
@@ -138,7 +190,7 @@ function createPluginManager(root, options = {}) {
         transitions.set(id, work);
         return work;
     }
-    return { root, records, events, settings, list, scan, setEnabled, errors: () => discoveryErrors,
+    return { root, records, events, settings, list, scan, setEnabled, registerSettings, definePluginSettings, OptionType, errors: () => discoveryErrors,
         stopAll: () => Promise.all([...records.values()].map(stop)) };
 }
 

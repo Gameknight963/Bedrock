@@ -2,7 +2,7 @@
 
 Build and run the Launcher project after quitting Discord. Its build copies the runtime next to the executable. No browser debugger, separate Node installation, or JavaScript build step is needed to use Bedrock. The launcher installs `bootstrap.cjs` before Discord's application entry point, then closes the inspector port. The bootstrap supplies the plugin loader and renderer preload for the rest of the session.
 
-In Discord's User Settings, **Bedrock → Plugins** provides search, enable switches, details, **Open plugins folder**, and **Find new plugins**. This is independently implemented; Equicord's settings behavior informed the design, but its GPL source is not included.
+In Discord's User Settings, **Bedrock → Plugins** provides search, enable switches, and a detail page with **Details** and **Settings** tabs. **Open plugins folder** opens your installed packages; **Load missing plugins** discovers new ones. This is independently implemented; Equicord's settings behavior informed the design, but its GPL source is not included.
 
 ## Locations
 
@@ -20,7 +20,7 @@ In Discord's User Settings, **Bedrock → Plugins** provides search, enable swit
             settings.json
 ```
 
-Copy `Examples/example` into the plugins directory and choose **Find new plugins**. New packages are enabled by default. Enable state and plugin settings survive restarts. Rescanning discovers additions; editing or removing already loaded packages currently requires restarting Discord. Disable a plugin before editing its files.
+Copy `Examples/example` into the plugins directory and choose **Load missing plugins**. New packages are enabled by default. Enable state and plugin settings survive restarts. Rescanning discovers additions; editing or removing already loaded packages currently requires restarting Discord. Disable a plugin before editing its files.
 
 ## Package files
 
@@ -94,11 +94,81 @@ export function start(ctx) {
 | `ctx.patches.instead(object, method, (args, next, receiver) => {})` | Replaces the call; use `next(...args)` to continue the patch chain. |
 | `ctx.requireRestart(reason)` | Displays a restart notice on the plugin card. It does not itself defer start/stop. |
 
-Patch methods return disposers and restore the original property when the final Bedrock patch is removed. Multiple plugins can patch the same method. Register ordinary DOM listeners, timers, observers and other resources with `ctx.cleanup()`; Bedrock cannot undo arbitrary untracked side effects. Patches operate on synchronous return values; they do not await the method's returned promise.
+### Cleanup and patches
 
-Normal plugin events deliver `{id, value}`, where `id` identifies the sender. The built-in `settings.changed` event identifies the affected plugin. Renderer settings events contain `{id, settings}`; main events contain `{id, key, value}` or `{id, key, deleted:true}`. Main also receives `window.created` with the BrowserWindow.
+- Patch methods return disposers. Removing the final Bedrock patch restores the original property; multiple plugins can patch the same method.
+- Patches operate on synchronous return values. They do not await a returned promise.
+- Register DOM listeners, timers, observers and other resources with `ctx.cleanup()`. Bedrock cannot undo untracked side effects.
 
-Disabling aborts the context and disposes owned resources, cancels pending module waits, then calls `stop()`. A stop failure does not skip cleanup. `stop()` is limited to ten seconds. Plugins must respect `ctx.signal` to avoid late work after disabling; JavaScript already executing cannot be forcibly unloaded. Re-enabling calls `start()` with a fresh context but reuses the imported module, so reset mutable module state in your lifecycle methods.
+### Events
+
+- Ordinary plugin events deliver `{id, value}`; `id` identifies the sender.
+- `settings.changed` identifies the affected plugin. Renderer events contain `{id, settings}`; main events contain `{id, key, value}` or `{id, key, deleted:true}`.
+- Main also receives `window.created` with the BrowserWindow.
+
+### Disabling and re-enabling
+
+- Disabling aborts the context, disposes owned resources, cancels pending module waits, then calls `stop()`.
+- `stop()` has a ten-second limit. A failure does not skip cleanup.
+- Respect `ctx.signal` to avoid late work after disabling. JavaScript already executing cannot be forcibly unloaded.
+- Re-enabling calls `start()` with a fresh context and reuses the imported module. Reset mutable module state in your lifecycle methods.
+
+## Plugin settings
+
+Export a settings definition from either entry point. `Bedrock.definePluginSettings` and `Bedrock.OptionType` are available in both main and renderer plugins before the module loads.
+
+```js
+const { definePluginSettings, OptionType } = Bedrock;
+
+export const settings = definePluginSettings({
+    showIndicator: {
+        type: OptionType.BOOLEAN,
+        label: 'Show indicator',
+        description: 'Show an indicator beside messages.',
+        default: true,
+        onChange(value) { console.log('Indicator:', value); }
+    }
+});
+
+export function start(ctx) {
+    ctx.log.info('Indicator enabled:', settings.store.showIndicator);
+}
+```
+
+Bedrock generates the plugin's **Settings** tab from this definition. Values are owned and saved by the main process, then synchronized to renderer windows. Defaults are used when no value has been saved. Existing `ctx.settings` methods still work.
+
+### Definitions and controls
+
+Every setting has a `type`, `description`, and `default`. The optional `label` supplies the control's title; otherwise its key is used. Consecutive settings with the same `section` are grouped beneath a heading.
+
+| Type | Control and options |
+| --- | --- |
+| `OptionType.BOOLEAN` | Switch. |
+| `OptionType.STRING` | Text field; `multiline: true` uses a text area. Optional `placeholder`. |
+| `OptionType.NUMBER` | Number field with optional `min`, `max`, and `step`. |
+| `OptionType.SELECT` | Dropdown with `options: [{label: 'First', value: 'first'}]`. Values can be strings, numbers, or booleans. |
+| `OptionType.SLIDER` | Slider requiring `min` and `max`, with optional `step`. |
+
+Switches and dropdowns save immediately. Text and number fields save when you leave the field; Enter also saves a single-line field. Sliders save when you release the pointer or a key. Each setting has a **Reset** button.
+
+### Reading and changing values
+
+- `settings.store.showIndicator` reads the current value. Assigning it queues a validated save; errors are logged under the plugin's ID.
+- `await settings.set('showIndicator', false)` saves a value and lets you handle an error. `await settings.flush()` waits for queued assignments.
+- `await settings.reset('showIndicator')` saves its default value.
+- `settings.subscribe((key, value) => ...)` observes committed changes and returns an unsubscribe function. Subscriptions are cleared when the plugin stops; use `ctx.cleanup()` if you also want to own the disposer.
+- Renderer React components can call `settings.use(['showIndicator'])` to subscribe and receive an object containing those values.
+
+The exported object is bound before `start()` and unbound when the context stops. Its callbacks run only while that entry point is active. Main and renderer can declare the same setting, but its data definition must agree; callbacks remain local to each runtime. Disabled plugins retain definitions already loaded during this session. A plugin that has never been enabled must be enabled once to load its definitions.
+
+### Validation and restart notices
+
+- Built-in type, choice and range checks run in the main owner as well as the language API.
+- Optional `isValid(value)` returns `true`, `false`, or an error message. It runs in the declaring runtime when using its settings API; the Settings tab also uses renderer validators. Main validators additionally run on writes received by the main owner.
+- `restartNeeded: true` marks an individual setting. Bedrock shows a **Restart Discord** button when its value differs from the value at startup. Changing it back clears that setting's notice.
+- Restarting goes through the adjacent Bedrock launcher, so the next Discord process also receives the bootstrap. A restart marker does not defer callbacks: the plugin decides when to apply the value.
+
+Definitions contain the UI data, while callbacks stay in JavaScript. Only values are saved in the plugin's `data/<id>/settings.json`. This boundary lets a future native owner or another language use the same definitions and UI.
 
 ### Renderer APIs
 
@@ -133,7 +203,7 @@ Main plugins run inside Discord's Node process and can import Node built-ins or 
 ## Verification
 
 ```powershell
-node --test Runtime/tests/plugins.test.cjs
+node --test Runtime/tests/*.test.cjs
 .\Launcher\tests\smoke.ps1
 npm install --prefix Runtime/tests/obj electron@42.7.1 react@18.3.1 react-dom@18.3.1
 node Runtime/tests/obj/node_modules/electron/install.js

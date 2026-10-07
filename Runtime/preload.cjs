@@ -5,6 +5,13 @@ function installRenderer(configuration) {
     const subscribers = new Set();
     const listeners = new Map();
     const patchSlots = new WeakMap();
+    let settingsAPI;
+    const settingsReady = import('bedrock://api/settings.mjs').then(api => {
+        settingsAPI = api;
+        Object.assign(globalThis.Bedrock, { definePluginSettings: api.definePluginSettings, OptionType: api.OptionType });
+        notify();
+    });
+    settingsReady.catch(error => log('settings', error));
     let snapshot = configuration;
     let webpackRequire;
     const loadedModules = new Set();
@@ -119,8 +126,8 @@ function installRenderer(configuration) {
             log: Object.fromEntries(['info', 'warn', 'error'].map(level => [level, (...args) => console[level](`[Bedrock:${id}]`, ...args)])),
             settings: {
                 get: (key, fallback) => Object.hasOwn(record.info.settings, key) ? structuredClone(record.info.settings[key]) : fallback,
-                async set(key, value) { record.info.settings = await native.request('settingsSet', id, key, value); },
-                async delete(key) { record.info.settings = await native.request('settingsDelete', id, key); },
+                async set(key, value) { update(await native.request('settingsSet', id, key, value)); },
+                async delete(key) { update(await native.request('settingsDelete', id, key)); },
                 all: () => structuredClone(record.info.settings)
             },
             cleanup: own,
@@ -174,10 +181,21 @@ function installRenderer(configuration) {
             record.status = 'starting'; notify();
             let instance;
             try {
+                await settingsReady;
                 record.module ||= await import(record.info.renderer);
                 if (typeof record.module.start !== 'function') throw new Error('Renderer entry point must export start(context)');
+                if (record.module.settings) update(await native.request('settingsDefine', record.info.manifest.id, record.module.settings.definitions));
+                if (!record.info.enabled) { record.status = 'stopped'; notify(); return; }
                 instance = contextFor(record);
                 record.instance = instance;
+                if (record.module.settings) {
+                    const binding = settingsAPI.bindPluginSettings(record.module.settings, {
+                        ...instance.context.settings, signal: instance.context.signal,
+                        log: error => log(record.info.manifest.id, error), react: renderingReact
+                    });
+                    record.settingsBinding = binding;
+                    instance.context.cleanup(() => { binding.dispose(); record.settingsBinding = null; });
+                }
                 await Promise.race([Promise.resolve(record.module.start(instance.context)), new Promise(resolve =>
                     instance.context.signal.addEventListener('abort', resolve, { once: true }))]);
                 record.status = 'running'; record.error = null;
@@ -201,6 +219,7 @@ function installRenderer(configuration) {
         }
     }
     function update(next) {
+        if (next.revision < snapshot.revision) return;
         snapshot = structuredClone(next);
         for (const info of snapshot.plugins) {
             let record = records.get(info.manifest.id);
@@ -208,6 +227,7 @@ function installRenderer(configuration) {
             const previousSettings = record.info.settings;
             const changed = record.info.enabled !== info.enabled;
             record.info = info;
+            record.settingsBinding?.refresh();
             if (!info.enabled) record.instance?.dispose();
             if (JSON.stringify(previousSettings) !== JSON.stringify(info.settings)) emitLocal('settings.changed', { id: info.manifest.id, settings: info.settings });
             if (changed || (!record.instance && info.enabled && record.status === 'stopped'))
@@ -254,6 +274,14 @@ function installRenderer(configuration) {
         .bedrock-detail-header{display:flex;align-items:center;gap:12px;margin:16px 0 8px}.bedrock-detail-header h2{margin:0;font-size:20px;flex:1}
         .bedrock-tabs{display:flex;border-bottom:1px solid var(--border-subtle,#41434a);margin:18px 0 24px}
         .bedrock-tab{padding:8px 12px;background:none;border:0;border-bottom:2px solid var(--blurple-50,#5865f2);color:inherit;font:inherit}
+        .bedrock-tab{border-bottom-color:transparent;cursor:pointer}.bedrock-tab[aria-selected=true]{border-bottom-color:var(--blurple-50,#5865f2)}
+        .bedrock-setting{padding:16px 0;border-bottom:1px solid var(--border-subtle,#41434a)}
+        .bedrock-setting-header{display:flex;align-items:center;justify-content:space-between;gap:16px}
+        .bedrock-setting label{font-weight:600}.bedrock-setting p{margin:6px 0;font-size:14px}
+        .bedrock-setting input:not([type=range]),.bedrock-setting textarea,.bedrock-setting select{box-sizing:border-box;width:100%;margin-top:10px;padding:7px 10px;border:1px solid var(--border-subtle,#41434a);border-radius:5px;background:var(--input-background,#1e1f22);color:inherit;font:inherit;user-select:text;-webkit-user-select:text}
+        .bedrock-setting textarea{min-height:80px;resize:vertical}.bedrock-setting input[type=range]{width:100%;margin:12px 0;accent-color:var(--blurple-50,#5865f2)}
+        .bedrock-setting-footer{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:8px}
+        .bedrock-setting-section{font-size:18px;margin:24px 0 0}.bedrock-restart-banner{display:flex;align-items:center;justify-content:space-between;gap:16px;margin:0 0 16px;padding:12px;border:1px solid var(--text-warning,#f0b232);border-radius:6px}
         .bedrock-readme h1{font-size:26px}.bedrock-readme h2{font-size:22px}.bedrock-readme h3{font-size:18px}
         .bedrock-readme :is(h1,h2,h3,h4,h5,h6){font-weight:600;line-height:1.3;margin:24px 0 12px}
         .bedrock-readme>:first-child{margin-top:0}.bedrock-readme p,.bedrock-readme ul{margin:12px 0}
@@ -312,12 +340,85 @@ function installRenderer(configuration) {
     const backArrow = '\u2190'; // Left arrow.
     const metadataSeparator = '\u00b7'; // Middle dot.
     const ellipsis = '\u2026'; // Ellipsis.
+    function SettingControl({ plugin, settingKey, definition }) {
+        const h = React.createElement;
+        const saved = Object.hasOwn(plugin.settings, settingKey) ? plugin.settings[settingKey] : definition.default;
+        const [draft, setDraft] = React.useState(saved);
+        const [busy, setBusy] = React.useState(false);
+        const [error, setError] = React.useState('');
+        React.useEffect(() => { setDraft(saved); }, [saved]);
+        const id = `bedrock-setting-${settingKey}`;
+        const descriptionId = `${id}-description`;
+        const errorId = `${id}-error`;
+        const local = records.get(plugin.manifest.id)?.module?.settings?._callbacks[settingKey];
+        const save = async value => {
+            try {
+                const validation = settingsAPI.validateSetting({ ...definition, isValid: local?.isValid }, value);
+                if (validation) { setError(validation); return; }
+                setBusy(true); setError('');
+                update(await native.request('settingsSet', plugin.manifest.id, settingKey, value));
+            }
+            catch (error) { setError(error.message); }
+            finally { setBusy(false); }
+        };
+        const inputProps = { id, disabled: busy, 'aria-describedby': `${descriptionId}${error ? ` ${errorId}` : ''}`, 'aria-invalid': !!error };
+        const numeric = [settingsAPI.OptionType.NUMBER, settingsAPI.OptionType.SLIDER].includes(definition.type);
+        const commit = input => {
+            const value = numeric ? (input === '' ? NaN : Number(input)) : input;
+            if (JSON.stringify(value) !== JSON.stringify(saved)) save(value);
+        };
+        let control;
+        if (definition.type === settingsAPI.OptionType.BOOLEAN) {
+            control = h('button', { ...inputProps, role: 'switch', className: 'bedrock-switch', 'aria-checked': saved,
+                onClick: () => save(!saved) }, h('span'));
+        } else if (definition.type === settingsAPI.OptionType.SELECT) {
+            control = h('select', { ...inputProps, value: definition.options.findIndex(option => option.value === saved),
+                onChange: event => save(definition.options[Number(event.target.value)].value) },
+                definition.options.map((option, index) => h('option', { key: index, value: index }, option.label)));
+        } else {
+            control = h(definition.multiline && !numeric ? 'textarea' : 'input', {
+                ...inputProps, type: numeric ? (definition.type === settingsAPI.OptionType.SLIDER ? 'range' : 'number') : 'text',
+                value: draft, placeholder: definition.placeholder, min: definition.min, max: definition.max, step: definition.step ?? (numeric ? 'any' : undefined),
+                onChange: event => { setDraft(event.target.value); setError(''); },
+                onBlur: event => commit(event.currentTarget.value),
+                onKeyDown: event => { if (event.key === 'Enter' && !definition.multiline) event.currentTarget.blur(); },
+                onPointerUp: definition.type === settingsAPI.OptionType.SLIDER ? event => commit(event.currentTarget.value) : undefined,
+                onKeyUp: definition.type === settingsAPI.OptionType.SLIDER ? event => commit(event.currentTarget.value) : undefined
+            });
+        }
+        return h('div', { className: 'bedrock-setting' },
+            h('div', { className: 'bedrock-setting-header' }, h('label', { htmlFor: id }, definition.label || settingKey),
+                definition.type === settingsAPI.OptionType.BOOLEAN && control),
+            h('p', { id: descriptionId, className: 'bedrock-muted' }, definition.description),
+            definition.type !== settingsAPI.OptionType.BOOLEAN && control,
+            error && h('p', { id: errorId, className: 'bedrock-error', role: 'alert' }, error),
+            h('div', { className: 'bedrock-setting-footer' },
+                h('span', { className: definition.restartNeeded ? 'bedrock-restart' : 'bedrock-muted' },
+                    definition.restartNeeded ? 'Requires a restart.' : (numeric && definition.type === settingsAPI.OptionType.SLIDER ? String(draft) : '')),
+                h('button', { className: 'bedrock-button', disabled: busy || JSON.stringify(saved) === JSON.stringify(definition.default),
+                    onClick: () => save(definition.default), 'aria-label': `Reset ${definition.label || settingKey}` }, 'Reset')));
+    }
+    function PluginSettings({ plugin }) {
+        const h = React.createElement;
+        const definitions = Object.entries(plugin.settingsDefinitions || {});
+        if (!settingsAPI) return h('p', { className: 'bedrock-muted' }, 'Loading settings...');
+        if (!definitions.length) return h('p', { className: 'bedrock-muted' },
+            plugin.enabled ? 'This plugin has no settings.' : 'Enable this plugin to load its settings, if it provides any.');
+        let section;
+        return definitions.map(([key, definition]) => {
+            const heading = definition.section && definition.section !== section;
+            section = definition.section;
+            return h(React.Fragment, { key }, heading && h('h3', { className: 'bedrock-setting-section' }, section),
+                h(SettingControl, { plugin, settingKey: key, definition }));
+        });
+    }
     function PluginsPage() {
         React = renderingReact() || React;
         const h = React.createElement;
         const [, refresh] = React.useState(0);
         const [search, setSearch] = React.useState('');
         const [selected, select] = React.useState(null);
+        const [tab, setTab] = React.useState('details');
         const [readme, setReadme] = React.useState(null);
         const page = React.useRef(null);
         const listScroll = React.useRef(0);
@@ -326,7 +427,7 @@ function installRenderer(configuration) {
                 if (/(auto|scroll)/.test(getComputedStyle(node).overflowY)) return node;
             return document.scrollingElement;
         };
-        const open = id => { listScroll.current = scrollContainer()?.scrollTop || 0; setError(''); select(id); };
+        const open = id => { listScroll.current = scrollContainer()?.scrollTop || 0; setError(''); setTab('details'); select(id); };
         React.useLayoutEffect(() => {
             const container = scrollContainer();
             if (container) container.scrollTop = selected ? 0 : listScroll.current;
@@ -345,6 +446,10 @@ function installRenderer(configuration) {
             try { await operation(); } catch (error) { setError(error.message); } finally { setBusy(null); }
         };
         const plugins = list();
+        const restartNeeded = plugins.some(plugin => plugin.restartReason || plugin.restartSettings?.length);
+        const restartBanner = restartNeeded && h('div', { className: 'bedrock-restart-banner' },
+            h('span', { className: 'bedrock-restart' }, 'Some changes require a restart.'),
+            h('button', { className: 'bedrock-button', disabled: !!busy, onClick: () => run('restart', () => native.request('restart')) }, 'Restart Discord'));
         const detail = plugins.find(plugin => plugin.manifest.id === selected);
         const toggle = plugin => h('button', { role: 'switch', 'aria-checked': plugin.enabled,
             'aria-label': `Enable ${plugin.manifest.name}`, className: 'bedrock-switch', disabled: !!busy,
@@ -354,15 +459,26 @@ function installRenderer(configuration) {
             h('div', { className: 'bedrock-detail-header' }, h('h2', null, detail.manifest.name), toggle(detail)),
             h('p', { className: 'bedrock-muted' }, `v${detail.manifest.version} ${metadataSeparator} ${displayStatus(detail)} ${metadataSeparator} ${detail.manifest.id}`),
             detail.manifest.description && h('p', null, detail.manifest.description),
+            restartBanner,
             error && h('p', { className: 'bedrock-error', role: 'alert' }, error),
             detail.error && h('p', { className: 'bedrock-error', role: 'alert' }, detail.error),
             detail.restartReason && h('p', { className: 'bedrock-restart' }, `Restart needed: ${detail.restartReason}`),
             h('div', { className: 'bedrock-tabs', role: 'tablist', 'aria-label': 'Plugin information' },
-                h('button', { className: 'bedrock-tab', id: 'bedrock-details-tab', role: 'tab', 'aria-selected': true, 'aria-controls': 'bedrock-details-panel' }, 'Details')),
+                ['details', 'settings'].map(name => h('button', { key: name, className: 'bedrock-tab', id: `bedrock-${name}-tab`, role: 'tab',
+                    'aria-selected': tab === name, tabIndex: tab === name ? 0 : -1, 'aria-controls': `bedrock-${name}-panel`, onClick: () => setTab(name),
+                    onKeyDown: event => {
+                        if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
+                        event.preventDefault();
+                        const next = event.key === 'Home' ? 'details' : event.key === 'End' ? 'settings' : tab === 'details' ? 'settings' : 'details';
+                        setTab(next); document.getElementById(`bedrock-${next}-tab`).focus();
+                    } }, name === 'details' ? 'Details' : 'Settings'))),
+            tab === 'settings' ? h('div', { id: 'bedrock-settings-panel', role: 'tabpanel', 'aria-labelledby': 'bedrock-settings-tab' },
+                h(PluginSettings, { key: selected, plugin: detail })) :
             h('div', { className: 'bedrock-readme', id: 'bedrock-details-panel', role: 'tabpanel', 'aria-labelledby': 'bedrock-details-tab' },
                 readme ? markdown(readme, `bedrock://plugins/${selected}/${(detail.manifest.readme || '').replaceAll('\\', '/')}`)
                     : h('p', { className: 'bedrock-muted' }, readme === null && detail.manifest.readme ? `Loading documentation${ellipsis}` : 'No README provided.')));
         return h('div', { className: 'bedrock-page', ref: page },
+            restartBanner,
             h('div', { className: 'bedrock-toolbar' },
                 h('input', { type: 'search', placeholder: 'Search plugins', 'aria-label': 'Search plugins', value: search, onChange: event => setSearch(event.target.value) }),
                 h('button', { className: 'bedrock-button', disabled: !!busy, onClick: () => run('folder', () => native.request('openFolder')) }, 'Open plugins folder'),

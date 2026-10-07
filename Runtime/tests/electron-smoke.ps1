@@ -24,7 +24,7 @@ try {
         $bootstrapRoot = Join-Path ([IO.Path]::GetTempPath()) ('Bedrock-electron-inspector-' + [guid]::NewGuid())
         $bootstrapPath = Join-Path $PSScriptRoot 'obj/inspector-bootstrap.cjs'
         $runtimePath = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../bootstrap.cjs'))
-        $bootstrapSource = 'exports.install = () => require(' + (ConvertTo-Json -Compress $runtimePath) + ').install({root:' + (ConvertTo-Json -Compress $bootstrapRoot) + ',allowURL: url => url.origin === "https://bedrock.test"});'
+        $bootstrapSource = 'exports.install = () => require(' + (ConvertTo-Json -Compress $runtimePath) + ').install({root:' + (ConvertTo-Json -Compress $bootstrapRoot) + ',allowURL: url => url.origin === "https://bedrock.test",restart: () => {globalThis.fixtureRestartRequested = true; return true;}});'
         Set-Content -LiteralPath $bootstrapPath -Encoding UTF8 -Value $bootstrapSource
         $ready = $false
         for ($attempt = 0; $attempt -lt 30; $attempt++) {

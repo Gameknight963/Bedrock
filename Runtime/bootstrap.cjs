@@ -1,6 +1,7 @@
 const fs = require('node:fs');
 const path = require('node:path');
 const Module = require('node:module');
+const { spawn } = require('node:child_process');
 const { createPluginManager } = require('./plugins.cjs');
 const { packagePath } = require('./storage.cjs');
 const { startControl } = require('./control.cjs');
@@ -22,7 +23,8 @@ function install(options = {}) {
                 ['discord.com', 'canary.discord.com', 'ptb.discord.com'].includes(parsed.hostname);
         } catch { return false; }
     };
-    const snapshot = () => ({ plugins: manager.list(), errors: manager.errors() });
+    let revision = 0;
+    const snapshot = () => ({ revision, plugins: manager.list(), errors: manager.errors() });
     function broadcast(channel, value) {
         for (const window of windows) {
             const contents = window.webContents;
@@ -30,7 +32,7 @@ function install(options = {}) {
         }
     }
     const manager = createPluginManager(root, {
-        changed() { broadcast('bedrock:update', snapshot()); },
+        changed() { revision++; broadcast('bedrock:update', snapshot()); },
         context(record, own) {
             return { windows: {
                 beforeCreate(callback) {
@@ -56,7 +58,7 @@ function install(options = {}) {
             } };
         }
     });
-    manager.events.on('settings.changed', () => broadcast('bedrock:update', snapshot()));
+    manager.events.on('settings.changed', () => { revision++; broadcast('bedrock:update', snapshot()); });
     manager.events.on('plugin.event', value => broadcast('bedrock:event', value));
     const bedrockScheme = { scheme: 'bedrock', privileges: {
         standard: true, secure: true, supportFetchAPI: true, corsEnabled: true, bypassCSP: true
@@ -75,6 +77,10 @@ function install(options = {}) {
         ses.protocol.handle('bedrock', request => {
             try {
                 const url = new URL(request.url);
+                if (request.method === 'GET' && url.hostname === 'api' && url.pathname === '/settings.mjs')
+                    return new Response(fs.readFileSync(path.join(__dirname, 'settings.mjs')), { headers: {
+                        'Content-Type': 'text/javascript', 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-store'
+                    } });
                 if (request.method !== 'GET' || url.hostname !== 'plugins') return new Response(null, { status: 404 });
                 const parts = url.pathname.split('/').slice(1).map(decodeURIComponent);
                 const record = manager.records.get(parts.shift());
@@ -136,6 +142,23 @@ function install(options = {}) {
         if (operation === 'list') return snapshot();
         if (operation === 'enable') { await manager.setEnabled(id, key); return snapshot(); }
         if (operation === 'rescan') { manager.scan(); return snapshot(); }
+        if (operation === 'restart') {
+            if (options.restart) return options.restart();
+            const launcher = path.join(__dirname, '..', 'BedrockLauncher.exe');
+            if (!fs.existsSync(launcher)) throw new Error('Cannot find the Bedrock launcher. Restart through the launcher manually.');
+            const restartArguments = ['--exe', process.execPath];
+            if (devtools) restartArguments.push('--devtools');
+            const inspector = process.argv.find(argument => argument.startsWith('--inspect-brk='));
+            const port = inspector?.match(/:(\d+)$/)?.[1];
+            if (port) restartArguments.push('--port', port);
+            await new Promise((resolve, reject) => {
+                // Relaunching Discord directly would lose the bootstrap; the launcher performs our graceful shutdown instead.
+                const child = spawn(launcher, restartArguments, { detached: true, stdio: 'ignore', windowsHide: true });
+                child.once('error', reject);
+                child.once('spawn', () => { child.unref(); resolve(); });
+            });
+            return true;
+        }
         if (operation === 'openFolder') {
             const error = await shell.openPath(path.join(root, 'plugins'));
             if (error) throw new Error(error);
@@ -143,13 +166,15 @@ function install(options = {}) {
         }
         const record = manager.records.get(id);
         if (!record) throw new Error('Unknown plugin');
-        if (operation === 'settingsSet') { manager.settings(id).set(key, value); return manager.settings(id).all(); }
-        if (operation === 'settingsDelete') { manager.settings(id).delete(key); broadcast('bedrock:update', snapshot()); return manager.settings(id).all(); }
+        if (operation === 'settingsDefine') { manager.registerSettings(id, key); return snapshot(); }
+        if (operation === 'settingsSet') { manager.settings(id).set(key, value); return snapshot(); }
+        if (operation === 'settingsDelete') { manager.settings(id).delete(key); return snapshot(); }
         if (operation === 'readme') return record.manifest.readme ? fs.readFileSync(packagePath(record.folder, record.manifest.readme), 'utf8') : '';
         if (operation === 'emit') { manager.events.emit('plugin.event', { id, name: key, value }); return true; }
         throw new Error('Unknown Bedrock operation');
     });
     globalThis.BedrockMain = manager;
+    globalThis.Bedrock = { definePluginSettings: manager.definePluginSettings, OptionType: manager.OptionType };
     manager.scan();
     startControl(app);
     console.info(`[Bedrock] Bootstrap installed. Plugins: ${path.join(root, 'plugins')}`);

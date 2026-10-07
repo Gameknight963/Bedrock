@@ -51,7 +51,7 @@
     <NoticeFile Include="$(MSBuildThisFileDirectory)..\third_party_notices.md" />
     <None Include="@(NoticeFile)" />
   </ItemGroup>
-  <ItemGroup><RuntimeFile Include="$(ProjectDir)..\Runtime\*.cjs" /></ItemGroup>
+  <ItemGroup><RuntimeFile Include="$(ProjectDir)..\Runtime\*.cjs;$(ProjectDir)..\Runtime\*.mjs" /></ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <Target Name="CopyBedrockRuntime" AfterTargets="Build">
     <Copy SourceFiles="@(RuntimeFile)" DestinationFolder="$(OutDir)Runtime" SkipUnchangedFiles="true" />

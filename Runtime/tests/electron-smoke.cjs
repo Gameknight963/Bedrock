@@ -15,11 +15,32 @@ writeJson(path.join(directory, 'plugin.json'), {
     entrypoints: { main: 'main.js', renderer: 'renderer.js' }, readme: 'README.md'
 });
 writeJson(path.join(directory, 'package.json'), { type: 'module' });
-fs.writeFileSync(path.join(directory, 'main.js'), `export function start(ctx) { ctx.windows.beforeCreate(options => { options.width = 580; }); ctx.events.on('hello', event => ctx.settings.set('event', event.value)); }`);
+fs.writeFileSync(path.join(directory, 'main.js'), `
+    const { definePluginSettings, OptionType } = Bedrock;
+    export const settings = definePluginSettings({
+        feature: { type: OptionType.BOOLEAN, label: 'Test feature', description: 'Apply immediately.', default: true,
+            onChange: value => { globalThis.fixtureMainFeature = value; } },
+        title: { type: OptionType.STRING, label: 'Main setting', description: 'Declared by the main entry point.', default: 'Example',
+            isValid: value => value.length > 0 || 'Title cannot be empty.' }
+    });
+    export function start(ctx) { ctx.windows.beforeCreate(options => { options.width = 580; }); ctx.events.on('hello', event => ctx.settings.set('event', event.value)); }
+`);
 fs.writeFileSync(path.join(directory, 'helper.js'), `export const color = '#00ff00';`);
 fs.writeFileSync(path.join(directory, 'renderer.js'), `
     import { color } from './helper.js';
+    const { definePluginSettings, OptionType } = Bedrock;
+    export const settings = definePluginSettings({
+        feature: { type: OptionType.BOOLEAN, label: 'Test feature', description: 'Apply immediately.', default: true,
+            onChange: value => { globalThis.fixtureRendererFeature = value; } },
+        message: { type: OptionType.STRING, label: 'Message', description: 'Enter a message.', default: 'Hello', section: 'Content',
+            isValid: value => value.trim().length > 0 || 'Message cannot be empty.' },
+        count: { type: OptionType.NUMBER, label: 'Count', description: 'Choose a count.', default: 2, min: 0, max: 10, step: 1 },
+        mode: { type: OptionType.SELECT, label: 'Mode', description: 'Choose a mode.', default: false,
+            options: [{ label: 'Off', value: false }, { label: 'On', value: true }] },
+        volume: { type: OptionType.SLIDER, label: 'Volume', description: 'Change after restarting.', default: 50, min: 0, max: 100, step: 5, restartNeeded: true }
+    });
     export async function start(ctx) {
+        globalThis.fixtureSettings = settings;
         await ctx.webpack.waitFor(value => value?.fixtureLate);
         globalThis.fixtureStarts = (globalThis.fixtureStarts || 0) + 1;
         ctx.styles.add('body { --fixture-color: ' + color + '; }');
@@ -44,11 +65,12 @@ fs.cpSync(path.join(__dirname, '../../Plugins/selectable-settings'), selectableD
 
 fs.cpSync(path.join(__dirname, '../../Plugins/developer-tools'), path.join(root, 'plugins', 'developer-tools'), { recursive: true });
 
-require('../bootstrap.cjs').install({ root, allowURL: url => url.origin === 'https://bedrock.test' });
+require('../bootstrap.cjs').install({ root, allowURL: url => url.origin === 'https://bedrock.test', restart: () => { globalThis.fixtureRestartRequested = true; return true; } });
 globalThis.BedrockMain.scan();
 require('electron').protocol.registerSchemesAsPrivileged([{ scheme: 'fixtureextra', privileges: { standard: true, secure: true } }]);
 const { BrowserWindow, session } = require('electron');
 let window;
+let mirror;
 const failures = [];
 const html = `<!doctype html><html><head><meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-eval'; style-src 'self' 'unsafe-inline'"><style>*{user-select:none}</style></head><body style="background:#313338;padding:16px"><p id="outside-settings">Outside settings</p><div class="standardSidebarView_fixture"><p id="legacy-settings-label">Legacy settings</p></div><div role="dialog"><nav class="breadcrumbsNav_fixture">Settings breadcrumb</nav><div class="contentBody_fixture"><p id="settings-label">Settings description</p><div id="root"></div></div></div><div role="dialog"><nav class="breadcrumbsNav_fixture">Unrelated breadcrumb</nav><p id="other-dialog-label">Other dialog</p></div><script src="/react-unused.js"></script><script src="/remember-unused.js"></script><script src="/react.js"></script><script src="/react-dom.js"></script><script src="/fixture.js"></script></body></html>`;
 const fixture = `
@@ -255,6 +277,84 @@ app.whenReady().then(async () => {
         assert.equal(await evaluate(`getComputedStyle(document.querySelector('.bedrock-readme strong')).userSelect`), 'text');
         assert.equal(await evaluate(`globalThis.badReadme === undefined && document.querySelector('.bedrock-readme a[href^="javascript:"]') === null`), true);
         assert.equal(await evaluate(`document.querySelector('.bedrock-grid') === null && document.querySelector('[role=tab][aria-selected=true]').textContent === 'Details'`), true);
+        await evaluate(`document.querySelector('#bedrock-settings-tab').click()`);
+        await waitFor(`document.querySelectorAll('.bedrock-setting').length === 6`);
+        assert.equal(await evaluate(`document.querySelector('#bedrock-setting-title').value`), 'Example', 'main definitions render in the same settings page');
+        assert.equal(await evaluate(`document.querySelector('#bedrock-setting-count').value`), '2');
+        assert.equal(await evaluate(`document.querySelector('#bedrock-setting-volume').type`), 'range');
+        await evaluate(`document.querySelector('#bedrock-setting-feature').click()`);
+        await waitFor(`globalThis.fixtureRendererFeature === false && document.querySelector('#bedrock-setting-feature').getAttribute('aria-checked') === 'false'`);
+        assert.equal(globalThis.fixtureMainFeature, false, 'one owner notifies main and renderer callbacks');
+        assert.equal(globalThis.BedrockMain.settings('test.example').get('feature'), false);
+        await evaluate(`(() => {
+            const element = document.createElement('div'); element.id = 'settings-hook-test'; document.body.append(element);
+            const Component = () => React.createElement('span', { id: 'settings-hook-value' }, String(fixtureSettings.use(['feature']).feature));
+            globalThis.settingsHookRoot = ReactDOM.createRoot(element);
+            settingsHookRoot.render(React.createElement(Component));
+        })()`);
+        await waitFor(`document.querySelector('#settings-hook-value')?.textContent === 'false'`);
+        mirror = new BrowserWindow({ show: false });
+        await mirror.loadURL('https://bedrock.test/');
+        globalThis.BedrockMain.records.get('test.example').module.settings.store.feature = true;
+        await globalThis.BedrockMain.records.get('test.example').module.settings.flush();
+        await waitFor(`globalThis.fixtureRendererFeature === true && document.querySelector('#settings-hook-value').textContent === 'true'`);
+        const mirrorDeadline = Date.now() + 10000;
+        while (!await mirror.webContents.executeJavaScript(`globalThis.fixtureSettings?.store.feature === true`)) {
+            if (Date.now() > mirrorDeadline) throw new Error('Second window did not synchronize settings');
+            await new Promise(resolve => setTimeout(resolve, 50));
+        }
+        await mirror.webContents.executeJavaScript(`globalThis.fixtureSettings.set('feature', false)`);
+        await waitFor(`globalThis.fixtureRendererFeature === false && document.querySelector('#settings-hook-value').textContent === 'false'`);
+        assert.equal(globalThis.fixtureMainFeature, false);
+        await evaluate(`settingsHookRoot.unmount(); document.querySelector('#settings-hook-test').remove()`);
+        mirror.destroy(); mirror = null;
+        await evaluate(`(() => {
+            const input = document.querySelector('#bedrock-setting-message');
+            input.focus(); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, '');
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+        })()`);
+        await evaluate(`document.querySelector('#bedrock-setting-message').dispatchEvent(new FocusEvent('focusout', { bubbles: true }))`);
+        await waitFor(`document.querySelector('#bedrock-setting-message-error')?.textContent === 'Message cannot be empty.'`);
+        assert.equal(globalThis.BedrockMain.settings('test.example').get('message', 'Hello'), 'Hello');
+        await evaluate(`(() => {
+            const input = document.querySelector('#bedrock-setting-message');
+            input.focus(); Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, 'Updated');
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+        })()`);
+        await evaluate(`document.querySelector('#bedrock-setting-message').dispatchEvent(new FocusEvent('focusout', { bubbles: true }))`);
+        await waitFor(`globalThis.fixtureSettings.store.message === 'Updated'`);
+        await evaluate(`(() => {
+            const input = document.querySelector('#bedrock-setting-mode');
+            input.value = '1'; input.dispatchEvent(new Event('change', { bubbles: true }));
+        })()`);
+        await waitFor(`globalThis.fixtureSettings.store.mode === true`);
+        await evaluate(`(() => {
+            const input = document.querySelector('#bedrock-setting-count');
+            Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, '4');
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+            input.dispatchEvent(new FocusEvent('focusout', { bubbles: true }));
+        })()`);
+        await waitFor(`globalThis.fixtureSettings.store.count === 4`);
+        await evaluate(`(() => {
+            const input = document.querySelector('#bedrock-setting-volume');
+            Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, '65');
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+            input.dispatchEvent(new PointerEvent('pointerup', { bubbles: true }));
+        })()`);
+        await waitFor(`globalThis.fixtureSettings.store.volume === 65`);
+        await evaluate(`globalThis.fixtureSettings.store.volume = 75; globalThis.fixtureSettings.flush()`);
+        await waitFor(`document.querySelector('.bedrock-restart-banner button')`);
+        assert.equal(globalThis.BedrockMain.settings('test.example').get('volume'), 75);
+        await evaluate(`document.querySelector('.bedrock-restart-banner button').click()`);
+        assert.equal(globalThis.fixtureRestartRequested, true);
+        await evaluate(`globalThis.fixtureSettings.reset('volume')`);
+        await waitFor(`globalThis.Bedrock.plugins.list().find(plugin => plugin.manifest.id === 'test.example').restartSettings.length === 0`);
+        await assert.rejects(evaluate(`globalThis.BedrockNative.request('settingsSet', 'test.example', 'count', 20)`));
+        await assert.rejects(evaluate(`globalThis.BedrockNative.request('settingsSet', 'test.example', 'title', '')`));
+        assert.equal(globalThis.BedrockMain.settings('test.example').get('count', 2), 4);
+        assert.equal(JSON.parse(fs.readFileSync(path.join(root, 'data/test.example/settings.json'), 'utf8')).message, 'Updated');
+        await evaluate(`document.querySelector('#bedrock-details-tab').click()`);
+        await waitFor(`document.querySelector('.bedrock-readme h1')`);
         await evaluate(`document.querySelector('[role=switch][aria-label="Enable Example plugin"]').click()`);
         await waitFor(`globalThis.Bedrock.plugins.list().find(plugin => plugin.manifest.id === 'test.example').rendererStatus === 'stopped'`);
         assert.equal(await evaluate(`document.querySelector('.bedrock-readme h1').textContent`), 'Example documentation');
@@ -275,13 +375,14 @@ app.whenReady().then(async () => {
         assert.equal(await evaluate(`(async () => (await fetch('bedrock://plugins/test.example/../outside')).status)()`), 404);
         await window.loadURL('https://unrelated.test/');
         assert.equal(await evaluate(`globalThis.Bedrock === undefined && globalThis.BedrockNative === undefined`), true, 'bridge must not appear on unrelated origins');
-        console.log('PASS: Real Electron preload, existing preload, early window hook, settings layout, React UI switches, live cleanup/re-enable, relative ESM imports, IPC settings/events, safe Markdown and origin checks.');
+        console.log('PASS: Real Electron preload, settings controls, validation, restart requests, persistence, React settings subscriptions, synchronization across main and two windows, live cleanup/re-enable, MCP bridge, safe Markdown and origin checks.');
         await globalThis.BedrockMain.stopAll();
         window.destroy();
         fs.rmSync(root, { recursive: true, force: true });
         app.exit(0);
     } catch (error) {
         console.error(error.stack, failures.join('\n'));
+        mirror?.destroy();
         window?.destroy();
         fs.rmSync(root, { recursive: true, force: true });
         app.exit(1);
