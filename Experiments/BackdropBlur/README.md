@@ -14,12 +14,13 @@ The program draws white text and shapes on a transparent surface, then uses a Sk
 
 PNG files are written under the executable's `images` folder in `bin`. `comparison.png` shows all three over a checkerboard. The individual images retain transparency. The console also prints the alpha at a pixel inside the original white bar.
 
-`rounded-comparison.png` adds four columns at full, half, and zero layer opacity:
+`rounded-comparison.png` adds five columns at full, half, and zero layer opacity:
 
 - **Original:** the unchanged backdrop.
 - **SrcOver + clear:** capture the blurred backdrop into a rectangular layer, clear outside the rounded shape, then restore with `SrcOver`.
 - **Src + clear:** use the same clearing operation, then restore with `Src`, as in the one-byte patch.
 - **Src + rounded clip:** clip to the rounded shape before creating the layer and restore with `Src`.
+- **Masked replacement:** blend the original and completed blurred result using rounded coverage multiplied by effect opacity, independently of the blurred pixels' alpha.
 
 A white marker sits outside the rounded shape but inside its rectangular bounds. An orange rectangle represents foreground content drawn into the layer. Individual transparent images are saved as `rounded-{column}-{opacity}.png`.
 
@@ -32,6 +33,21 @@ Clearing outside the rounded shape and restoring with `Src` erases the white cor
 Clipping does not fix layer opacity. With half opacity, both `Src` approaches reduce the bar's alpha to 61; at zero opacity they erase the backdrop inside the shape entirely. A disappearing effect should leave the original backdrop visible. Replacement therefore needs to account for effect opacity separately from the transparency of the blurred pixels.
 
 These results support clipping as a fix for the isolated corner defect, but not as a complete Chromium fix. Restricting Chromium's entire layer could also clip foreground content or forward-filter output that is meant to extend beyond the backdrop shape.
+
+## Masked replacement
+
+The fifth column keeps the original backdrop and the completed effect separately. An antialiased rounded mask controls replacement:
+
+```text
+result = original * (1 - mask) + completed effect * mask
+mask = rounded coverage * effect opacity
+```
+
+The calculation uses premultiplied colors, including alpha. `DstOut` removes the masked portion of the original, `DstIn` restricts the completed effect to the mask, and `Plus` adds the two weighted images. Using `SrcOver` for that final step would attenuate the original again based on the effect's alpha.
+
+This preserves the outside marker at every opacity. The bar's alpha is 121 at full opacity, 188 at half opacity, and 255 at zero opacity. The program checks that the marker remains white and that the entire zero-opacity image matches the original byte for byte.
+
+At half opacity, some sharp content intentionally reappears because the effect is fading back to the original. At full opacity, it is replaced by the blurred result. This experiment applies the same mask to the orange foreground rectangle; it does not yet model foreground content extending outside the backdrop shape or Chromium's full compositing pipeline.
 
 ## Findings
 

@@ -52,7 +52,7 @@ using SKImage result = SKImage.FromBitmap(comparison);
 using SKData resultPng = result.Encode(SKEncodedImageFormat.Png, 100);
 File.WriteAllBytes(Path.Combine(output, "comparison.png"), resultPng.ToArray());
 
-string[] roundedNames = ["Original", "SrcOver + clear", "Src + clear", "Src + rounded clip"];
+string[] roundedNames = ["Original", "SrcOver + clear", "Src + clear", "Src + rounded clip", "Masked replacement"];
 byte[] opacities = [255, 128, 0];
 using SKBitmap roundedComparison = new(width * roundedNames.Length, (height + 40) * opacities.Length);
 using SKCanvas roundedPreview = new(roundedComparison);
@@ -76,7 +76,41 @@ for (int row = 0; row < opacities.Length; row++)
         // This marker is inside the rectangular bounds but outside the rounded shape.
         canvas.DrawRect(35, 35, 15, 15, ink);
 
-        if (panel != 0)
+        if (panel == 4)
+        {
+            byte[] originalPixels = bitmap.Bytes;
+            using SKImage original = SKImage.FromBitmap(bitmap);
+            using SKBitmap filtered = new(width, height, SKColorType.Bgra8888, SKAlphaType.Premul);
+            using SKCanvas filteredCanvas = new(filtered);
+            using SKPaint replace = new() { BlendMode = SKBlendMode.Src };
+            filteredCanvas.DrawImage(original, 0, 0, new SKSamplingOptions(), replace);
+            filteredCanvas.SaveLayer(new SKCanvasSaveLayerRec { Paint = replace, Backdrop = blur });
+            filteredCanvas.Restore();
+            filteredCanvas.DrawRect(140, 160, 80, 20, foreground);
+
+            using SKBitmap coverage = new(width, height, SKColorType.Bgra8888, SKAlphaType.Premul);
+            using SKCanvas coverageCanvas = new(coverage);
+            coverageCanvas.Clear(SKColors.Transparent);
+            using SKPaint maskPaint = new() { Color = SKColors.White.WithAlpha(opacities[row]), IsAntialias = true };
+            coverageCanvas.DrawRoundRect(roundedBounds, maskPaint);
+            using SKImage maskImage = SKImage.FromBitmap(coverage);
+
+            // Keep original * (1 - coverage), then add filtered * coverage in premultiplied color.
+            // SrcOver here would attenuate the original again using the filtered image's alpha.
+            using SKPaint remove = new() { BlendMode = SKBlendMode.DstOut };
+            canvas.DrawImage(maskImage, 0, 0, new SKSamplingOptions(), remove);
+            using SKPaint restrict = new() { BlendMode = SKBlendMode.DstIn };
+            filteredCanvas.DrawImage(maskImage, 0, 0, new SKSamplingOptions(), restrict);
+            using SKImage filteredImage = SKImage.FromBitmap(filtered);
+            using SKPaint add = new() { BlendMode = SKBlendMode.Plus };
+            canvas.DrawImage(filteredImage, 0, 0, new SKSamplingOptions(), add);
+
+            if (bitmap.GetPixel(42, 42) != SKColors.White)
+                throw new InvalidOperationException("Masked replacement changed the outside marker.");
+            if (opacities[row] == 0 && !bitmap.Bytes.AsSpan().SequenceEqual(originalPixels))
+                throw new InvalidOperationException("Zero-opacity replacement changed the backdrop.");
+        }
+        else if (panel != 0)
         {
             canvas.Save();
             canvas.ClipRect(roundedBounds.Rect);
