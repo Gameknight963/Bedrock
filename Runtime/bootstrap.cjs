@@ -39,11 +39,11 @@ function install(options = {}) {
             if (!contents.isDestroyed() && allowed(contents.getURL())) contents.send(channel, value);
         }
     }
-    const logs = createLogFeed();
+    const logs = createLogFeed(root);
     const manager = createPluginManager(root, {
         changed() { revision++; broadcast('bedrock:update', snapshot()); },
         context(record, own) {
-            return { logs: { subscribe: callback => own(logs.subscribe(callback)) }, windows: {
+            return { logs: { configureFile: logs.configureFile, publish: logs.publish, subscribe: callback => own(logs.subscribe(callback)) }, windows: {
                 beforeCreate(callback) {
                     if (typeof callback !== 'function') throw new Error('Expected callback');
                     let applied = false;
@@ -144,8 +144,8 @@ function install(options = {}) {
         windows.add(window);
         window.webContents.on('console-message', (event, details, message) => {
             details = event.message ? event : typeof details === 'object' ? details : { message };
-            if (!details.message?.startsWith('[Bedrock')) return;
-            logs.publish({ level: 'info', text: details.message, bedrock: true });
+            if (typeof details.message !== 'string') return;
+            logs.publish({ level: 'info', text: details.message, bedrock: details.message.startsWith('[Bedrock') });
         });
         window.once('closed', () => windows.delete(window));
         if (devtools) window.webContents.on('did-finish-load', () => {

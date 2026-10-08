@@ -35,7 +35,8 @@
       <PreprocessorDefinitions>UNICODE;_UNICODE;WIN32_LEAN_AND_MEAN;_WIN32_WINNT=0x0A00;%(PreprocessorDefinitions)</PreprocessorDefinitions>
     </ClCompile>
     <Link>
-      <SubSystem>Console</SubSystem>
+      <SubSystem>Windows</SubSystem>
+      <EntryPointSymbol>wmainCRTStartup</EntryPointSymbol>
       <AdditionalDependencies>winhttp.lib;ws2_32.lib;%(AdditionalDependencies)</AdditionalDependencies>
       <GenerateDebugInformation>true</GenerateDebugInformation>
     </Link>
@@ -43,8 +44,8 @@
       <AdditionalManifestFiles>$(ProjectDir)app.manifest;%(AdditionalManifestFiles)</AdditionalManifestFiles>
     </Manifest>
   </ItemDefinitionGroup>
-  <ItemGroup><ClCompile Include="main.c" /><ClCompile Include="inspector.c" /><ClCompile Include="fuse.c" /><ClCompile Include="shutdown.c" /></ItemGroup>
-  <ItemGroup><ClInclude Include="inspector.h" /><ClInclude Include="fuse.h" /><ClInclude Include="shutdown.h" /></ItemGroup>
+  <ItemGroup><ClCompile Include="logging.c" /><ClCompile Include="main.c" /><ClCompile Include="inspector.c" /><ClCompile Include="fuse.c" /><ClCompile Include="shutdown.c" /></ItemGroup>
+  <ItemGroup><ClInclude Include="logging.h" /><ClInclude Include="inspector.h" /><ClInclude Include="fuse.h" /><ClInclude Include="shutdown.h" /></ItemGroup>
   <ItemGroup><Manifest Include="app.manifest" /></ItemGroup>
   <ItemGroup><None Include="README.md" /></ItemGroup>
   <ItemGroup>
@@ -54,6 +55,10 @@
   <ItemGroup><RuntimeFile Include="$(ProjectDir)..\Runtime\*.cjs;$(ProjectDir)..\Runtime\*.mjs" /></ItemGroup>
   <ItemGroup><BundledPluginFile Include="$(ProjectDir)..\Plugins\**\*" /></ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\Native\Console\Console.vcxproj">
+      <Project>{91A18A72-459F-4D73-B9E0-894A284043EA}</Project>
+      <LinkLibraryDependencies>false</LinkLibraryDependencies>
+    </ProjectReference>
     <ProjectReference Include="..\Native\BackdropBlur\Controller.vcxproj" Condition="'$(Platform)'=='x64'">
       <Project>{5DC8C089-B9B1-44C5-89C1-DAD90BA466F6}</Project>
       <LinkLibraryDependencies>false</LinkLibraryDependencies>
@@ -72,6 +77,7 @@
     <Copy SourceFiles="@(RuntimeFile)" DestinationFolder="$(OutDir)Runtime" SkipUnchangedFiles="true" />
     <Copy SourceFiles="@(NoticeFile)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />
     <Copy SourceFiles="@(BundledPluginFile)" DestinationFiles="@(BundledPluginFile->'$(OutDir)BedrockData\plugins\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="$(ProjectDir)..\Native\Console\bin\$(Platform)\$(Configuration)\console.node" DestinationFolder="$(OutDir)BedrockData\plugins\console\native\win32-$(PluginArchitecture)" SkipUnchangedFiles="true" />
     <Copy SourceFiles="$(ProjectDir)..\Native\WindowCustomization\bin\$(Platform)\$(Configuration)\window.node" DestinationFolder="$(OutDir)BedrockData\plugins\window-customization\native\win32-$(PluginArchitecture)" SkipUnchangedFiles="true" />
     <Copy Condition="'$(Platform)'=='x64'" SourceFiles="$(ProjectDir)..\Native\BackdropBlur\bin\$(Platform)\$(Configuration)\blur-controller.exe;$(ProjectDir)..\Native\BackdropBlur\bin\$(Platform)\$(Configuration)\blur-hook.dll" DestinationFolder="$(OutDir)BedrockData\plugins\backdrop-blur\native\win32-x64" SkipUnchangedFiles="true" />
     <Copy Condition="'$(Platform)'=='x64'" SourceFiles="$(ProjectDir)..\Native\BackdropBlur\bin\$(Platform)\$(Configuration)\minhook-LICENSE.txt;$(ProjectDir)..\Native\BackdropBlur\bin\$(Platform)\$(Configuration)\Skia-LICENSE.txt;$(ProjectDir)..\Native\BackdropBlur\bin\$(Platform)\$(Configuration)\Chromium-LICENSE.txt;$(ProjectDir)..\Native\BackdropBlur\bin\$(Platform)\$(Configuration)\manual-map-LICENSE.txt" DestinationFolder="$(OutDir)BedrockData\plugins\backdrop-blur\native\win32-x64" SkipUnchangedFiles="true" />

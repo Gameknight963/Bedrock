@@ -4,6 +4,8 @@
 #include <stdlib.h>
 #include <string.h>
 #include <wchar.h>
+#include "logging.h"
+
 #define JSMN_STATIC
 #define JSMN_STRICT
 #include "../lib/jsmn/jsmn.h"

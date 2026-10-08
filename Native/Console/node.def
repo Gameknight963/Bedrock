@@ -1,0 +1,8 @@
+LIBRARY node.exe
+EXPORTS
+    napi_throw_error
+    napi_get_cb_info
+    napi_get_value_bool
+    napi_get_value_string_utf16
+    napi_get_undefined
+    napi_define_properties

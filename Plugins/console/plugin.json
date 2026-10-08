@@ -1,0 +1,10 @@
+{
+    "manifestVersion": 1,
+    "apiVersion": 1,
+    "id": "bedrock.console",
+    "name": "Console",
+    "version": "1.0.0",
+    "description": "Show a console for Bedrock logs and choose whether to include Discord output.",
+    "entrypoints": { "main": "main.js" },
+    "readme": "README.md"
+}

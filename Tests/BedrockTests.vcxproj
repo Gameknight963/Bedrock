@@ -43,6 +43,7 @@
   <ItemGroup>
     <ClCompile Include="fuse-tests.cpp" />
     <ClCompile Include="shutdown-tests.cpp" />
+    <ClCompile Include="..\Launcher\logging.c"><CompileAs>CompileAsC</CompileAs></ClCompile>
     <ClCompile Include="..\Launcher\shutdown.c"><CompileAs>CompileAsC</CompileAs></ClCompile>
     <ClCompile Include="..\Launcher\fuse.c"><CompileAs>CompileAsC</CompileAs></ClCompile>
     <ClCompile Include="..\lib\googletest\src\gtest-all.cc"><WarningLevel>Level3</WarningLevel></ClCompile>

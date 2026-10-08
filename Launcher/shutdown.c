@@ -10,6 +10,8 @@ typedef struct RunningProcess {
     DWORD pid;
 } RunningProcess;
 
+#include "logging.h"
+
 static const wchar_t *normal_path(const wchar_t *path)
 {
     return wcsncmp(path, L"\\\\?\\", 4) == 0 ? path + 4 : path;

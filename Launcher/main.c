@@ -11,6 +11,8 @@
 #include "fuse.h"
 #include "shutdown.h"
 
+#include "logging.h"
+
 #define PATH_CAP 32768
 #define INSPECTOR_INDEX FUSE_INSPECTOR_INDEX
 
@@ -328,6 +330,7 @@ done:
 
 int wmain(int argc, wchar_t **argv)
 {
+    launcher_logging_init();
     LaunchPaths *paths = calloc(1, sizeof(*paths));
     int result;
     if (!paths) { fwprintf(stderr, L"Cannot allocate launcher path buffers.\n"); return 1; }
