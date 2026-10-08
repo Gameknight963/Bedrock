@@ -33,9 +33,8 @@ export function normalizeDefinitions(definitions) {
     for (const [key, source] of Object.entries(definitions)) {
         if (!key || reserved.has(key)) throw new Error(`Invalid settings key: ${key}`);
         if (!source || !Object.values(OptionType).includes(source.type)) throw new Error(`Unsupported setting type: ${key}`);
-        if (typeof source.description !== 'string') throw new Error(`Setting ${key} needs a description`);
-        const definition = { type: source.type, description: source.description, default: structuredClone(source.default) };
-        for (const field of ['label', 'placeholder', 'section']) {
+        const definition = { type: source.type, default: structuredClone(source.default) };
+        for (const field of ['description', 'label', 'placeholder', 'section']) {
             if (source[field] === undefined) continue;
             if (typeof source[field] !== 'string') throw new Error(`${key}.${field} must be text`);
             definition[field] = source[field];

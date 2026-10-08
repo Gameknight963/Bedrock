@@ -5,6 +5,7 @@ const { spawn } = require('node:child_process');
 const { createPluginManager } = require('./plugins.cjs');
 const { packagePath } = require('./storage.cjs');
 const { startControl } = require('./control.cjs');
+const { createLogFeed } = require('./logs.cjs');
 const { createThemeManager } = require('./themes.cjs');
 
 function install(options = {}) {
@@ -38,10 +39,11 @@ function install(options = {}) {
             if (!contents.isDestroyed() && allowed(contents.getURL())) contents.send(channel, value);
         }
     }
+    const logs = createLogFeed();
     const manager = createPluginManager(root, {
         changed() { revision++; broadcast('bedrock:update', snapshot()); },
         context(record, own) {
-            return { windows: {
+            return { logs: { subscribe: callback => own(logs.subscribe(callback)) }, windows: {
                 beforeCreate(callback) {
                     if (typeof callback !== 'function') throw new Error('Expected callback');
                     let applied = false;
@@ -140,6 +142,11 @@ function install(options = {}) {
     }
     app.on('browser-window-created', (_, window) => {
         windows.add(window);
+        window.webContents.on('console-message', (event, details, message) => {
+            details = event.message ? event : typeof details === 'object' ? details : { message };
+            if (!details.message?.startsWith('[Bedrock')) return;
+            logs.publish({ level: 'info', text: details.message, bedrock: true });
+        });
         window.once('closed', () => windows.delete(window));
         if (devtools) window.webContents.on('did-finish-load', () => {
             if (allowed(window.webContents.getURL())) window.webContents.openDevTools({ mode: 'detach' });
