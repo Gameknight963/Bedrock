@@ -29,8 +29,12 @@ static LRESULT CALLBACK window_proc(HWND window, UINT message, WPARAM wparam, LP
         RemoveWindowSubclass(window, window_proc, subclass);
         state->window = NULL;
     } else if (state->titlebar) {
+        // Electron suppresses native maximization and disables the system menu for transparent windows.
+        if (message == WM_SYSCOMMAND && ((wparam & 0xFFF0) == SC_MAXIMIZE || (wparam & 0xFFF0) == SC_RESTORE))
+            return DefWindowProcW(window, message, wparam, lparam);
         // Chromium's frameless handler suppresses these; let Windows operate the native frame.
         switch (message) {
+        case WM_INITMENU:
         case WM_NCCALCSIZE:
         case WM_NCPAINT:
         case WM_NCACTIVATE:

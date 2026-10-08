@@ -2,6 +2,7 @@ const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
 const assert = require('node:assert/strict');
+const { execFileSync } = require('node:child_process');
 const { app } = require('electron');
 const { writeJson } = require('../storage.cjs');
 const root = globalThis.BedrockMain?.root || fs.mkdtempSync(path.join(os.tmpdir(), 'Bedrock-electron-'));
@@ -67,7 +68,9 @@ const customizationPackage = path.join(__dirname, '../../Launcher/bin/x64/Debug/
 if (!fs.existsSync(path.join(customizationPackage, 'native/win32-x64/window.node')))
     throw new Error('Build the x64 Debug Launcher project first to package the native window customization plugin.');
 fs.cpSync(customizationPackage, path.join(root, 'plugins', 'window-customization'), { recursive: true });
-const nativeWindows = require(path.join(customizationPackage, 'native/win32-x64/window.node'));
+const fixtureNative = path.join(root, 'plugins/window-customization/native/win32-x64/window.node');
+fs.copyFileSync(path.join(__dirname, '../../Native/WindowCustomization/bin/x64/Debug/window.node'), fixtureNative);
+const nativeWindows = require(fixtureNative);
 
 require('../bootstrap.cjs').install({ root, allowURL: url => url.origin === 'https://bedrock.test', restart: () => { globalThis.fixtureRestartRequested = true; return true; } });
 globalThis.BedrockMain.scan();
@@ -131,6 +134,15 @@ async function waitFor(script) {
     }
     throw new Error(`Timed out: ${script}\n${failures.join('\n')}`);
 }
+async function systemCommand(window, command, expected) {
+    const handle = window.getNativeWindowHandle();
+    const address = handle.length === 8 ? handle.readBigUInt64LE() : BigInt(handle.readUInt32LE());
+    execFileSync('powershell.exe', ['-NoProfile', '-File', path.join(__dirname, 'post-window-message.ps1'),
+        '-WindowHandle', address.toString(), '-Message', '274', '-WParam', String(command)]);
+    const deadline = Date.now() + 3000;
+    while (!expected() && Date.now() < deadline) await new Promise(resolve => setTimeout(resolve, 25));
+    assert.ok(expected(), `Native system command ${command.toString(16)} did not reach the expected state`);
+}
 app.whenReady().then(async () => {
     try {
         session.defaultSession.protocol.handle('https', request => {
@@ -187,6 +199,20 @@ app.whenReady().then(async () => {
         await globalThis.BedrockMain.setEnabled('bedrock.window-customization', true);
         assert.equal(nativeWindows.getStyle(handle) & thickFrame, thickFrame);
         nativeProbe.destroy();
+        const maximizeProbe = new BrowserWindow({ show: false, frame: false, transparent: true });
+        await maximizeProbe.loadURL('https://discord.com/native-fixture');
+        globalThis.BedrockMain.settings('bedrock.window-customization').set('nativeTitlebar', true);
+        maximizeProbe.showInactive();
+        const restoreBounds = maximizeProbe.getBounds();
+        await systemCommand(maximizeProbe, 0xf030, () => maximizeProbe.isMaximized());
+        assert.ok(nativeWindows.getStyle(maximizeProbe.getNativeWindowHandle()) & 0x01000000, 'maximize uses actual WS_MAXIMIZE');
+        await systemCommand(maximizeProbe, 0xf120, () => !maximizeProbe.isMaximized());
+        assert.deepEqual(maximizeProbe.getBounds(), restoreBounds, 'native restore preserves the original bounds');
+        await systemCommand(maximizeProbe, 0xf020, () => maximizeProbe.isMinimized());
+        await systemCommand(maximizeProbe, 0xf120, () => !maximizeProbe.isMinimized());
+        assert.deepEqual(maximizeProbe.getBounds(), restoreBounds, 'restoring from minimized preserves the original bounds');
+        maximizeProbe.destroy();
+        globalThis.BedrockMain.settings('bedrock.window-customization').set('nativeTitlebar', false);
         await window.loadURL('https://bedrock.test/');
         await waitFor(`globalThis.Bedrock?.plugins.list().find(plugin => plugin.manifest.id === 'test.example')?.rendererStatus === 'running' && document.querySelector('[role=switch][aria-label="Enable Example plugin"]')`);
         await waitFor(`document.querySelector('.bedrock-restart-banner button')?.textContent === 'Restart Discord'`);
