@@ -93,7 +93,7 @@ static BYTE *module_base(DWORD pid, const wchar_t *name, const wchar_t *expected
 static BOOL remote_call(HANDLE process, LPTHREAD_START_ROUTINE function, void *argument, DWORD *result, BOOL *finished, const wchar_t *operation) {
     HANDLE thread = CreateRemoteThread(process, NULL, 0, function, argument, 0, NULL);
     *finished = TRUE;
-    if (!thread) { fwprintf(stderr, L"%s: CreateRemoteThread failed: %lu.\n", operation, GetLastError()); return FALSE; }
+    if (!thread) { fwprintf(stderr, L"Cannot start a thread for %s (Windows error %lu).\n", operation, GetLastError()); return FALSE; }
     DWORD wait = WaitForSingleObject(thread, 4000);
     if (wait != WAIT_OBJECT_0) {
         *finished = FALSE;
@@ -102,7 +102,7 @@ static BOOL remote_call(HANDLE process, LPTHREAD_START_ROUTINE function, void *a
         return FALSE;
     }
     BOOL success = GetExitCodeThread(thread, result);
-    if (!success) fwprintf(stderr, L"%s: GetExitCodeThread failed: %lu.\n", operation, GetLastError());
+    if (!success) fwprintf(stderr, L"Cannot read the result of %s (Windows error %lu).\n", operation, GetLastError());
     CloseHandle(thread);
     return success;
 }
@@ -116,7 +116,7 @@ int wmain(int argc, wchar_t **argv) {
         if (!wcscmp(argv[index], L"--base") && index + 1 < argc) {
             wchar_t *end = NULL;
             unsigned long long address = wcstoull(argv[++index], &end, 16);
-            if (!address || !end || *end) { fwprintf(stderr, L"Invalid mapped base.\n"); return 1; }
+            if (!address || !end || *end) { fwprintf(stderr, L"Invalid mapped DLL address.\n"); return 1; }
             mapped_base = (BYTE *)(ULONG_PTR)address;
         }
         else if (!wcscmp(argv[index], L"--status")) status = TRUE;
@@ -138,7 +138,7 @@ int wmain(int argc, wchar_t **argv) {
     DWORD pid = discover(requested);
     if (!pid) return 1;
     HANDLE process = OpenProcess(PROCESS_CREATE_THREAD | PROCESS_QUERY_INFORMATION | PROCESS_VM_OPERATION | PROCESS_VM_WRITE | PROCESS_VM_READ | SYNCHRONIZE, FALSE, pid);
-    if (!process) { fwprintf(stderr, L"OpenProcess failed: %lu.\n", GetLastError()); return 1; }
+    if (!process) { fwprintf(stderr, L"Cannot open the GPU process (Windows error %lu).\n", GetLastError()); return 1; }
     USHORT machine = 0, native = 0;
     if (!IsWow64Process2(process, &machine, &native) || machine != IMAGE_FILE_MACHINE_UNKNOWN || native != IMAGE_FILE_MACHINE_AMD64) {
         fwprintf(stderr, L"Only native x64 Discord GPU processes are supported.\n"); CloseHandle(process); return 1;
@@ -146,7 +146,7 @@ int wmain(int argc, wchar_t **argv) {
     wchar_t *path = calloc(32768, sizeof(wchar_t));
     DWORD image_length = 32768;
     if (!path || !QueryFullProcessImageNameW(process, 0, path, &image_length)) {
-        fwprintf(stderr, L"QueryFullProcessImageNameW/allocation failed: %lu.\n", path ? GetLastError() : ERROR_NOT_ENOUGH_MEMORY);
+        fwprintf(stderr, L"Cannot read the GPU executable path (Windows error %lu).\n", path ? GetLastError() : ERROR_NOT_ENOUGH_MEMORY);
         free(path); CloseHandle(process); return 1;
     }
     wchar_t *image_name = wcsrchr(path, L'\\');
@@ -157,12 +157,17 @@ int wmain(int argc, wchar_t **argv) {
     DWORD length = dll_path ? GetFullPathNameW(dll_path, 32768, path, NULL) : GetModuleFileNameW(NULL, path, 32768);
     wchar_t *separator = length && length < 32768 ? wcsrchr(path, L'\\') : NULL;
     if (!separator || (!dll_path && wcscpy_s(separator + 1, 32768 - (size_t)(separator + 1 - path), L"blur-hook.dll"))) {
-        fwprintf(stderr, L"Cannot resolve hook DLL path.\n");
+        fwprintf(stderr, L"Cannot locate the hook DLL.\n");
         free(path); CloseHandle(process); return 1;
     }
     HMODULE image = LoadLibraryExW(path, NULL, DONT_RESOLVE_DLL_REFERENCES);
     FARPROC exported = image ? GetProcAddress(image, status ? "BlurCounters" : restore ? "BlurRemove" : "BlurInstall") : NULL;
-    if (!exported) { fwprintf(stderr, L"Cannot find adjacent hook DLL/export: %lu.\n", GetLastError()); if (image) FreeLibrary(image); free(path); CloseHandle(process); return 1; }
+    if (!exported) {
+        if (!image) fwprintf(stderr, L"Cannot load the hook DLL (Windows error %lu).\n", GetLastError());
+        else fwprintf(stderr, L"The hook DLL is missing the %hs export.\n", status ? "BlurCounters" : restore ? "BlurRemove" : "BlurInstall");
+        if (image) FreeLibrary(image);
+        free(path); CloseHandle(process); return 1;
+    }
     SIZE_T offset = (SIZE_T)((BYTE *)exported - (BYTE *)image);
     IMAGE_DOS_HEADER *local_dos = (IMAGE_DOS_HEADER *)image;
     IMAGE_NT_HEADERS64 expected = *(IMAGE_NT_HEADERS64 *)((BYTE *)image + local_dos->e_lfanew);
@@ -178,7 +183,7 @@ int wmain(int argc, wchar_t **argv) {
             !ReadProcessMemory(process, mapped_base + dos.e_lfanew, &nt, sizeof(nt), NULL) ||
             nt.Signature != IMAGE_NT_SIGNATURE || nt.FileHeader.TimeDateStamp != expected.FileHeader.TimeDateStamp ||
             nt.OptionalHeader.SizeOfImage != expected.OptionalHeader.SizeOfImage || nt.FileHeader.Machine != IMAGE_FILE_MACHINE_AMD64) {
-            fwprintf(stderr, L"Mapped DLL does not match this build; restart Discord.\n");
+            fwprintf(stderr, L"The mapped DLL does not match this build. Restart Discord.\n");
             free(path); CloseHandle(process); return 1;
         }
     }
@@ -218,8 +223,8 @@ int wmain(int argc, wchar_t **argv) {
     }
     else if (restore) { wprintf(L"No hook DLL is loaded in GPU process %lu.\n", pid); success = TRUE; }
     else success = FALSE;
-    if (success) wprintf(L"GPU process %lu: %s. Discord files were not modified.\n", pid, restore ? L"hook disabled" : L"hook installed");
-    else fwprintf(stderr, L"Hook operation failed; see operation diagnostics above.\n");
+    if (success) wprintf(L"GPU process %lu: %s.\n", pid, restore ? L"hook disabled" : L"hook installed");
+    else fwprintf(stderr, L"Could not apply the blur hook. See the error above.\n");
     free(path);
     CloseHandle(process);
     return success ? 0 : 1;

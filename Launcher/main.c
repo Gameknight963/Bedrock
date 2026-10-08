@@ -20,7 +20,10 @@ static void win_error(const wchar_t *operation)
     wchar_t message[512] = {0};
     FormatMessageW(FORMAT_MESSAGE_FROM_SYSTEM | FORMAT_MESSAGE_IGNORE_INSERTS,
         NULL, code, 0, message, 512, NULL);
-    fwprintf(stderr, L"%ls failed (%lu): %ls\n", operation, code, message);
+    size_t length = wcslen(message);
+    while (length && (message[length - 1] == L'\r' || message[length - 1] == L'\n')) message[--length] = 0;
+    if (length) fwprintf(stderr, L"%ls failed (Windows error %lu): %ls\n", operation, code, message);
+    else fwprintf(stderr, L"%ls failed (Windows error %lu).\n", operation, code);
 }
 
 static int range_ok(size_t offset, size_t length, size_t size)
@@ -40,6 +43,7 @@ static int locate_fuse(const wchar_t *path, FuseLocation *fuse)
     DWORD signature;
     WORD magic;
     int result = 0;
+    const wchar_t *layout_error = L"Invalid PE header.";
 
     file = CreateFileW(path, GENERIC_READ, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE,
         NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
@@ -80,8 +84,15 @@ static int locate_fuse(const wchar_t *path, FuseLocation *fuse)
         fwprintf(stderr, L"Expected exactly one Electron fuse sentinel.\n"); goto done;
     case FUSE_INSPECTOR_REMOVED:
         fwprintf(stderr, L"The inspector fuse has been removed in this executable.\n"); goto done;
+    case FUSE_UNSUPPORTED:
+        fwprintf(stderr, L"Unsupported Electron fuse format or settings count.\n"); goto done;
+    case FUSE_TRUNCATED:
+        fwprintf(stderr, L"The Electron fuse settings extend beyond the executable.\n"); goto done;
+    case FUSE_INVALID_STATE:
+        fwprintf(stderr, L"The Electron fuse settings contain an invalid value.\n"); goto done;
     default: goto invalid;
     }
+    layout_error = L"The Electron fuse settings are outside the executable sections.";
     for (i = 0; i < header.NumberOfSections; ++i) {
         IMAGE_SECTION_HEADER section;
         size_t offset = wire_offset;
@@ -90,14 +101,14 @@ static int locate_fuse(const wchar_t *path, FuseLocation *fuse)
             offset - section.PointerToRawData <= section.SizeOfRawData &&
             fuse->count <= section.SizeOfRawData - (offset - section.PointerToRawData)) {
             size_t rva = section.VirtualAddress + (offset - section.PointerToRawData);
-            if (rva > MAXDWORD) goto invalid;
+            if (rva > MAXDWORD) { layout_error = L"The Electron fuse address exceeds the supported range."; goto invalid; }
             fuse->rva = (DWORD)rva;
             result = 1;
             goto done;
         }
     }
 invalid:
-    fwprintf(stderr, L"Unsupported or malformed PE/fuse layout; nothing will be patched.\n");
+    fwprintf(stderr, L"%ls\n", layout_error);
 done:
     if (data) UnmapViewOfFile(data);
     if (mapping) CloseHandle(mapping);
@@ -163,7 +174,7 @@ static int patch_child(HANDLE process, const FuseLocation *fuse)
     query = (QueryProcess)GetProcAddress(ntdll, "NtQueryInformationProcess");
     if (!query) { win_error(L"Resolve NtQueryInformationProcess"); return 0; }
     status = query(process, ProcessBasicInformation, &basic, sizeof(basic), NULL);
-    if (status < 0) { fwprintf(stderr, L"NtQueryInformationProcess failed: 0x%08lX\n", (ULONG)status); return 0; }
+    if (status < 0) { fwprintf(stderr, L"Cannot query the Discord process (NTSTATUS 0x%08lX).\n", (ULONG)status); return 0; }
     /* ImageBaseAddress is at two pointer widths in the Windows x86/x64 PEB. */
     if (!ReadProcessMemory(process, (BYTE *)basic.PebBaseAddress + 2 * sizeof(void *),
         &image_base, sizeof(image_base), &transferred) || transferred != sizeof(image_base)) {
@@ -174,10 +185,10 @@ static int patch_child(HANDLE process, const FuseLocation *fuse)
         win_error(L"Read mapped fuse wire"); return 0;
     }
     if (memcmp(actual, fuse->wire, fuse->count) != 0) {
-        fwprintf(stderr, L"Mapped fuse wire differs from the inspected file; refusing to patch.\n"); return 0;
+        fwprintf(stderr, L"The fuse settings in process memory differ from the executable.\n"); return 0;
     }
     target = wire + INSPECTOR_INDEX;
-    wprintf(L"Mapped inspector fuse: %p (%lc).\n", (void *)target, actual[INSPECTOR_INDEX]);
+    wprintf(L"Inspector fuse in memory: %p (%lc)\n", (void *)target, actual[INSPECTOR_INDEX]);
     if (actual[INSPECTOR_INDEX] == '1') return 1;
     if (!VirtualProtectEx(process, target, 1, PAGE_READWRITE, &old_protection)) {
         win_error(L"VirtualProtectEx"); return 0;
@@ -190,7 +201,7 @@ static int patch_child(HANDLE process, const FuseLocation *fuse)
     if (!ReadProcessMemory(process, target, &verify, 1, &transferred) || transferred != 1 || verify != '1') {
         fwprintf(stderr, L"Inspector fuse readback failed.\n"); return 0;
     }
-    wprintf(L"Inspector fuse enabled in process memory; page protection restored.\n");
+    wprintf(L"Enabled the inspector fuse in process memory.\n");
     return 1;
 }
 
@@ -257,9 +268,9 @@ static int launch(int argc, wchar_t **argv, LaunchPaths *paths)
     if (wcschr(path, L'"')) return 1;
     wprintf(L"Executable: %ls\n", path);
     if (!locate_fuse(path, &fuse)) return 1;
-    wprintf(L"Fuse format %u, %u settings; inspector %lc; wire RVA 0x%08lX.\n",
+    wprintf(L"Fuse format: %u, settings: %u, inspector: %lc, wire RVA: 0x%08lX\n",
         fuse.version, fuse.count, fuse.wire[INSPECTOR_INDEX], (unsigned long)fuse.rva);
-    if (check_only) { wprintf(L"Read-only check passed. No process started or memory changed.\n"); return 0; }
+    if (check_only) { wprintf(L"Executable check passed.\n"); return 0; }
     {
         DWORD length = GetModuleFileNameW(NULL, paths->bootstrap, PATH_CAP);
         wchar_t *slash;
@@ -274,7 +285,7 @@ static int launch(int argc, wchar_t **argv, LaunchPaths *paths)
     }
     if (!shutdown_discord(path)) return 1;
     if (!port_available(port)) {
-        fwprintf(stderr, L"Loopback port %hu unavailable. Choose another with --port.\n", port); return 1;
+        fwprintf(stderr, L"Loopback port %hu is unavailable. Choose another with --port.\n", port); return 1;
     }
     wcscpy_s(directory, PATH_CAP, path);
     { wchar_t *slash = wcsrchr(directory, L'\\'); if (!slash) return 1; *slash = 0; }
@@ -298,9 +309,9 @@ static int launch(int argc, wchar_t **argv, LaunchPaths *paths)
         Sleep(100);
     }
     if (found) {
-        wprintf(L"Inspector discovered at ws://127.0.0.1:%hu%ls\n", port, endpoint);
+        wprintf(L"Inspector: ws://127.0.0.1:%hu%ls\n", port, endpoint);
         success = inspector_bootstrap(session, port, endpoint, child.dwProcessId, paths->bootstrap);
-    } else fwprintf(stderr, L"Inspector did not appear within 15 seconds, or the child exited.\n");
+    } else fwprintf(stderr, L"Could not connect to the inspector within 15 seconds, or Discord exited.\n");
 
 done:
     if (!success) {

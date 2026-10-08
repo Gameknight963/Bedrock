@@ -70,7 +70,7 @@ int shutdown_discord(const wchar_t *executable)
         handle = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION | PROCESS_TERMINATE | SYNCHRONIZE, FALSE, entry.th32ProcessID);
         if (!handle) {
             if (GetLastError() == ERROR_INVALID_PARAMETER) continue;
-            fwprintf(stderr, L"Cannot open Discord process %lu (%lu).\n", entry.th32ProcessID, GetLastError());
+            fwprintf(stderr, L"Cannot open Discord process %lu (Windows error %lu).\n", entry.th32ProcessID, GetLastError());
             CloseHandle(snapshot); goto done;
         }
         if (!QueryFullProcessImageNameW(handle, 0, image, &size)) {
@@ -90,7 +90,7 @@ int shutdown_discord(const wchar_t *executable)
     deadline = GetTickCount64() + 2000;
     for (i = 0; i < count; ++i) graceful |= request_quit(processes[i].pid, deadline);
     if (graceful) {
-        wprintf(L"Requested graceful Bedrock shutdown; waiting up to two seconds.\n");
+        wprintf(L"Asked Discord to quit. Waiting up to two seconds.\n");
         for (i = 0; i < count; ++i) {
             ULONGLONG now = GetTickCount64();
             WaitForSingleObject(processes[i].handle, now < deadline ? (DWORD)(deadline - now) : 0);
@@ -101,7 +101,7 @@ int shutdown_discord(const wchar_t *executable)
         if (WaitForSingleObject(processes[i].handle, 0) == WAIT_OBJECT_0) continue;
         wprintf(L"Terminating Discord process %lu.\n", processes[i].pid);
         if (!TerminateProcess(processes[i].handle, 1) && WaitForSingleObject(processes[i].handle, 0) != WAIT_OBJECT_0) {
-            fwprintf(stderr, L"Cannot terminate Discord process %lu (%lu).\n", processes[i].pid, GetLastError());
+            fwprintf(stderr, L"Cannot terminate Discord process %lu (Windows error %lu).\n", processes[i].pid, GetLastError());
             success = 0;
         }
     }
@@ -117,6 +117,6 @@ done:
     for (i = 0; i < count; ++i) CloseHandle(processes[i].handle);
     free(processes);
     free(image);
-    if (!success) fwprintf(stderr, L"Discord shutdown failed; launch cancelled.\n");
+    if (!success) fwprintf(stderr, L"Cannot finish closing Discord. Launch cancelled.\n");
     return success;
 }

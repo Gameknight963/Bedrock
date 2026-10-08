@@ -153,7 +153,7 @@ static char *receive_message(HINTERNET socket)
         }
         error = WinHttpWebSocketReceive(socket, message + total, (DWORD)(capacity - 1 - total), &received, &type);
         if (error != NO_ERROR) {
-            fwprintf(stderr, L"Inspector receive failed: %lu.\n", error);
+            fwprintf(stderr, L"Cannot receive an inspector message (Windows error %lu).\n", error);
             break;
         }
         if (type != WINHTTP_WEB_SOCKET_UTF8_FRAGMENT_BUFFER_TYPE && type != WINHTTP_WEB_SOCKET_UTF8_MESSAGE_BUFFER_TYPE) break;
@@ -190,7 +190,7 @@ static char *command(Inspector *inspector, const char *method, const char *param
     sprintf_s(id_text, sizeof(id_text), "%u", id);
     error = WinHttpWebSocketSend(inspector->socket, WINHTTP_WEB_SOCKET_UTF8_MESSAGE_BUFFER_TYPE, out, (DWORD)strlen(out));
     free(out);
-    if (error != NO_ERROR) { fwprintf(stderr, L"Inspector send failed: %lu.\n", error); return NULL; }
+    if (error != NO_ERROR) { fwprintf(stderr, L"Cannot send an inspector command (Windows error %lu).\n", error); return NULL; }
     while (GetTickCount64() < deadline) {
         char *reply = receive_message(inspector->socket);
         Json json = {0};
@@ -203,7 +203,7 @@ static char *command(Inspector *inspector, const char *method, const char *param
             json_field(&json, json_field(&json, 0, "result"), "exceptionDetails") >= 0;
         free(json.tokens);
         if (matches && !failed) return reply;
-        if (matches) fwprintf(stderr, L"Inspector command %hs failed: %hs\n", method, reply);
+        if (matches) fwprintf(stderr, L"Inspector command %hs failed. Reply: %hs\n", method, reply);
         free(reply);
         if (matches) return NULL;
     }
@@ -335,14 +335,14 @@ static int inspector_run(HINTERNET session, INTERNET_PORT port, const wchar_t *e
     sprintf_s(pid, sizeof(pid), "%lu", expected_pid);
     if (!json_equal(&json, json_field(&json, value, "value"), "3") ||
         !json_equal(&json, json_field(&json, value, "pid"), pid)) {
-        fwprintf(stderr, L"Unexpected JavaScript result or process identity: %hs\n", reply); goto done;
+        fwprintf(stderr, L"The JavaScript result or process ID did not match. Reply: %hs\n", reply); goto done;
     }
     wprintf(L"JavaScript test: 1 + 2 = 3 (inside process %lu).\n", expected_pid);
     free(json.tokens); json.tokens = NULL;
     free(reply); reply = NULL;
     if (bootstrap_path) {
         if (!load_bootstrap(&inspector, bootstrap_path)) goto done;
-        wprintf(L"Bedrock bootstrap installed from %ls.\n", bootstrap_path);
+        wprintf(L"Bootstrap loaded: %ls\n", bootstrap_path);
     }
     /* Closing synchronously while paused would interrupt our own command.
        Schedule shutdown for the first event-loop turn after resuming instead. */
@@ -361,8 +361,8 @@ static int inspector_run(HINTERNET session, INTERNET_PORT port, const wchar_t *e
         if (inspector_port_closed(port)) { success = 1; break; }
         Sleep(100);
     }
-    if (success) wprintf(L"Inspector port is closed; application startup resumed.\n");
-    else fwprintf(stderr, L"Inspector endpoint remained open after shutdown request.\n");
+    if (success) wprintf(L"Closed the inspector port and resumed Discord startup.\n");
+    else fwprintf(stderr, L"The inspector port is still open after the shutdown request.\n");
 done:
     if (watchdog_thread) {
         SetEvent(watchdog.stop);

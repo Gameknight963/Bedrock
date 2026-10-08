@@ -15,7 +15,7 @@ static bool win32_check(napi_env env, DWORD error)
 {
     char message[100];
     if (!error) return true;
-    sprintf_s(message, sizeof(message), "Window customization failed (Win32 error %lu)", error);
+    sprintf_s(message, sizeof(message), "Cannot customize the window (Windows error %lu).", error);
     napi_throw_error(env, NULL, message);
     return false;
 }
