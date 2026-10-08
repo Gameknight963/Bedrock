@@ -63,6 +63,11 @@ fs.cpSync(path.join(__dirname, '../../Plugins/selectable-settings'), selectableD
 
 fs.cpSync(path.join(__dirname, '../../Examples/example'), path.join(root, 'plugins', 'shipped-example'), { recursive: true });
 fs.cpSync(path.join(__dirname, '../../Plugins/transparency'), path.join(root, 'plugins', 'transparency'), { recursive: true });
+const customizationPackage = path.join(__dirname, '../../Launcher/bin/x64/Debug/BedrockData/plugins/window-customization');
+if (!fs.existsSync(path.join(customizationPackage, 'native/win32-x64/window.node')))
+    throw new Error('Build the x64 Debug Launcher project first to package the native window customization plugin.');
+fs.cpSync(customizationPackage, path.join(root, 'plugins', 'window-customization'), { recursive: true });
+const nativeWindows = require(path.join(customizationPackage, 'native/win32-x64/window.node'));
 
 require('../bootstrap.cjs').install({ root, allowURL: url => url.origin === 'https://bedrock.test', restart: () => { globalThis.fixtureRestartRequested = true; return true; } });
 globalThis.BedrockMain.scan();
@@ -135,6 +140,7 @@ app.whenReady().then(async () => {
             else if (url.pathname === '/remember-unused.js') { body = 'globalThis.UnusedReact = globalThis.React;'; type = 'text/javascript'; }
             else if (url.pathname === '/react-dom.js') { body = fs.readFileSync(path.join(__dirname, 'obj/node_modules/react-dom/umd/react-dom.development.js')); type = 'text/javascript'; }
             else if (url.pathname === '/fixture.js') { body = fixture; type = 'text/javascript'; }
+            else if (url.pathname === '/native-fixture') { body = '<!doctype html><html><body>Native window fixture</body></html>'; type = 'text/html'; }
             else { body = html; type = 'text/html'; }
             return new Response(body, { headers: { 'Content-Type': type } });
         });
@@ -156,6 +162,31 @@ app.whenReady().then(async () => {
         const restored = new BrowserWindow({ show: false, backgroundColor: '#123456' });
         assert.equal(restored.getBackgroundColor().toLowerCase(), '#123456', 'disable removes the creation hook');
         restored.destroy();
+        const nativeProbe = new BrowserWindow({ show: false, frame: false, resizable: false });
+        const handle = nativeProbe.getNativeWindowHandle();
+        const originalStyle = nativeWindows.getStyle(handle);
+        const caption = 0x00c00000, thickFrame = 0x00040000, systemMenu = 0x00080000;
+        assert.throws(() => nativeWindows.customize(123, {}), /Buffer/);
+        assert.throws(() => nativeWindows.getStyle(Buffer.alloc(1)), /size/);
+        assert.throws(() => nativeWindows.getStyle(Buffer.alloc(handle.length)), /Win32 error/);
+        const customization = nativeWindows.customize(handle, { nativeTitlebar: true, resizableFrame: true });
+        assert.equal(nativeWindows.getStyle(handle) & (caption | thickFrame | systemMenu), caption | thickFrame | systemMenu);
+        customization.update({ nativeTitlebar: false, resizableFrame: false });
+        assert.equal(nativeWindows.getStyle(handle), originalStyle);
+        customization.dispose();
+        customization.dispose();
+        assert.throws(() => customization.update({ nativeTitlebar: true, resizableFrame: true }), /Win32 error/);
+        await nativeProbe.loadURL('https://discord.com/native-fixture');
+        assert.equal(nativeWindows.getStyle(handle) & thickFrame, thickFrame, 'main plugin restores resizing on a real Discord-origin window');
+        globalThis.BedrockMain.settings('bedrock.window-customization').set('nativeTitlebar', true);
+        assert.equal(nativeWindows.getStyle(handle) & caption, caption, 'native titlebar setting applies without a restart');
+        globalThis.BedrockMain.settings('bedrock.window-customization').set('nativeTitlebar', false);
+        assert.equal(nativeWindows.getStyle(handle) & caption, originalStyle & caption);
+        await globalThis.BedrockMain.setEnabled('bedrock.window-customization', false);
+        assert.equal(nativeWindows.getStyle(handle), originalStyle, 'disabling restores native styles');
+        await globalThis.BedrockMain.setEnabled('bedrock.window-customization', true);
+        assert.equal(nativeWindows.getStyle(handle) & thickFrame, thickFrame);
+        nativeProbe.destroy();
         await window.loadURL('https://bedrock.test/');
         await waitFor(`globalThis.Bedrock?.plugins.list().find(plugin => plugin.manifest.id === 'test.example')?.rendererStatus === 'running' && document.querySelector('[role=switch][aria-label="Enable Example plugin"]')`);
         await waitFor(`document.querySelector('.bedrock-restart-banner button')?.textContent === 'Restart Discord'`);

@@ -8,4 +8,5 @@
   <Project Path="Runtime/Runtime.esproj">
     <Platform Project="AnyCPU" />
   </Project>
+  <Project Path="Native/WindowCustomization/WindowCustomization.vcxproj" Id="d8312270-05d3-4be3-b4e9-70d39f4cc127" />
 </Solution>

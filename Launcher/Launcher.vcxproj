@@ -53,10 +53,21 @@
   </ItemGroup>
   <ItemGroup><RuntimeFile Include="$(ProjectDir)..\Runtime\*.cjs;$(ProjectDir)..\Runtime\*.mjs" /></ItemGroup>
   <ItemGroup><BundledPluginFile Include="$(ProjectDir)..\Plugins\**\*" /></ItemGroup>
+  <ItemGroup>
+    <ProjectReference Include="..\Native\WindowCustomization\WindowCustomization.vcxproj">
+      <Project>{D8312270-05D3-4BE3-B4E9-70D39F4CC127}</Project>
+      <LinkLibraryDependencies>false</LinkLibraryDependencies>
+    </ProjectReference>
+  </ItemGroup>
+  <PropertyGroup>
+    <PluginArchitecture Condition="'$(Platform)'=='x64'">x64</PluginArchitecture>
+    <PluginArchitecture Condition="'$(Platform)'=='Win32'">ia32</PluginArchitecture>
+  </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <Target Name="CopyBedrockRuntime" AfterTargets="Build">
     <Copy SourceFiles="@(RuntimeFile)" DestinationFolder="$(OutDir)Runtime" SkipUnchangedFiles="true" />
     <Copy SourceFiles="@(NoticeFile)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />
     <Copy SourceFiles="@(BundledPluginFile)" DestinationFiles="@(BundledPluginFile->'$(OutDir)BedrockData\plugins\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="$(ProjectDir)..\Native\WindowCustomization\bin\$(Platform)\$(Configuration)\window.node" DestinationFolder="$(OutDir)BedrockData\plugins\window-customization\native\win32-$(PluginArchitecture)" SkipUnchangedFiles="true" />
   </Target>
 </Project>

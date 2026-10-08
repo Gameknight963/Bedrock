@@ -1,0 +1,10 @@
+{
+    "manifestVersion": 1,
+    "apiVersion": 1,
+    "id": "bedrock.window-customization",
+    "name": "Window Customization",
+    "version": "1.0.0",
+    "description": "Native Windows title bars and resizable window frames.",
+    "entrypoints": { "main": "main.js" },
+    "readme": "README.md"
+}
