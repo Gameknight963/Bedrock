@@ -13,3 +13,5 @@ EXPORTS
     napi_define_properties
     napi_wrap
     napi_create_uint32
+    napi_create_int32
+    napi_set_named_property

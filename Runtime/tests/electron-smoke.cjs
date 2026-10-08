@@ -5,7 +5,7 @@ const assert = require('node:assert/strict');
 const { execFileSync } = require('node:child_process');
 const { app } = require('electron');
 const { writeJson } = require('../storage.cjs');
-const root = globalThis.BedrockMain?.root || fs.mkdtempSync(path.join(os.tmpdir(), 'Bedrock-electron-'));
+const root = globalThis.BedrockMain?.root || process.argv[2] || fs.mkdtempSync(path.join(os.tmpdir(), 'Bedrock-electron-'));
 const directory = path.join(root, 'plugins', 'example');
 fs.mkdirSync(directory, { recursive: true });
 writeJson(path.join(directory, 'plugin.json'), {
@@ -67,8 +67,9 @@ fs.cpSync(path.join(__dirname, '../../Plugins/transparency'), path.join(root, 'p
 const customizationPackage = path.join(__dirname, '../../Launcher/bin/x64/Debug/BedrockData/plugins/window-customization');
 if (!fs.existsSync(path.join(customizationPackage, 'native/win32-x64/window.node')))
     throw new Error('Build the x64 Debug Launcher project first to package the native window customization plugin.');
-fs.cpSync(customizationPackage, path.join(root, 'plugins', 'window-customization'), { recursive: true });
+fs.cpSync(path.join(__dirname, '../../Plugins/window-customization'), path.join(root, 'plugins', 'window-customization'), { recursive: true });
 const fixtureNative = path.join(root, 'plugins/window-customization/native/win32-x64/window.node');
+fs.mkdirSync(path.dirname(fixtureNative), { recursive: true });
 fs.copyFileSync(path.join(__dirname, '../../Native/WindowCustomization/bin/x64/Debug/window.node'), fixtureNative);
 const nativeWindows = require(fixtureNative);
 
@@ -204,6 +205,10 @@ app.whenReady().then(async () => {
         globalThis.BedrockMain.settings('bedrock.window-customization').set('nativeTitlebar', true);
         maximizeProbe.showInactive();
         const restoreBounds = maximizeProbe.getBounds();
+        maximizeProbe.maximize();
+        assert.ok(nativeWindows.getStyle(maximizeProbe.getNativeWindowHandle()) & 0x01000000, 'JavaScript maximize must use the same native state as the caption button');
+        maximizeProbe.unmaximize();
+        assert.deepEqual(maximizeProbe.getBounds(), restoreBounds);
         await systemCommand(maximizeProbe, 0xf030, () => maximizeProbe.isMaximized());
         assert.ok(nativeWindows.getStyle(maximizeProbe.getNativeWindowHandle()) & 0x01000000, 'maximize uses actual WS_MAXIMIZE');
         await systemCommand(maximizeProbe, 0xf120, () => !maximizeProbe.isMaximized());
@@ -211,6 +216,39 @@ app.whenReady().then(async () => {
         await systemCommand(maximizeProbe, 0xf020, () => maximizeProbe.isMinimized());
         await systemCommand(maximizeProbe, 0xf120, () => !maximizeProbe.isMinimized());
         assert.deepEqual(maximizeProbe.getBounds(), restoreBounds, 'restoring from minimized preserves the original bounds');
+        const fullscreenEvents = [];
+        maximizeProbe.on('enter-full-screen', () => fullscreenEvents.push('enter'));
+        maximizeProbe.on('leave-full-screen', () => fullscreenEvents.push('leave'));
+        maximizeProbe.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'F11' });
+        await new Promise(resolve => setTimeout(resolve, 100));
+        assert.equal(maximizeProbe.isFullScreen(), true, 'F11 enters fullscreen');
+        maximizeProbe.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'F11' });
+        maximizeProbe.webContents.sendInputEvent({ type: 'keyDown', keyCode: 'F11' });
+        await new Promise(resolve => setTimeout(resolve, 100));
+        assert.equal(maximizeProbe.isFullScreen(), false, 'F11 leaves fullscreen');
+        maximizeProbe.webContents.sendInputEvent({ type: 'keyUp', keyCode: 'F11' });
+        fullscreenEvents.length = 0;
+        maximizeProbe.setFullScreen(true);
+        assert.equal(maximizeProbe.isFullScreen(), true);
+        assert.equal(maximizeProbe.isMaximized(), false, 'fullscreen is distinct from native maximization');
+        assert.equal(nativeWindows.getStyle(maximizeProbe.getNativeWindowHandle()) & (caption | thickFrame), 0, 'fullscreen removes the native frame');
+        assert.deepEqual(maximizeProbe.getBounds(), require('electron').screen.getDisplayMatching(restoreBounds).bounds, 'fullscreen fills the monitor');
+        maximizeProbe.setFullScreen(false);
+        assert.equal(maximizeProbe.isFullScreen(), false);
+        assert.deepEqual(maximizeProbe.getBounds(), restoreBounds, 'fullscreen restores normal bounds');
+        await systemCommand(maximizeProbe, 0xf030, () => maximizeProbe.isMaximized());
+        assert.deepEqual(maximizeProbe.getNormalBounds(), restoreBounds, 'normal bounds remain valid after native maximize');
+        maximizeProbe.setFullScreen(true);
+        maximizeProbe.setFullScreen(false);
+        assert.equal(maximizeProbe.isMaximized(), true, 'fullscreen restores the previous native maximized state');
+        maximizeProbe.unmaximize();
+        assert.deepEqual(maximizeProbe.getBounds(), restoreBounds, 'JavaScript can restore after native maximize and fullscreen');
+        assert.deepEqual(fullscreenEvents, ['enter', 'leave', 'enter', 'leave']);
+        maximizeProbe.setFullScreen(true);
+        await globalThis.BedrockMain.setEnabled('bedrock.window-customization', false);
+        assert.equal(maximizeProbe.isFullScreen(), false, 'disable restores fullscreen API');
+        assert.deepEqual(maximizeProbe.getBounds(), restoreBounds, 'disable leaves fullscreen and restores bounds');
+        await globalThis.BedrockMain.setEnabled('bedrock.window-customization', true);
         maximizeProbe.destroy();
         globalThis.BedrockMain.settings('bedrock.window-customization').set('nativeTitlebar', false);
         await window.loadURL('https://bedrock.test/');
@@ -399,17 +437,16 @@ app.whenReady().then(async () => {
         assert.equal(await evaluate(`(async () => (await fetch('bedrock://themes/%2e%2e/settings.json')).status)()`), 404);
         await window.loadURL('https://unrelated.test/');
         assert.equal(await evaluate(`globalThis.Bedrock === undefined && globalThis.BedrockNative === undefined`), true, 'bridge must not appear on unrelated origins');
-        console.log('PASS: Real Electron preload, settings controls, validation, restart requests, persistence, React settings subscriptions, synchronization across main and two windows, live cleanup/re-enable, safe Markdown and origin checks.');
+        console.log('PASS: Real Electron native maximize/restore, F11 fullscreen transitions and cleanup, preload, settings, restart requests, persistence, subscriptions, synchronization, Markdown and origin checks.');
         await globalThis.BedrockMain.stopAll();
         globalThis.BedrockMain.themes.close();
         window.destroy();
-        fs.rmSync(root, { recursive: true, force: true });
         app.exit(0);
     } catch (error) {
         console.error(error.stack, failures.join('\n'));
-        mirror?.destroy();
-        window?.destroy();
-        fs.rmSync(root, { recursive: true, force: true });
+        await globalThis.BedrockMain.stopAll();
+        globalThis.BedrockMain.themes.close();
+        for (const remaining of BrowserWindow.getAllWindows()) remaining.destroy();
         app.exit(1);
     }
 });

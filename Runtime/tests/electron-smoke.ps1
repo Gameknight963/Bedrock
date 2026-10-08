@@ -10,6 +10,9 @@ if (-not (Test-Path -LiteralPath $Electron)) {
 $fixtureArguments = @()
 if ($ThroughInspector) { $fixtureArguments += "--inspect-brk=127.0.0.1:$Port" }
 $fixtureArguments += ('"' + (Join-Path $PSScriptRoot 'electron-smoke.cjs') + '"')
+$fixtureRoot = Join-Path ([IO.Path]::GetTempPath()) ('Bedrock-electron-' + [guid]::NewGuid())
+$null = New-Item -ItemType Directory -Path $fixtureRoot
+$fixtureArguments += ('"' + $fixtureRoot + '"')
 $fixtureProcess = Start-Process -FilePath $Electron -ArgumentList $fixtureArguments -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $PSScriptRoot 'obj/electron-stdout.log') -RedirectStandardError (Join-Path $PSScriptRoot 'obj/electron-stderr.log')
 $bootstrapRoot = $null
 try {
@@ -41,11 +44,13 @@ try {
     }
 } finally {
     if (-not $fixtureProcess.HasExited) { Stop-Process -Id $fixtureProcess.Id }
-    if ($bootstrapRoot -and (Test-Path -LiteralPath $bootstrapRoot)) {
-        $resolvedRoot = [IO.Path]::GetFullPath($bootstrapRoot)
+    # Loaded native modules remain locked until Electron exits.
+    foreach ($cleanupRoot in @($fixtureRoot, $bootstrapRoot)) {
+        if (-not $cleanupRoot -or -not (Test-Path -LiteralPath $cleanupRoot)) { continue }
+        $resolvedRoot = [IO.Path]::GetFullPath($cleanupRoot)
         $temporaryParent = [IO.Path]::GetFullPath([IO.Path]::GetTempPath())
         if (-not $resolvedRoot.StartsWith($temporaryParent, [StringComparison]::OrdinalIgnoreCase) -or
-            -not ([IO.Path]::GetFileName($resolvedRoot)).StartsWith('Bedrock-electron-inspector-')) { throw 'Unexpected fixture cleanup path' }
+            -not ([IO.Path]::GetFileName($resolvedRoot)).StartsWith('Bedrock-electron-')) { throw 'Unexpected fixture cleanup path' }
         Remove-Item -LiteralPath $resolvedRoot -Recurse -Force
     }
 }

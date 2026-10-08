@@ -3,6 +3,7 @@ import { createRequire } from 'node:module';
 const { definePluginSettings, OptionType } = Bedrock;
 const require = createRequire(import.meta.url);
 const native = require(`./native/${process.platform}-${process.arch}/window.node`);
+const { screen } = require('electron');
 
 export const settings = definePluginSettings({
     nativeTitlebar: {
@@ -29,7 +30,36 @@ export function start(ctx) {
         const options = { nativeTitlebar: settings.store.nativeTitlebar, resizableFrame: settings.store.resizableFrame };
         const record = windows.get(window);
         if (record.customization) record.customization.update(options);
-        else record.customization = native.customize(window.getNativeWindowHandle(), options);
+        else {
+            record.customization = native.customize(window.getNativeWindowHandle(), options);
+            record.fullscreen = false;
+            record.patches = [];
+            // Keep Electron callers and native caption commands on the same Windows maximize/restore path.
+            for (const method of ['maximize', 'unmaximize', 'restore']) {
+                record.patches.push(ctx.patches.instead(window, method, () => {
+                    if (method === 'unmaximize' && !window.isMaximized()) return;
+                    record.customization[method === 'maximize' ? 'maximize' : 'restore']();
+                }));
+            }
+            record.patches.push(ctx.patches.instead(window, 'setFullScreen', ([enabled]) => {
+                if (typeof enabled !== 'boolean') throw new TypeError('Expected a fullscreen boolean');
+                if (!window.isFullScreenable() || record.fullscreen === enabled) return;
+                record.customization.setFullScreen(enabled);
+                record.fullscreen = enabled;
+                window.emit(enabled ? 'enter-full-screen' : 'leave-full-screen');
+            }));
+            record.patches.push(ctx.patches.instead(window, 'isFullScreen', () => record.fullscreen));
+            record.patches.push(ctx.patches.instead(window, 'isMaximized', () =>
+                !record.fullscreen && !window.isMinimized() && Boolean(native.getStyle(window.getNativeWindowHandle()) & 0x01000000))); // WS_MAXIMIZE
+            record.patches.push(ctx.patches.instead(window, 'getNormalBounds', () =>
+                screen.screenToDipRect(window, record.customization.getNormalBounds())));
+            record.key = (event, input) => {
+                if (input.type !== 'keyDown' || input.key !== 'F11' || input.control || input.alt || input.meta || input.shift) return;
+                event.preventDefault();
+                if (!input.isAutoRepeat) window.setFullScreen(!window.isFullScreen());
+            };
+            window.webContents.on('before-input-event', record.key);
+        }
     };
     const attach = window => {
         if (window.isDestroyed() || windows.has(window)) return;
@@ -45,7 +75,10 @@ export function start(ctx) {
             windows.delete(window);
             window.off('closed', dispose);
             contents.off('did-finish-load', loaded);
+            if (record.key) contents.off('before-input-event', record.key);
+            for (const disposePatch of record.patches || []) disposePatch();
             record.customization?.dispose();
+            if (record.fullscreen && !window.isDestroyed()) window.emit('leave-full-screen');
         });
         window.once('closed', dispose);
         // Reading the URL inside browser-window-created can block the unfinished constructor.

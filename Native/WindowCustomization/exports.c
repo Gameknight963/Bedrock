@@ -75,6 +75,63 @@ static napi_value dispose(napi_env env, napi_callback_info info)
     return self;
 }
 
+static napi_value command(napi_env env, napi_callback_info info)
+{
+    napi_value self;
+    WindowCustomization *state;
+    void *data;
+    if (!check(env, napi_get_cb_info(env, info, NULL, NULL, &self, &data))) return NULL;
+    if (!check(env, napi_unwrap(env, self, (void **)&state)) || !state) return NULL;
+    if (!win32_check(env, window_command(state, (UINT)(UINT_PTR)data))) return NULL;
+    return self;
+}
+
+static napi_value fullscreen(napi_env env, napi_callback_info info)
+{
+    size_t argc = 1;
+    napi_value argument, self;
+    WindowCustomization *state;
+    bool enabled;
+    if (!check(env, napi_get_cb_info(env, info, &argc, &argument, &self, NULL))) return NULL;
+    if (argc != 1) { napi_throw_type_error(env, NULL, "Expected a fullscreen boolean"); return NULL; }
+    if (!check(env, napi_unwrap(env, self, (void **)&state)) || !state ||
+        !check(env, napi_get_value_bool(env, argument, &enabled))) return NULL;
+    if (!win32_check(env, window_fullscreen(state, enabled))) return NULL;
+    return self;
+}
+
+static napi_value normal_bounds(napi_env env, napi_callback_info info)
+{
+    napi_value self, result, value;
+    WindowCustomization *state;
+    WINDOWPLACEMENT placement = { sizeof(WINDOWPLACEMENT) };
+    MONITORINFO monitor = { sizeof(MONITORINFO) };
+    RECT bounds;
+    int coordinates[4];
+    const char *names[] = { "x", "y", "width", "height" };
+    if (!check(env, napi_get_cb_info(env, info, NULL, NULL, &self, NULL)) ||
+        !check(env, napi_unwrap(env, self, (void **)&state)) || !state ||
+        !win32_check(env, window_validate(state->window))) return NULL;
+    if (state->fullscreen) placement = state->placement;
+    else if (!GetWindowPlacement(state->window, &placement)) { win32_check(env, GetLastError()); return NULL; }
+    bounds = placement.rcNormalPosition;
+    // WINDOWPLACEMENT uses workspace coordinates for ordinary windows; Electron rectangles use screen coordinates.
+    if (!(GetWindowLongPtrW(state->window, GWL_EXSTYLE) & WS_EX_TOOLWINDOW)) {
+        if (!GetMonitorInfoW(MonitorFromRect(&bounds, MONITOR_DEFAULTTONEAREST), &monitor)) {
+            win32_check(env, GetLastError()); return NULL;
+        }
+        OffsetRect(&bounds, monitor.rcWork.left - monitor.rcMonitor.left, monitor.rcWork.top - monitor.rcMonitor.top);
+    }
+    coordinates[0] = bounds.left; coordinates[1] = bounds.top;
+    coordinates[2] = bounds.right - bounds.left; coordinates[3] = bounds.bottom - bounds.top;
+    if (!check(env, napi_create_object(env, &result))) return NULL;
+    for (size_t i = 0; i < 4; ++i) {
+        if (!check(env, napi_create_int32(env, coordinates[i], &value)) ||
+            !check(env, napi_set_named_property(env, result, names[i], value))) return NULL;
+    }
+    return result;
+}
+
 static napi_value customize(napi_env env, napi_callback_info info)
 {
     size_t argc = 2;
@@ -84,6 +141,10 @@ static napi_value customize(napi_env env, napi_callback_info info)
     WindowCustomization *state;
     napi_property_descriptor methods[] = {
         { "update", NULL, update, NULL, NULL, NULL, napi_default, NULL },
+        { "maximize", NULL, command, NULL, NULL, NULL, napi_default, (void *)(UINT_PTR)SC_MAXIMIZE },
+        { "restore", NULL, command, NULL, NULL, NULL, napi_default, (void *)(UINT_PTR)SC_RESTORE },
+        { "setFullScreen", NULL, fullscreen, NULL, NULL, NULL, napi_default, NULL },
+        { "getNormalBounds", NULL, normal_bounds, NULL, NULL, NULL, napi_default, NULL },
         { "dispose", NULL, dispose, NULL, NULL, NULL, napi_default, NULL }
     };
     if (!check(env, napi_get_cb_info(env, info, &argc, arguments, NULL, NULL))) return NULL;
