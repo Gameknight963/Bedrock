@@ -76,4 +76,4 @@ The hook clips replacement to the backdrop shape and uses Skia's arithmetic blen
 
 An isolated Electron 42.11.8 app verified that the hook removes the sharp bar, preserves the outside corner marker, interpolates at half opacity, leaves zero opacity unchanged, and restores the original pixels when disabled. This is not yet a general correctness test for Discord's UI. Clipping the entire layer can still restrict foreground content that should extend outside the backdrop shape.
 
-The stock GPU sandbox rejected loading the DLL in our fixture. The plugin therefore requires explicit permission to disable the GPU sandbox and a restart before injection. This weakens process isolation; it is off by default. No Discord executable files are changed.
+The stock GPU sandbox rejected ordinary DLL loading with access denied. The controller now uses an MIT-licensed manual mapper to supply the DLL from memory, and the rendering fixture passes with the GPU sandbox enabled. No Discord executable files are changed.

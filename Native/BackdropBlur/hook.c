@@ -1,7 +1,6 @@
 #include <windows.h>
 #include <stdbool.h>
 #include <stdint.h>
-#include <math.h>
 #include <intrin.h>
 #include "../../lib/minhook/include/MinHook.h"
 #include "signatures.h"
@@ -29,7 +28,7 @@ static Arithmetic arithmetic;
 static unsigned char *prepare_address;
 static volatile LONG installed, enabled;
 static SRWLOCK control_lock = SRWLOCK_INIT;
-static __declspec(thread) ActiveLayer *active;
+static DWORD active_slot = TLS_OUT_OF_INDEXES;
 
 static void release_blender(void *blender)
 {
@@ -42,6 +41,7 @@ static void release_blender(void *blender)
 
 static void blend_hook(unsigned char *paint, int mode)
 {
+    ActiveLayer *active = TlsGetValue(active_slot);
     original_blend(paint, mode);
     if (active && active->blender && mode == 3 && _ReturnAddress() == prepare_address + 0xaa) {
         // setBlendMode(SrcOver) cleared fBlender. Transfer Skia's owned reference to that field.
@@ -53,6 +53,7 @@ static void blend_hook(unsigned char *paint, int mode)
 
 static void clear_hook(const unsigned char *rpdq, void *canvas, const unsigned char *params)
 {
+    ActiveLayer *active = TlsGetValue(active_slot);
     if (!active || active->rpdq != rpdq || active->canvas != canvas)
         original_clear(rpdq, canvas, params);
     // The outer clip already supplies coverage; clearing inside would apply rounded edges twice.
@@ -75,7 +76,7 @@ static void prepare_hook(void *renderer, const unsigned char *rpdq, unsigned cha
     if (rpdq[0xcc]) InterlockedIncrement(&BlurCounters.bypass);
     if (params[0xfc]) { InterlockedIncrement(&BlurCounters.split_region); unsupported = TRUE; }
     if (*(int *)(params + 0xbc) != 3) { InterlockedIncrement(&BlurCounters.blend_mode); unsupported = TRUE; }
-    if (!isfinite(opacity) || opacity < 0 || opacity > 1) { InterlockedIncrement(&BlurCounters.opacity); unsupported = TRUE; }
+    if (!(opacity >= 0 && opacity <= 1)) { InterlockedIncrement(&BlurCounters.opacity); unsupported = TRUE; }
     if (unsupported) {
         original_prepare(renderer, rpdq, params);
         return;
@@ -85,12 +86,12 @@ static void prepare_hook(void *renderer, const unsigned char *rpdq, unsigned cha
     // Skia applies paint opacity to src; the blender adds dst * (1 - opacity).
     arithmetic(&layer.blender, 0, 1, 1 - opacity, 0, true);
     if (!layer.blender) { InterlockedIncrement(&BlurCounters.blender_failed); original_prepare(renderer, rpdq, params); return; }
-    ActiveLayer *previous = active;
+    ActiveLayer *previous = TlsGetValue(active_slot);
     clip_rect(layer.canvas, rpdq + 0x70, 1, true);
     if (rpdq[0x68]) clip_path(layer.canvas, rpdq + 0x58, 1, true);
-    active = &layer;
+    TlsSetValue(active_slot, &layer);
     original_prepare(renderer, rpdq, params);
-    active = previous;
+    TlsSetValue(active_slot, previous);
     release_blender(layer.blender);
 }
 
@@ -139,6 +140,8 @@ static DWORD install_hooks(void)
     clip_rect = (Clip)find_signature(module, &sig_clip_rect);
     if (!prepare_address || !blend || !clear || !arithmetic || !clip_path || !clip_rect)
         return ERROR_REVISION_MISMATCH;
+    if (active_slot == TLS_OUT_OF_INDEXES) active_slot = TlsAlloc();
+    if (active_slot == TLS_OUT_OF_INDEXES) return ERROR_NOT_ENOUGH_MEMORY;
     if (MH_Initialize() != MH_OK) return ERROR_DLL_INIT_FAILED;
     if (MH_CreateHook(prepare_address, (void *)prepare_hook, (void **)&original_prepare) != MH_OK ||
         MH_CreateHook(blend, (void *)blend_hook, (void **)&original_blend) != MH_OK ||
@@ -173,3 +176,10 @@ __declspec(dllexport) DWORD WINAPI BlurRemove(void *unused)
     return ERROR_SUCCESS;
 }
 
+BOOL WINAPI DllMain(HINSTANCE instance, DWORD reason, void *reserved)
+{
+    (void)instance;
+    (void)reason;
+    (void)reserved;
+    return TRUE;
+}

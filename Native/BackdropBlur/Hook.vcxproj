@@ -10,11 +10,11 @@
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
   <PropertyGroup><TargetName>blur-hook</TargetName><OutDir>$(ProjectDir)bin\$(Platform)\$(Configuration)\</OutDir><IntDir>$(ProjectDir)obj\hook\$(Platform)\$(Configuration)\</IntDir></PropertyGroup>
   <ItemDefinitionGroup>
-    <ClCompile><CompileAs>CompileAsC</CompileAs><LanguageStandard_C>stdc17</LanguageStandard_C><WarningLevel>Level4</WarningLevel><RuntimeLibrary>MultiThreaded</RuntimeLibrary><AdditionalIncludeDirectories>$(ProjectDir)..\..\lib\minhook\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories><PreprocessorDefinitions>UNICODE;_UNICODE;WIN32_LEAN_AND_MEAN;_WIN32_WINNT=0x0A00;%(PreprocessorDefinitions)</PreprocessorDefinitions></ClCompile>
-    <Link><GenerateDebugInformation>true</GenerateDebugInformation></Link>
+    <ClCompile><CompileAs>CompileAsC</CompileAs><LanguageStandard_C>stdc17</LanguageStandard_C><WarningLevel>Level4</WarningLevel><RuntimeLibrary>MultiThreaded</RuntimeLibrary><BufferSecurityCheck>false</BufferSecurityCheck><AdditionalIncludeDirectories>$(ProjectDir)..\..\lib\minhook\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories><PreprocessorDefinitions>UNICODE;_UNICODE;WIN32_LEAN_AND_MEAN;_WIN32_WINNT=0x0A00;%(PreprocessorDefinitions)</PreprocessorDefinitions></ClCompile>
+    <Link><GenerateDebugInformation>true</GenerateDebugInformation><IgnoreAllDefaultLibraries>true</IgnoreAllDefaultLibraries><AdditionalDependencies>kernel32.lib;%(AdditionalDependencies)</AdditionalDependencies><EntryPointSymbol>DllMain</EntryPointSymbol></Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="hook.c" />
+    <ClCompile Include="hook.c" /><ClCompile Include="memory.c" />
     <ClCompile Include="..\..\lib\minhook\src\buffer.c"><WarningLevel>Level3</WarningLevel></ClCompile>
     <ClCompile Include="..\..\lib\minhook\src\hook.c"><ObjectFileName>$(IntDir)minhook.obj</ObjectFileName><WarningLevel>Level3</WarningLevel><DisableSpecificWarnings>4244;4310;%(DisableSpecificWarnings)</DisableSpecificWarnings></ClCompile>
     <ClCompile Include="..\..\lib\minhook\src\trampoline.c"><WarningLevel>Level3</WarningLevel><DisableSpecificWarnings>4244;%(DisableSpecificWarnings)</DisableSpecificWarnings></ClCompile>

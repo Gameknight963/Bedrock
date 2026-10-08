@@ -6,7 +6,9 @@ const output = path.resolve(process.argv.at(-1));
 fs.mkdirSync(output, { recursive: true });
 const configuration = process.env.BEDROCK_TEST_CONFIGURATION || 'Release';
 assert(['Debug', 'Release'].includes(configuration));
-const pluginPath = path.resolve(__dirname, `../../../Launcher/bin/x64/${configuration}/BedrockData/plugins/backdrop-blur/main.js`);
+const pluginPath = process.env.BEDROCK_TEST_PLUGIN_PATH ? path.resolve(process.env.BEDROCK_TEST_PLUGIN_PATH) :
+    path.resolve(__dirname, `../../../Launcher/bin/x64/${configuration}/BedrockData/plugins/backdrop-blur/main.js`);
+assert(!app.commandLine.hasSwitch('disable-gpu-sandbox'), 'Test must retain the GPU sandbox');
 app.setPath('userData', path.join(output, 'fixture-profile'));
 app.whenReady().then(async () => {
     const window = new BrowserWindow({ width: 400, height: 240, show: false, frame: false, transparent: true,
@@ -30,9 +32,11 @@ app.whenReady().then(async () => {
     const cleanup = [];
     let installed = 0;
     let failure;
+    let counters;
     plugin.start({ signal: abort.signal, cleanup: dispose => { cleanup.push(dispose); return dispose; },
         requireRestart: reason => { throw new Error(reason); },
-        log: { info: message => { console.log(message); if (message.startsWith('Native blur hook installed')) installed++; }, warn: console.warn,
+        log: { info: message => { console.log(message); if (message.startsWith('Native blur hook installed')) installed++;
+                if (message.startsWith('Native blur counters:')) counters = message; }, warn: console.warn,
             error: message => { failure = new Error(message); } } });
     for (let attempt = 0; !installed && !failure && attempt < 100; attempt++)
         await new Promise(resolve => setTimeout(resolve, 100));
@@ -41,13 +45,6 @@ app.whenReady().then(async () => {
     await window.webContents.executeJavaScript('document.querySelector(".blur").style.transform="translateX(0.01px)"');
     const patched = await capture('native-after');
     console.log('Pixels changed:', !original.equals(patched), 'GPU:', gpu.pid);
-    const { stdout } = await require('node:util').promisify(require('node:child_process').execFile)(
-        path.join(path.dirname(pluginPath), 'native/win32-x64/blur-controller.exe'),
-        ['--pid', String(gpu.pid), '--status'], { windowsHide: true });
-    console.log('Fixture counters:', stdout.trim());
-    assert(Number(/bypass=(\d+)/.exec(stdout)[1]) > 0, 'Fixture did not exercise bypass geometry');
-    assert(Number(/replaced=(\d+)/.exec(stdout)[1]) > 0, 'Bypass layers were not replaced');
-
     await window.webContents.executeJavaScript('document.querySelector(".blur").style.opacity="0.5"');
     const half = await capture('native-half');
     const alpha = image => image[(130 * 400 + 70) * 4 + 3];
@@ -72,5 +69,24 @@ app.whenReady().then(async () => {
     const restored = await capture('native-restored');
     assert(restored.equals(original), 'Disabling the plugin did not restore the original image');
     console.log('Restored original:', restored.equals(original));
+    assert(counters && Number(/bypass=(\d+)/.exec(counters)[1]) > 0, 'Fixture did not exercise bypass geometry');
+    assert(Number(/replaced=(\d+)/.exec(counters)[1]) > 0, 'Bypass layers were not replaced');
+    const cleanupAgain = [];
+    const abortAgain = new AbortController();
+    plugin.start({ signal: abortAgain.signal, cleanup: dispose => { cleanupAgain.push(dispose); return dispose; },
+        requireRestart: reason => { throw new Error(reason); },
+        log: { info: message => { if (message.startsWith('Native blur hook installed')) installed++; },
+            warn: console.warn, error: message => { failure = new Error(message); } } });
+    for (let attempt = 0; installed < 3 && !failure && attempt < 100; attempt++)
+        await new Promise(resolve => setTimeout(resolve, 100));
+    if (failure) throw failure;
+    assert(installed >= 3, 'Re-enabling did not reuse the mapped DLL');
+    await window.webContents.executeJavaScript('document.querySelector(".blur").style.transform="translateX(0.01px)"');
+    assert(alpha(await capture('native-reenabled')) < alpha(original), 'Re-enabled hook did not change rendering');
+    abortAgain.abort();
+    for (const dispose of cleanupAgain.reverse()) dispose();
+    await plugin.stop();
+    console.log('Re-enabled mapped DLL successfully.');
+
     app.exit(0);
 }).catch(error => { console.error(error); app.exit(1); });

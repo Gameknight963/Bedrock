@@ -7,14 +7,14 @@ const require = createRequire(import.meta.url);
 const run = promisify(execFile);
 const { definePluginSettings, OptionType } = Bedrock;
 let current;
+const mapped = new Map();
 
 export const settings = definePluginSettings({
     allowGpuInjection: {
         type: OptionType.BOOLEAN,
         label: 'Enable native GPU hook',
-        description: 'Disables Chromium’s GPU sandbox to allow the experimental DLL to load. Requires a restart when enabling.',
-        default: false,
-        restartNeeded: true
+        description: 'Prevents sharp content from show through backdrop blur on transparent backgrounds.',
+        default: false
     }
 });
 
@@ -27,20 +27,28 @@ export function start(ctx) {
     const controller = fileURLToPath(new URL('./native/win32-x64/blur-controller.exe', import.meta.url));
     const state = { stopped: false, pending: Promise.resolve(), busy: false, attempted: new Map(), logged: new Set() };
     current = state;
-    let ownsSwitch = false;
-    if (settings.store.allowGpuInjection && !app.isReady() && !app.commandLine.hasSwitch('disable-gpu-sandbox')) {
-        app.commandLine.appendSwitch('disable-gpu-sandbox');
-        ownsSwitch = true;
-    }
+    const control = async (metric, operation) => {
+        const args = ['--pid', String(metric.pid)];
+        const image = mapped.get(metric.pid);
+        if (image?.time === metric.creationTime) args.push('--base', image.base);
+        if (operation) args.push(operation);
+        try {
+            const result = await run(controller, args, { windowsHide: true, maxBuffer: 8192 });
+            const base = /mapped-base=(0x[0-9a-f]+)/i.exec(result.stdout)?.[1];
+            if (base) mapped.set(metric.pid, { time: metric.creationTime, base });
+            return result;
+        } catch (error) {
+            const base = /mapped-base=(0x[0-9a-f]+)/i.exec(error.stdout || '')?.[1];
+            if (base) mapped.set(metric.pid, { time: metric.creationTime, base });
+            throw error;
+        }
+    };
     const update = () => {
         if (state.stopped || state.busy || !app.isReady()) return;
-        if (settings.store.allowGpuInjection && !app.commandLine.hasSwitch('disable-gpu-sandbox')) {
-            ctx.requireRestart('Restart Discord to enable the native GPU hook.');
-            return;
-        }
         const metrics = app.getAppMetrics().filter(metric => metric.type === 'GPU');
         const live = new Map(metrics.map(metric => [metric.pid, metric.creationTime]));
         for (const [pid, time] of state.attempted) if (live.get(pid) !== time) state.attempted.delete(pid);
+        for (const [pid, image] of mapped) if (live.get(pid) !== image.time) mapped.delete(pid);
         const restore = !settings.store.allowGpuInjection;
         const targets = restore ? metrics.filter(metric => state.attempted.has(metric.pid)) :
             metrics.filter(metric => state.attempted.get(metric.pid) !== metric.creationTime);
@@ -51,15 +59,13 @@ export function start(ctx) {
                 if (state.stopped) break;
                 if (!restore) state.attempted.set(metric.pid, metric.creationTime);
                 try {
-                    const args = ['--pid', String(metric.pid)];
-                    if (restore) args.push('--restore');
-                    await run(controller, args, { windowsHide: true, maxBuffer: 8192 });
+                    await control(metric, restore ? '--restore' : undefined);
                     if (restore) state.attempted.delete(metric.pid);
                     ctx.log.info(restore ? 'Restored original backdrop compositing.' : `Native blur hook installed in GPU process ${metric.pid}.`);
                     if (!restore) {
                         await new Promise(resolve => setTimeout(resolve, 1000));
                         if (!state.stopped) {
-                            const result = await run(controller, ['--pid', String(metric.pid), '--status'], { windowsHide: true, maxBuffer: 8192 });
+                            const result = await control(metric, '--status');
                             ctx.log.info(`Native blur counters: ${result.stdout.trim()}`);
                         }
                     }
@@ -76,10 +82,7 @@ export function start(ctx) {
     ctx.cleanup(() => {
         state.stopped = true;
         clearInterval(timer);
-        if (ownsSwitch) {
-            app.commandLine.removeSwitch('disable-gpu-sandbox');
-            ctx.requireRestart('Restart Discord to restore the GPU sandbox.');
-        }
+
     });
     state.restore = async () => {
         await state.pending;
@@ -87,7 +90,7 @@ export function start(ctx) {
         const live = new Map(app.getAppMetrics().filter(metric => metric.type === 'GPU').map(metric => [metric.pid, metric.creationTime]));
         for (const [pid, time] of state.attempted) {
             if (live.get(pid) !== time) continue;
-            try { await run(controller, ['--pid', String(pid), '--restore'], { windowsHide: true, maxBuffer: 8192 }); }
+            try { await control({ pid, creationTime: time }, '--restore'); }
             catch (error) { ctx.log.error(error.stderr?.trim() || error.message); }
         }
         state.attempted.clear();

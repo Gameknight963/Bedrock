@@ -4,7 +4,7 @@
     "id": "bedrock.backdrop-blur",
     "name": "Backdrop Blur",
     "version": "0.1.0",
-    "description": "Experimental replacement compositing for transparent backdrop blur.",
+    "description": "Experimental replacement compositing for backdrop blur which fixes bleeding on transparent backgrounds.",
     "entrypoints": { "main": "main.js" },
     "readme": "README.md"
 }

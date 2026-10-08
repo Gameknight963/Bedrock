@@ -3,9 +3,11 @@
 #include <tlhelp32.h>
 #include <winternl.h>
 #include <stdio.h>
+#include <stddef.h>
 #include <stdlib.h>
 #include <wchar.h>
 #include "status.h"
+#include "mapper.h"
 #pragma comment(lib, "advapi32.lib")
 
 typedef NTSTATUS (NTAPI *QueryProcess)(HANDLE, PROCESSINFOCLASS, PVOID, ULONG, PULONG);
@@ -88,31 +90,6 @@ static BYTE *module_base(DWORD pid, const wchar_t *name, const wchar_t *expected
     return base;
 }
 
-static void report_policies(HANDLE process) {
-    PROCESS_MITIGATION_BINARY_SIGNATURE_POLICY signatures = {0};
-    PROCESS_MITIGATION_DYNAMIC_CODE_POLICY code = {0};
-    if (GetProcessMitigationPolicy(process, ProcessSignaturePolicy, &signatures, sizeof(signatures)))
-        fwprintf(stderr, L"Binary signature policy: flags=0x%08lX, Microsoft-only=%u, Store-only=%u, opt-in=%u.\n", signatures.Flags, signatures.MicrosoftSignedOnly, signatures.StoreSignedOnly, signatures.MitigationOptIn);
-    else fwprintf(stderr, L"GetProcessMitigationPolicy(signature) failed: %lu.\n", GetLastError());
-    if (GetProcessMitigationPolicy(process, ProcessDynamicCodePolicy, &code, sizeof(code)))
-        fwprintf(stderr, L"Dynamic code policy: flags=0x%08lX, prohibited=%u, thread opt-out=%u, remote downgrade=%u.\n", code.Flags, code.ProhibitDynamicCode, code.AllowThreadOptOut, code.AllowRemoteDowngrade);
-    else fwprintf(stderr, L"GetProcessMitigationPolicy(dynamic code) failed: %lu.\n", GetLastError());
-    HANDLE token = NULL;
-    if (!OpenProcessToken(process, TOKEN_QUERY, &token)) {
-        fwprintf(stderr, L"OpenProcessToken failed: %lu.\n", GetLastError());
-        return;
-    }
-    DWORD bytes = 0;
-    GetTokenInformation(token, TokenIntegrityLevel, NULL, 0, &bytes);
-    TOKEN_MANDATORY_LABEL *label = bytes ? malloc(bytes) : NULL;
-    if (label && GetTokenInformation(token, TokenIntegrityLevel, label, bytes, &bytes) && IsValidSid(label->Label.Sid)) {
-        UCHAR count = *GetSidSubAuthorityCount(label->Label.Sid);
-        if (count) fwprintf(stderr, L"GPU process integrity RID: 0x%lX (low=0x1000, medium=0x2000).\n", *GetSidSubAuthority(label->Label.Sid, count - 1));
-    } else fwprintf(stderr, L"GetTokenInformation(integrity) failed: %lu.\n", label ? GetLastError() : ERROR_NOT_ENOUGH_MEMORY);
-    free(label);
-    CloseHandle(token);
-}
-
 static BOOL remote_call(HANDLE process, LPTHREAD_START_ROUTINE function, void *argument, DWORD *result, BOOL *finished, const wchar_t *operation) {
     HANDLE thread = CreateRemoteThread(process, NULL, 0, function, argument, 0, NULL);
     *finished = TRUE;
@@ -133,9 +110,16 @@ static BOOL remote_call(HANDLE process, LPTHREAD_START_ROUTINE function, void *a
 int wmain(int argc, wchar_t **argv) {
     BOOL restore = FALSE, status = FALSE;
     DWORD requested = 0;
+    BYTE *mapped_base = NULL;
     const wchar_t *dll_path = NULL;
     for (int index = 1; index < argc; ++index) {
-        if (!wcscmp(argv[index], L"--status")) status = TRUE;
+        if (!wcscmp(argv[index], L"--base") && index + 1 < argc) {
+            wchar_t *end = NULL;
+            unsigned long long address = wcstoull(argv[++index], &end, 16);
+            if (!address || !end || *end) { fwprintf(stderr, L"Invalid mapped base.\n"); return 1; }
+            mapped_base = (BYTE *)(ULONG_PTR)address;
+        }
+        else if (!wcscmp(argv[index], L"--status")) status = TRUE;
         else if (!wcscmp(argv[index], L"--restore")) restore = TRUE;
         else if (!wcscmp(argv[index], L"--dll") && index + 1 < argc) {
             dll_path = argv[++index];
@@ -149,7 +133,7 @@ int wmain(int argc, wchar_t **argv) {
             wchar_t *end = NULL;
             requested = wcstoul(argv[++index], &end, 10);
             if (!requested || !end || *end) { fwprintf(stderr, L"Invalid PID.\n"); return 1; }
-        } else { fwprintf(stderr, L"Usage: blur-controller.exe [--pid PID] [--dll ABSOLUTE_PATH] [--restore | --status]\n"); return 1; }
+        } else { fwprintf(stderr, L"Usage: blur-controller.exe [--pid PID] [--dll ABSOLUTE_PATH] [--base HEX_ADDRESS] [--restore | --status]\n"); return 1; }
     }
     DWORD pid = discover(requested);
     if (!pid) return 1;
@@ -180,10 +164,24 @@ int wmain(int argc, wchar_t **argv) {
     FARPROC exported = image ? GetProcAddress(image, status ? "BlurCounters" : restore ? "BlurRemove" : "BlurInstall") : NULL;
     if (!exported) { fwprintf(stderr, L"Cannot find adjacent hook DLL/export: %lu.\n", GetLastError()); if (image) FreeLibrary(image); free(path); CloseHandle(process); return 1; }
     SIZE_T offset = (SIZE_T)((BYTE *)exported - (BYTE *)image);
+    IMAGE_DOS_HEADER *local_dos = (IMAGE_DOS_HEADER *)image;
+    IMAGE_NT_HEADERS64 expected = *(IMAGE_NT_HEADERS64 *)((BYTE *)image + local_dos->e_lfanew);
     FreeLibrary(image);
     const wchar_t *dll_name = wcsrchr(path, L'\\') + 1;
     BOOL mismatch = FALSE;
-    BYTE *remote = module_base(pid, dll_name, path, &mismatch);
+    BYTE *remote = mapped_base ? mapped_base : module_base(pid, dll_name, path, &mismatch);
+    if (mapped_base) {
+        IMAGE_DOS_HEADER dos = {0};
+        IMAGE_NT_HEADERS64 nt = {0};
+        if (!ReadProcessMemory(process, mapped_base, &dos, sizeof(dos), NULL) || dos.e_magic != IMAGE_DOS_SIGNATURE ||
+            dos.e_lfanew < 0 || dos.e_lfanew > 4096 ||
+            !ReadProcessMemory(process, mapped_base + dos.e_lfanew, &nt, sizeof(nt), NULL) ||
+            nt.Signature != IMAGE_NT_SIGNATURE || nt.FileHeader.TimeDateStamp != expected.FileHeader.TimeDateStamp ||
+            nt.OptionalHeader.SizeOfImage != expected.OptionalHeader.SizeOfImage || nt.FileHeader.Machine != IMAGE_FILE_MACHINE_AMD64) {
+            fwprintf(stderr, L"Mapped DLL does not match this build; restart Discord.\n");
+            free(path); CloseHandle(process); return 1;
+        }
+    }
     if (mismatch) { free(path); CloseHandle(process); return 1; }
     if (status) {
         BlurStatus counters = {0};
@@ -198,36 +196,21 @@ int wmain(int argc, wchar_t **argv) {
     BOOL success = FALSE, finished = TRUE;
     DWORD result = 0;
     if (!remote && !restore) {
-        FARPROC load = GetProcAddress(GetModuleHandleW(L"kernel32.dll"), "LoadLibraryW");
-        HMODULE owner = NULL;
-        wchar_t owner_path[MAX_PATH];
-        if (load && GetModuleHandleExW(GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS | GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT, (LPCWSTR)load, &owner) && GetModuleFileNameW(owner, owner_path, MAX_PATH)) {
-            wchar_t *owner_name = wcsrchr(owner_path, L'\\');
-            BYTE *remote_owner = module_base(pid, owner_name ? owner_name + 1 : owner_path, NULL, NULL);
-            if (!remote_owner) fwprintf(stderr, L"Cannot locate the remote module owning LoadLibraryW.\n");
-            SIZE_T bytes = (wcslen(path) + 1) * sizeof(wchar_t);
-            void *argument = remote_owner ? VirtualAllocEx(process, NULL, bytes, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE) : NULL;
-            if (remote_owner && !argument) fwprintf(stderr, L"VirtualAllocEx(DLL path) failed: %lu.\n", GetLastError());
-            SIZE_T written = 0;
-            if (argument && WriteProcessMemory(process, argument, path, bytes, &written) && written == bytes) {
-                // LoadLibraryW may be forwarded into KernelBase; use the module that actually owns its address.
-                LPTHREAD_START_ROUTINE remote_load = (LPTHREAD_START_ROUTINE)(remote_owner + ((BYTE *)load - (BYTE *)owner));
-                success = remote_call(process, remote_load, argument, &result, &finished, L"LoadLibraryW");
-            } else if (argument) {
-                fwprintf(stderr, L"WriteProcessMemory(DLL path) failed: %lu, wrote %zu of %zu bytes.\n", GetLastError(), written, bytes);
-            }
-            if (argument && finished) VirtualFreeEx(process, argument, 0, MEM_RELEASE);
-            if (success) {
-                remote = module_base(pid, dll_name, path, &mismatch);
-                if (!remote) {
-                    fwprintf(stderr, L"Remote LoadLibraryW completed with return 0x%08lX, but the DLL is absent. Remote last-error is not available.\n", result);
-                    report_policies(process);
-                }
-            }
-        } else {
-            fwprintf(stderr, L"Cannot resolve the local module owning LoadLibraryW: %lu.\n", GetLastError());
+        HANDLE file = CreateFileW(path, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+        LARGE_INTEGER size = {0};
+        BYTE *bytes = NULL;
+        DWORD read = 0;
+        if (file != INVALID_HANDLE_VALUE && GetFileSizeEx(file, &size) && size.QuadPart > 0 && size.QuadPart <= 64 * 1024 * 1024) {
+            bytes = malloc((size_t)size.QuadPart);
+            if (bytes && ReadFile(file, bytes, (DWORD)size.QuadPart, &read, NULL) && read == size.QuadPart)
+                success = blur_map(process, bytes, (size_t)size.QuadPart, &remote);
         }
+        if (file != INVALID_HANDLE_VALUE) CloseHandle(file);
+        free(bytes);
+        if (success) { wprintf(L"mapped-base=0x%llX\n", (unsigned long long)(ULONG_PTR)remote); fflush(stdout); }
+        else fwprintf(stderr, L"Manual mapping failed.\n");
     }
+
     if (remote) {
         success = remote_call(process, (LPTHREAD_START_ROUTINE)(remote + offset), NULL, &result, &finished, restore ? L"BlurRemove" : L"BlurInstall");
         if (success && result != 0) fwprintf(stderr, L"%s returned error %lu.\n", restore ? L"BlurRemove" : L"BlurInstall", result);

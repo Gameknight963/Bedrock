@@ -4,11 +4,11 @@ An experimental fix for sharp content bleeding through backdrop blur on transpar
 
 ## Enabling
 
-Enable **Native GPU hook** in this plugin's settings and restart Discord through Bedrock. This option is off by default because loading the native DLL requires disabling Chromium's GPU sandbox for the Discord instance. It does not disable renderer sandboxing or change system settings.
+Enable **Native GPU hook** in this plugin's settings. It applies without restarting and leaves Chromium's GPU sandbox enabled. The experimental hook remains off by default. If upgrading from the version that disabled the GPU sandbox, restart Discord through Bedrock once to remove that old startup flag.
 
-The plugin checks for GPU processes once per second and installs the hook when one appears. If the GPU process restarts, it installs the hook in the new process. Disabling the plugin restores the original compositing behavior. Restart afterward to restore the GPU sandbox.
+The plugin checks for GPU processes once per second and installs the hook when one appears. If the GPU process restarts, it installs the hook in the new process. Disabling the plugin restores the original compositing behavior. Re-enabling reuses the mapped DLL in the same GPU process.
 
-Discord's executable and installation files are never modified. The helper loads our DLL into the GPU process, and MinHook redirects the relevant functions in memory. The DLL and pass-through hooks remain resident when disabled so rendering threads can finish safely; exiting the process removes them.
+Discord's executable and installation files are never modified. The helper manually maps our DLL into the GPU process, and MinHook redirects the relevant functions in memory. The DLL and pass-through hooks remain resident when disabled so rendering threads can finish safely; exiting the process removes them.
 
 ## Current limitations
 

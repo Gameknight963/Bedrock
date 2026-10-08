@@ -8,14 +8,14 @@
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
   <PropertyGroup Label="Configuration"><ConfigurationType>Application</ConfigurationType><PlatformToolset>v145</PlatformToolset><CharacterSet>Unicode</CharacterSet></PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
-  <PropertyGroup><TargetName>blur-controller</TargetName><OutDir>$(ProjectDir)bin\$(Platform)\$(Configuration)\</OutDir><IntDir>$(ProjectDir)obj\Controller\$(Platform)\$(Configuration)\</IntDir></PropertyGroup>
+  <PropertyGroup><TargetName>blur-controller</TargetName><LinkIncremental>false</LinkIncremental><OutDir>$(ProjectDir)bin\$(Platform)\$(Configuration)\</OutDir><IntDir>$(ProjectDir)obj\Controller\$(Platform)\$(Configuration)\</IntDir></PropertyGroup>
   <ItemDefinitionGroup>
     <ClCompile><CompileAs>CompileAsC</CompileAs><LanguageStandard_C>stdc17</LanguageStandard_C><WarningLevel>Level4</WarningLevel><SDLCheck>true</SDLCheck><RuntimeLibrary>MultiThreaded</RuntimeLibrary><PreprocessorDefinitions>UNICODE;_UNICODE;_WIN32_WINNT=0x0A00;%(PreprocessorDefinitions)</PreprocessorDefinitions></ClCompile>
     <Link><SubSystem>Console</SubSystem><GenerateDebugInformation>true</GenerateDebugInformation></Link>
   </ItemDefinitionGroup>
-  <ItemGroup><ClCompile Include="controller.c" /></ItemGroup>
+  <ItemGroup><ClCompile Include="controller.c" /><ClCompile Include="mapper.cpp"><CompileAs>CompileAsCpp</CompileAs></ClCompile><ClCompile Include="..\..\lib\manual-map\injector.cpp"><CompileAs>CompileAsCpp</CompileAs><PreprocessorDefinitions>DISABLE_OUTPUT;%(PreprocessorDefinitions)</PreprocessorDefinitions><BufferSecurityCheck>false</BufferSecurityCheck><SDLCheck>false</SDLCheck></ClCompile></ItemGroup>
   <ItemGroup><ProjectReference Include="Hook.vcxproj"><LinkLibraryDependencies>false</LinkLibraryDependencies></ProjectReference></ItemGroup>
-  <ItemGroup><ClInclude Include="status.h" /></ItemGroup>
+  <ItemGroup><ClInclude Include="status.h" /><ClInclude Include="mapper.h" /></ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
-  <Target Name="CopyNativeLicenses" AfterTargets="Build"><Copy SourceFiles="$(ProjectDir)..\..\lib\minhook\LICENSE.txt" DestinationFiles="$(OutDir)minhook-LICENSE.txt" SkipUnchangedFiles="true" /><Copy SourceFiles="$(ProjectDir)Skia-LICENSE.txt;$(ProjectDir)Chromium-LICENSE.txt" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" /></Target>
+  <Target Name="CopyNativeLicenses" AfterTargets="Build"><Copy SourceFiles="$(ProjectDir)..\..\lib\minhook\LICENSE.txt" DestinationFiles="$(OutDir)minhook-LICENSE.txt" SkipUnchangedFiles="true" /><Copy SourceFiles="$(ProjectDir)Skia-LICENSE.txt;$(ProjectDir)Chromium-LICENSE.txt" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" /><Copy SourceFiles="$(ProjectDir)..\..\lib\manual-map\LICENSE" DestinationFiles="$(OutDir)manual-map-LICENSE.txt" SkipUnchangedFiles="true" /></Target>
 </Project>
