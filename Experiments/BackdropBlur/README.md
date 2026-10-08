@@ -14,7 +14,24 @@ The program draws white text and shapes on a transparent surface, then uses a Sk
 
 PNG files are written under the executable's `images` folder in `bin`. `comparison.png` shows all three over a checkerboard. The individual images retain transparency. The console also prints the alpha at a pixel inside the original white bar.
 
-The comparison program isolates the blend operation. It does not reproduce Chromium's GPU rendering, CSS opacity, masks, rounded corners, or nested filters, and does not modify Discord.
+`rounded-comparison.png` adds four columns at full, half, and zero layer opacity:
+
+- **Original:** the unchanged backdrop.
+- **SrcOver + clear:** capture the blurred backdrop into a rectangular layer, clear outside the rounded shape, then restore with `SrcOver`.
+- **Src + clear:** use the same clearing operation, then restore with `Src`, as in the one-byte patch.
+- **Src + rounded clip:** clip to the rounded shape before creating the layer and restore with `Src`.
+
+A white marker sits outside the rounded shape but inside its rectangular bounds. An orange rectangle represents foreground content drawn into the layer. Individual transparent images are saved as `rounded-{column}-{opacity}.png`.
+
+The comparison program isolates these operations. It does not reproduce Chromium's GPU rendering, full CSS opacity handling, masks, forward filters, or nested filters, and does not modify Discord.
+
+## Rounded corners and opacity
+
+Clearing outside the rounded shape and restoring with `Src` erases the white corner marker: its alpha becomes 0 instead of 255. Clipping before creating the layer preserves the marker at 255 while removing the bleeding inside the shape. At full opacity, the original bar's alpha is 121 with either `Src` approach.
+
+Clipping does not fix layer opacity. With half opacity, both `Src` approaches reduce the bar's alpha to 61; at zero opacity they erase the backdrop inside the shape entirely. A disappearing effect should leave the original backdrop visible. Replacement therefore needs to account for effect opacity separately from the transparency of the blurred pixels.
+
+These results support clipping as a fix for the isolated corner defect, but not as a complete Chromium fix. Restricting Chromium's entire layer could also clip foreground content or forward-filter output that is meant to extend beyond the backdrop shape.
 
 ## Findings
 
