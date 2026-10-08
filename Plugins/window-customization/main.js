@@ -2,10 +2,16 @@ import { createRequire } from 'node:module';
 
 const { definePluginSettings, OptionType } = Bedrock;
 const require = createRequire(import.meta.url);
-const native = require(`./native/${process.platform}-${process.arch}/window.node`);
-const { screen } = require('electron');
+let native;
 
 export const settings = definePluginSettings({
+    transparency: {
+        type: OptionType.BOOLEAN,
+        label: 'Window transparency',
+        description: 'Allow transparent CSS themes to show through the window. Requires a restart.',
+        default: false,
+        restartNeeded: true
+    },
     nativeTitlebar: {
         type: OptionType.BOOLEAN,
         label: 'Native title bar',
@@ -22,11 +28,27 @@ export const settings = definePluginSettings({
 
 export function start(ctx) {
     const windows = new Map();
+    let disposeTransparency;
+    const applyTransparency = () => {
+        if (settings.store.transparency && !disposeTransparency) {
+            disposeTransparency = ctx.windows.beforeCreate(options => {
+                options.transparent = true;
+                options.backgroundColor = '#00000000';
+                // Electron requires frameless windows for transparency on Windows.
+                options.frame = false;
+            });
+        } else if (!settings.store.transparency && disposeTransparency) {
+            disposeTransparency();
+            disposeTransparency = undefined;
+        }
+    };
+    applyTransparency();
     const apply = window => {
         if (window.isDestroyed()) return;
         let url;
         try { url = new URL(window.webContents.getURL()); } catch { return; }
         if (url.protocol !== 'https:' || !['discord.com', 'canary.discord.com', 'ptb.discord.com'].includes(url.hostname)) return;
+        native ||= require(`./native/${process.platform}-${process.arch}/window.node`);
         const options = { nativeTitlebar: settings.store.nativeTitlebar, resizableFrame: settings.store.resizableFrame };
         const record = windows.get(window);
         if (record.customization) record.customization.update(options);
@@ -52,7 +74,7 @@ export function start(ctx) {
             record.patches.push(ctx.patches.instead(window, 'isMaximized', () =>
                 !record.fullscreen && !window.isMinimized() && Boolean(native.getStyle(window.getNativeWindowHandle()) & 0x01000000))); // WS_MAXIMIZE
             record.patches.push(ctx.patches.instead(window, 'getNormalBounds', () =>
-                screen.screenToDipRect(window, record.customization.getNormalBounds())));
+                require('electron').screen.screenToDipRect(window, record.customization.getNormalBounds())));
             record.key = (event, input) => {
                 if (input.type !== 'keyDown' || input.key !== 'F11' || input.control || input.alt || input.meta || input.shift) return;
                 event.preventDefault();
@@ -85,6 +107,7 @@ export function start(ctx) {
         queueMicrotask(loaded);
     };
     ctx.cleanup(settings.subscribe(() => {
+        applyTransparency();
         for (const window of windows.keys()) {
             try { apply(window); } catch (error) { ctx.log.error(error); }
         }

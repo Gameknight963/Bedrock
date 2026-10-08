@@ -63,7 +63,6 @@ const selectableDirectory = path.join(root, 'plugins', 'selectable-settings');
 fs.cpSync(path.join(__dirname, '../../Plugins/selectable-settings'), selectableDirectory, { recursive: true });
 
 fs.cpSync(path.join(__dirname, '../../Examples/example'), path.join(root, 'plugins', 'shipped-example'), { recursive: true });
-fs.cpSync(path.join(__dirname, '../../Plugins/transparency'), path.join(root, 'plugins', 'transparency'), { recursive: true });
 const customizationPackage = path.join(__dirname, '../../Launcher/bin/x64/Debug/BedrockData/plugins/window-customization');
 if (!fs.existsSync(path.join(customizationPackage, 'native/win32-x64/window.node')))
     throw new Error('Build the x64 Debug Launcher project first to package the native window customization plugin.');
@@ -75,7 +74,6 @@ const nativeWindows = require(fixtureNative);
 
 require('../bootstrap.cjs').install({ root, allowURL: url => url.origin === 'https://bedrock.test', restart: () => { globalThis.fixtureRestartRequested = true; return true; } });
 globalThis.BedrockMain.scan();
-globalThis.BedrockMain.setEnabled('bedrock.transparency', false);
 const themesDirectory = globalThis.BedrockMain.themes.directory;
 fs.mkdirSync(path.join(themesDirectory, 'assets'));
 fs.writeFileSync(path.join(themesDirectory, 'assets', 'import.css'), ':root { --theme-import: imported; }');
@@ -166,12 +164,11 @@ app.whenReady().then(async () => {
         const opaque = new BrowserWindow({ show: false, backgroundColor: '#123456' });
         assert.equal(opaque.getBackgroundColor().toLowerCase(), '#123456', 'transparency defaults to off');
         opaque.destroy();
-        await globalThis.BedrockMain.setEnabled('bedrock.transparency', false);
-        await globalThis.BedrockMain.setEnabled('bedrock.transparency', true);
+        globalThis.BedrockMain.settings('bedrock.window-customization').set('transparency', true);
         const transparent = new BrowserWindow({ show: false, frame: true, backgroundColor: '#123456' });
         assert.equal(transparent.getBackgroundColor(), '#000000', 'transparent background applied before window creation');
         transparent.destroy();
-        await globalThis.BedrockMain.setEnabled('bedrock.transparency', false);
+        globalThis.BedrockMain.settings('bedrock.window-customization').set('transparency', false);
         const restored = new BrowserWindow({ show: false, backgroundColor: '#123456' });
         assert.equal(restored.getBackgroundColor().toLowerCase(), '#123456', 'disable removes the creation hook');
         restored.destroy();
@@ -254,7 +251,7 @@ app.whenReady().then(async () => {
         await window.loadURL('https://bedrock.test/');
         await waitFor(`globalThis.Bedrock?.plugins.list().find(plugin => plugin.manifest.id === 'test.example')?.rendererStatus === 'running' && document.querySelector('[role=switch][aria-label="Enable Example plugin"]')`);
         await waitFor(`document.querySelector('.bedrock-restart-banner button')?.textContent === 'Restart Discord'`);
-        assert.match(await evaluate(`Bedrock.plugins.list().find(plugin => plugin.manifest.id === 'bedrock.transparency').restartReason`), /restore window creation options/);
+        assert.match(await evaluate(`Bedrock.plugins.list().find(plugin => plugin.manifest.id === 'bedrock.window-customization').restartReason`), /restore window creation options/);
         assert.equal(await evaluate('globalThis.originalPreload'), true, 'existing Discord preload must be preserved');
         await waitFor(`Bedrock.plugins.list().find(plugin => plugin.manifest.id === 'bedrock.example')?.rendererStatus === 'running'`);
         assert.deepEqual(await evaluate(`Object.keys(Bedrock.plugins.list().find(plugin => plugin.manifest.id === 'bedrock.example').settingsDefinitions)`), ['accent', 'color']);

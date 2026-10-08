@@ -1,19 +1,24 @@
 # Window Customization
 
-Customize Discord's Windows frame from this plugin's Settings tab. Changes apply immediately.
+Customize Discord's window from this plugin's Settings tab. Frame changes apply immediately; transparency requires a restart.
 
 ## Settings
 
+- **Window transparency:** allows transparent CSS themes to show through Discord's window. Enable it, then restart Discord using Bedrock's restart button. Changing it back also requires a restart.
 - **Native title bar:** adds the Windows caption and system menu. Windows draws the title bar and handles its buttons, dragging, and double-clicking.
 - **Restore resizable frame:** adds `WS_THICKFRAME`, the Windows style that enables resizing from the window edges. This is useful for transparent windows, where Electron removes that style.
 
 These settings are independent. The plugin's maximize/restore and F11 handling applies while the plugin is enabled, even with Native title bar turned off.
 
-Use Window Transparency and a transparent CSS theme separately if you want transparency. This plugin does not change your theme or hide Discord's own title bar controls.
+Use a CSS theme with transparent backgrounds in Bedrock's Themes page. The transparency option makes the window support transparency; it does not change Discord's CSS or fade text and images. This plugin does not hide Discord's own title bar controls.
 
 ## How it works
 
 The implementation details below refer to Electron 42.11.8, the version used by Discord when this plugin was developed. Source links are pinned to that version.
+
+### Transparency
+
+The plugin changes Electron's window creation options to enable transparency, set a transparent background, and remove the frame, which Electron requires for transparency on Windows. These options must be set before the window is created, so changing transparency requires a restart. The native title bar and resizable frame settings can add their styles afterward.
 
 ### Resizable frame
 
@@ -54,6 +59,8 @@ The plugin handles window fullscreen. HTML fullscreen requests, such as a video'
 ## Disabling
 
 Disabling the plugin exits its fullscreen mode, restores the frame styles it changed, removes its window message handler and F11 listener, and restores the JavaScript methods it patched.
+
+If transparency was enabled when the window was created, disabling the plugin requires a restart to restore an opaque window.
 
 ## Installation
 

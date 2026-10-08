@@ -4,7 +4,7 @@
     "id": "bedrock.window-customization",
     "name": "Window Customization",
     "version": "1.0.0",
-    "description": "Native Windows title bars and resizable window frames.",
+    "description": "Window transparency, native Windows title bars and resizable frames.",
     "entrypoints": { "main": "main.js" },
     "readme": "README.md"
 }
