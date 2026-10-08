@@ -2,7 +2,7 @@
     "manifestVersion": 1,
     "apiVersion": 1,
     "id": "bedrock.backdrop-blur",
-    "name": "Backdrop Blur",
+    "name": "Backdrop Blur Fix",
     "version": "0.1.0",
     "description": "Experimental replacement compositing for backdrop blur which fixes bleeding on transparent backgrounds.",
     "entrypoints": { "main": "main.js" },
