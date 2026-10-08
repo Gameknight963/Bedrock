@@ -67,3 +67,13 @@ We also tested the change in Discord's actual GPU process:
 Chromium first restricts the backdrop layer to rectangular bounds. After capturing the filtered backdrop, `ClearOutsideBackdropBounds` clears pixels outside the actual backdrop shape to transparent. `SrcOver` preserves the destination under those cleared pixels; `Src` replaces it with transparency instead. This explains why removing the bleeding also breaks rounded corners. The layer also carries opacity and other filter effects, which need separate investigation before treating the patch as generally usable.
 
 Chromium explicitly selects this blend mode in [PrepareCanvasForRPDQ](https://github.com/chromium/chromium/blob/148.0.7778.0/components/viz/service/display/skia_renderer.cc). Source-over compositing is also prescribed by the [CSS backdrop-filter specification](https://drafts.csswg.org/filter-effects-2/#backdrop-filter-operation), so this experiment deliberately changes that behavior.
+
+## Native plugin experiment
+
+The original PowerShell byte patch has been replaced by a C controller and a MinHook DLL under `Native/BackdropBlur`. Building the x64 launcher copies these into the Backdrop Blur plugin. See [the plugin README](../../Plugins/backdrop-blur/README.md) for enabling it and its limitations.
+
+The hook clips replacement to the backdrop shape and uses Skia's arithmetic blender to preserve the original according to effect opacity. It skips Chromium's subsequent clearing operation for that layer, since the rounded clip already provides coverage. Cases with additional filters, shader masks or split draw regions retain Chromium's original behavior.
+
+An isolated Electron 42.11.8 app verified that the hook removes the sharp bar, preserves the outside corner marker, interpolates at half opacity, leaves zero opacity unchanged, and restores the original pixels when disabled. This is not yet a general correctness test for Discord's UI. Clipping the entire layer can still restrict foreground content that should extend outside the backdrop shape.
+
+The stock GPU sandbox rejected loading the DLL in our fixture. The plugin therefore requires explicit permission to disable the GPU sandbox and a restart before injection. This weakens process isolation; it is off by default. No Discord executable files are changed.

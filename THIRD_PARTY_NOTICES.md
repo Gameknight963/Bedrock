@@ -9,9 +9,20 @@ Bedrock's own code is licensed under the [MIT license](LICENSE). The dependencie
 | Node.js v24.0.0 Node-API headers | MIT | Native window customization module |
 | Titlebar For Everyone | MIT | Reference for Chromium native frame message handling |
 | SkiaSharp 4.153.1 | MIT | Backdrop blur experiment only; restored through NuGet |
-| Skia | BSD-3-Clause | Native graphics library bundled with the experiment's SkiaSharp package |
+| Skia | BSD-3-Clause | SkiaSharp experiment and backdrop blur function signatures |
+| Chromium | BSD-3-Clause | Backdrop blur function signatures |
+| MinHook v1.3.4 | BSD-2-Clause | Experimental backdrop blur hook |
 
-The backdrop blur experiment uses [SkiaSharp](https://github.com/mono/SkiaSharp/blob/main/LICENSE.txt) and its native [Skia](https://github.com/google/skia/blob/main/LICENSE) dependency. These are not included in Bedrock's launcher or plugins. Their licenses and additional native dependency notices must accompany any separately distributed experiment binaries.
+The backdrop blur experiment uses [SkiaSharp](https://github.com/mono/SkiaSharp/blob/main/LICENSE.txt) and its native [Skia](https://github.com/google/skia/blob/main/LICENSE) dependency. SkiaSharp and its native library are not included in Bedrock's launcher or plugins. Their licenses and additional native dependency notices must accompany any separately distributed experiment binaries.
+
+The native backdrop blur plugin contains function signatures derived from Electron 42.11.8's Chromium/Skia implementation. Its native folder includes [Chromium's license](Native/BackdropBlur/Chromium-LICENSE.txt) and [Skia's license](Native/BackdropBlur/Skia-LICENSE.txt), alongside MinHook's notices. Keep these files with distributed plugin binaries.
+
+## MinHook v1.3.4
+
+- Source: [TsudaKageyu/minhook](https://github.com/TsudaKageyu/minhook/tree/c3fcafdc10146beb5919319d0683e44e3c30d537)
+- Vendored files: `lib/minhook`
+- Commit: `c3fcafdc10146beb5919319d0683e44e3c30d537`
+- License and included disassembler notices: [lib/minhook/LICENSE.txt](lib/minhook/LICENSE.txt). This file must accompany distributed backdrop blur binaries.
 
 ## jsmn
 

@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<Project DefaultTargets="Build" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
+  <ItemGroup Label="ProjectConfigurations">
+    <ProjectConfiguration Include="Debug|x64"><Configuration>Debug</Configuration><Platform>x64</Platform></ProjectConfiguration>
+    <ProjectConfiguration Include="Release|x64"><Configuration>Release</Configuration><Platform>x64</Platform></ProjectConfiguration>
+  </ItemGroup>
+  <PropertyGroup Label="Globals"><VCProjectVersion>18.0</VCProjectVersion><ProjectGuid>{5DC8C089-B9B1-44C5-89C1-DAD90BA466F6}</ProjectGuid><RootNamespace>BlurController</RootNamespace><WindowsTargetPlatformVersion>10.0</WindowsTargetPlatformVersion></PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.Default.props" />
+  <PropertyGroup Label="Configuration"><ConfigurationType>Application</ConfigurationType><PlatformToolset>v145</PlatformToolset><CharacterSet>Unicode</CharacterSet></PropertyGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.props" />
+  <PropertyGroup><TargetName>blur-controller</TargetName><OutDir>$(ProjectDir)bin\$(Platform)\$(Configuration)\</OutDir><IntDir>$(ProjectDir)obj\Controller\$(Platform)\$(Configuration)\</IntDir></PropertyGroup>
+  <ItemDefinitionGroup>
+    <ClCompile><CompileAs>CompileAsC</CompileAs><LanguageStandard_C>stdc17</LanguageStandard_C><WarningLevel>Level4</WarningLevel><SDLCheck>true</SDLCheck><RuntimeLibrary>MultiThreaded</RuntimeLibrary><PreprocessorDefinitions>UNICODE;_UNICODE;_WIN32_WINNT=0x0A00;%(PreprocessorDefinitions)</PreprocessorDefinitions></ClCompile>
+    <Link><SubSystem>Console</SubSystem><GenerateDebugInformation>true</GenerateDebugInformation></Link>
+  </ItemDefinitionGroup>
+  <ItemGroup><ClCompile Include="controller.c" /></ItemGroup>
+  <ItemGroup><ProjectReference Include="Hook.vcxproj"><LinkLibraryDependencies>false</LinkLibraryDependencies></ProjectReference></ItemGroup>
+  <ItemGroup><ClInclude Include="status.h" /></ItemGroup>
+  <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <Target Name="CopyNativeLicenses" AfterTargets="Build"><Copy SourceFiles="$(ProjectDir)..\..\lib\minhook\LICENSE.txt" DestinationFiles="$(OutDir)minhook-LICENSE.txt" SkipUnchangedFiles="true" /><Copy SourceFiles="$(ProjectDir)Skia-LICENSE.txt;$(ProjectDir)Chromium-LICENSE.txt" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" /></Target>
+</Project>
