@@ -7,6 +7,7 @@
 #include "status.h"
 
 __declspec(dllexport) BlurStatus BlurCounters;
+__declspec(dllexport) BlurInstallDiagnostic BlurDiagnostics;
 
 typedef void (*Prepare)(void *, const unsigned char *, unsigned char *);
 typedef void (*Blend)(unsigned char *, int);
@@ -95,8 +96,10 @@ static void prepare_hook(void *renderer, const unsigned char *rpdq, unsigned cha
     release_blender(layer.blender);
 }
 
-static unsigned char *find_signature(unsigned char *module, const Signature *signature)
+static unsigned char *find_signature(unsigned char *module, const Signature *signature, BlurMatchDiagnostic *diagnostic)
 {
+    diagnostic->result = BLUR_MATCH_MISSING;
+    diagnostic->expected_size = signature->function_size;
     IMAGE_DOS_HEADER *dos = (IMAGE_DOS_HEADER *)module;
     IMAGE_NT_HEADERS64 *nt = (IMAGE_NT_HEADERS64 *)(module + dos->e_lfanew);
     IMAGE_SECTION_HEADER *sections = IMAGE_FIRST_SECTION(nt);
@@ -111,15 +114,18 @@ static unsigned char *find_signature(unsigned char *module, const Signature *sig
             while (index < signature->length && (!signature->mask[index] ||
                 bytes[offset + index] == signature->bytes[index])) index++;
             if (index != signature->length) continue;
-            if (found) return NULL;
+            if (found) { diagnostic->result = BLUR_MATCH_DUPLICATE; return NULL; }
             found = bytes + offset;
         }
     }
     if (found) {
         DWORD64 base;
         PRUNTIME_FUNCTION function = RtlLookupFunctionEntry((DWORD64)found, &base, NULL);
-        if (!function || base + function->BeginAddress != (DWORD64)found ||
-            function->EndAddress - function->BeginAddress != signature->function_size) return NULL;
+        if (!function) { diagnostic->result = BLUR_MATCH_NO_UNWIND; return NULL; }
+        diagnostic->actual_size = function->EndAddress - function->BeginAddress;
+        if (base + function->BeginAddress != (DWORD64)found) { diagnostic->result = BLUR_MATCH_NOT_START; return NULL; }
+        if (diagnostic->actual_size != signature->function_size) { diagnostic->result = BLUR_MATCH_SIZE; return NULL; }
+        diagnostic->result = BLUR_MATCH_OK;
     }
     return found;
 }
@@ -131,25 +137,39 @@ static DWORD install_hooks(void)
         InterlockedExchange(&BlurCounters.enabled, 1);
         return ERROR_SUCCESS;
     }
+    ZeroMemory(&BlurDiagnostics, sizeof(BlurDiagnostics));
     unsigned char *module = (unsigned char *)GetModuleHandleW(NULL);
-    prepare_address = find_signature(module, &sig_prepare);
-    void *blend = find_signature(module, &sig_blend);
-    void *clear = find_signature(module, &sig_clear);
-    arithmetic = (Arithmetic)find_signature(module, &sig_arithmetic);
-    clip_path = (Clip)find_signature(module, &sig_clip_path);
-    clip_rect = (Clip)find_signature(module, &sig_clip_rect);
+    prepare_address = find_signature(module, &sig_prepare, &BlurDiagnostics.functions[0]);
+    void *blend = find_signature(module, &sig_blend, &BlurDiagnostics.functions[1]);
+    void *clear = find_signature(module, &sig_clear, &BlurDiagnostics.functions[2]);
+    arithmetic = (Arithmetic)find_signature(module, &sig_arithmetic, &BlurDiagnostics.functions[3]);
+    clip_path = (Clip)find_signature(module, &sig_clip_path, &BlurDiagnostics.functions[4]);
+    clip_rect = (Clip)find_signature(module, &sig_clip_rect, &BlurDiagnostics.functions[5]);
     if (!prepare_address || !blend || !clear || !arithmetic || !clip_path || !clip_rect)
         return ERROR_REVISION_MISMATCH;
+    BlurDiagnostics.stage = 1;
     if (active_slot == TLS_OUT_OF_INDEXES) active_slot = TlsAlloc();
     if (active_slot == TLS_OUT_OF_INDEXES) return ERROR_NOT_ENOUGH_MEMORY;
-    if (MH_Initialize() != MH_OK) return ERROR_DLL_INIT_FAILED;
-    if (MH_CreateHook(prepare_address, (void *)prepare_hook, (void **)&original_prepare) != MH_OK ||
-        MH_CreateHook(blend, (void *)blend_hook, (void **)&original_blend) != MH_OK ||
-        MH_CreateHook(clear, (void *)clear_hook, (void **)&original_clear) != MH_OK ||
-        MH_EnableHook(MH_ALL_HOOKS) != MH_OK) {
-        MH_Uninitialize();
-        return ERROR_DLL_INIT_FAILED;
+    BlurDiagnostics.stage = 2;
+    MH_STATUS status = MH_Initialize();
+    BlurDiagnostics.minhook_status = status;
+    if (status != MH_OK) return ERROR_DLL_INIT_FAILED;
+    BlurDiagnostics.stage = 3;
+    status = MH_CreateHook(prepare_address, (void *)prepare_hook, (void **)&original_prepare);
+    if (status == MH_OK) {
+        BlurDiagnostics.stage = 4;
+        status = MH_CreateHook(blend, (void *)blend_hook, (void **)&original_blend);
     }
+    if (status == MH_OK) {
+        BlurDiagnostics.stage = 5;
+        status = MH_CreateHook(clear, (void *)clear_hook, (void **)&original_clear);
+    }
+    if (status == MH_OK) {
+        BlurDiagnostics.stage = 6;
+        status = MH_EnableHook(MH_ALL_HOOKS);
+    }
+    BlurDiagnostics.minhook_status = status;
+    if (status != MH_OK) { MH_Uninitialize(); return ERROR_DLL_INIT_FAILED; }
     InterlockedExchange(&installed, 1);
     InterlockedExchange(&enabled, 1);
     InterlockedExchange(&BlurCounters.enabled, 1);

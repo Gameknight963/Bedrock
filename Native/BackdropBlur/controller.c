@@ -169,6 +169,8 @@ int wmain(int argc, wchar_t **argv) {
         free(path); CloseHandle(process); return 1;
     }
     SIZE_T offset = (SIZE_T)((BYTE *)exported - (BYTE *)image);
+    FARPROC diagnostics_export = GetProcAddress(image, "BlurDiagnostics");
+    SIZE_T diagnostics_offset = diagnostics_export ? (SIZE_T)((BYTE *)diagnostics_export - (BYTE *)image) : 0;
     IMAGE_DOS_HEADER *local_dos = (IMAGE_DOS_HEADER *)image;
     IMAGE_NT_HEADERS64 expected = *(IMAGE_NT_HEADERS64 *)((BYTE *)image + local_dos->e_lfanew);
     FreeLibrary(image);
@@ -218,13 +220,48 @@ int wmain(int argc, wchar_t **argv) {
 
     if (remote) {
         success = remote_call(process, (LPTHREAD_START_ROUTINE)(remote + offset), NULL, &result, &finished, restore ? L"BlurRemove" : L"BlurInstall");
-        if (success && result != 0) fwprintf(stderr, L"%s returned error %lu.\n", restore ? L"BlurRemove" : L"BlurInstall", result);
+        if (success && result != 0) {
+            const wchar_t *error_name = result == ERROR_REVISION_MISMATCH ? L"ERROR_REVISION_MISMATCH" :
+                result == ERROR_DLL_INIT_FAILED ? L"ERROR_DLL_INIT_FAILED" :
+                result == ERROR_NOT_ENOUGH_MEMORY ? L"ERROR_NOT_ENOUGH_MEMORY" : L"Windows error";
+            fwprintf(stderr, L"%ls failed: %ls (%lu).\n", restore ? L"BlurRemove" : L"BlurInstall", error_name, result);
+            BlurInstallDiagnostic diagnostic = {0};
+            if (!restore && diagnostics_offset && ReadProcessMemory(process, remote + diagnostics_offset, &diagnostic, sizeof(diagnostic), NULL)) {
+                const wchar_t *names[] = { L"SkiaRenderer::PrepareCanvasForRPDQ", L"SkPaint::setBlendMode",
+                    L"SkiaRenderer backdrop clearing", L"SkBlenders::Arithmetic", L"SkCanvas::clipPath", L"SkCanvas::clipRect" };
+                const wchar_t *reasons[] = { L"matched", L"no matching machine-code signature", L"more than one signature match",
+                    L"signature matched, but no PE unwind entry was found", L"signature matched inside a function rather than at its start",
+                    L"signature matched, but the function size differs" };
+                if (result == ERROR_REVISION_MISMATCH) {
+                    for (size_t i = 0; i < 6; i++) {
+                        BlurMatchDiagnostic *match = &diagnostic.functions[i];
+                        if (!match->result) continue;
+                        fwprintf(stderr, L"%ls: %ls", names[i], match->result <= BLUR_MATCH_SIZE ? reasons[match->result] : L"unknown validation failure");
+                        if (match->result == BLUR_MATCH_SIZE) fwprintf(stderr, L" (expected %lu bytes, found %lu)", match->expected_size, match->actual_size);
+                        fwprintf(stderr, L".\n");
+                    }
+                } else {
+                    const wchar_t *stages[] = { L"locating functions", L"allocating a Windows TLS slot", L"initializing MinHook",
+                        L"creating the render-pass hook", L"creating the blend-mode hook", L"creating the backdrop-clearing hook", L"enabling hooks" };
+                    fwprintf(stderr, L"Failed while %ls", diagnostic.stage < 7 ? stages[diagnostic.stage] : L"performing an unknown installation step");
+                    if (result == ERROR_DLL_INIT_FAILED) {
+                        const wchar_t *statuses[] = { L"MH_OK", L"MH_ERROR_ALREADY_INITIALIZED", L"MH_ERROR_NOT_INITIALIZED",
+                            L"MH_ERROR_ALREADY_CREATED", L"MH_ERROR_NOT_CREATED", L"MH_ERROR_ENABLED", L"MH_ERROR_DISABLED",
+                            L"MH_ERROR_NOT_EXECUTABLE", L"MH_ERROR_UNSUPPORTED_FUNCTION", L"MH_ERROR_MEMORY_ALLOC",
+                            L"MH_ERROR_MEMORY_PROTECT", L"MH_ERROR_MODULE_NOT_FOUND", L"MH_ERROR_FUNCTION_NOT_FOUND" };
+                        fwprintf(stderr, L" (%ls, %ld)", diagnostic.minhook_status >= 0 && diagnostic.minhook_status < 13 ?
+                            statuses[diagnostic.minhook_status] : L"MH_UNKNOWN", diagnostic.minhook_status);
+                    }
+                    fwprintf(stderr, L".\n");
+                }
+            } else if (!restore) fwprintf(stderr, L"Cannot read detailed hook diagnostics; the mapped DLL may be from an older build.\n");
+        }
         success = success && result == 0;
     }
     else if (restore) { wprintf(L"No hook DLL is loaded in GPU process %lu.\n", pid); success = TRUE; }
     else success = FALSE;
     if (success) wprintf(L"GPU process %lu: %s.\n", pid, restore ? L"hook disabled" : L"hook installed");
-    else fwprintf(stderr, L"Could not apply the blur hook. See the error above.\n");
+
     free(path);
     CloseHandle(process);
     return success ? 0 : 1;
