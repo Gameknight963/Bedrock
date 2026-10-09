@@ -45,17 +45,25 @@ The loader inspects only immediate plugin folders containing `plugin.json`. Ever
 }
 ```
 
-Required: `manifestVersion`, `id`, `name`, `version`, `entrypoints`. IDs use lowercase letters, digits, dots, underscores or hyphens and must be unique. `description`, `readme`, and `icon` are optional. Main and renderer are independently optional, but at least one is required. `.js` and `.mjs` entry points are supported. Prefer `main.js` and `renderer.js`, or `main/index.js` and `renderer/index.js`.
+Required: `manifestVersion`, `id`, `name`, `version`, `entrypoints`. IDs use lowercase letters, digits, dots, underscores or hyphens and must be unique. `description`, `readme`, and `icon` are optional. Main, renderer and GPU entry points are independently optional, but at least one is required. `.js` and `.mjs` entry points are supported. Prefer `main.js` and `renderer.js`, or `main/index.js` and `renderer/index.js`.
 
-Each entry point must be an object declaring `runtime`, `path` and `requiresApi`. Only the `javascript` runtime is supported. The current JavaScript API version is `1.0.0`.
+Each JavaScript entry point must be an object declaring `runtime`, `path` and `requiresApi`. The current JavaScript API version is `1.0.0`. JavaScript entry points run in main or renderer environments.
 
 `requiresApi` is a semantic version, not a version range. Bedrock accepts requirements with the same major version that are no newer than its API, comparing minor and patch versions in order. For example, API `1.3.2` accepts `1.2.0` and `1.3.2`, but rejects `1.3.3` and `2.0.0`. Prerelease versions follow semantic-version precedence; build metadata does not affect compatibility. Requirements are checked before executing any plugin code.
 
 `manifestVersion: 2` identifies this package format. The old string entry points and top-level `apiVersion` are no longer accepted.
 
+## Native entry points
+
+```json
+"gpu": { "runtime": "native", "path": "native/win32-x64/plugin.dll" }
+```
+
+Native entry points support main, GPU and Discord renderer processes on Windows x64. They declare `runtime` and `path`; the native API requirement belongs in the DLL descriptor rather than `requiresApi`. Bedrock supplies lifecycle, logging and settings without requiring a JavaScript entry point. The C interface and ownership rules are described in [the native API guide](../include/README.md).
+
 ## Lifecycle and context
 
-Each entry point exports `start(ctx)` and optionally `stop()`. Use ES module syntax. For main packages, an optional `package.json` containing `{"type":"module"}` makes the module type explicit. Main entry modules are loaded synchronously so they can register window hooks before Discord creates a window; top-level `await` is unsupported there. `start()` itself may be async.
+Each JavaScript entry point exports `start(ctx)` and optionally `stop()`. Use ES module syntax. For main packages, an optional `package.json` containing `{"type":"module"}` makes the module type explicit. Main entry modules are loaded synchronously so they can register window hooks before Discord creates a window; top-level `await` is unsupported there. `start()` itself may be async.
 
 ```js
 export function start(ctx) {

@@ -1,6 +1,7 @@
 const path = require('node:path');
 const { EventEmitter } = require('node:events');
 const { discover, readJson, writeJson } = require('./storage.cjs');
+const { createNativeEntryPoints } = require('./native.cjs');
 const { createContext, createPatcher } = require('./context.cjs');
 const { definePluginSettings, OptionType, normalizeDefinitions, validateSetting, bindPluginSettings } = require('./settings.mjs');
 
@@ -88,18 +89,49 @@ function createPluginManager(root, options = {}) {
             restartReason: record.restartReason || null,
             settingsDefinitions: definitions.get(record.manifest.id) || {},
             restartSettings: restartSettings(record.manifest.id),
-            renderer: record.manifest.entrypoints.renderer ? `bedrock://plugins/${record.manifest.id}/${record.manifest.entrypoints.renderer.path.replaceAll('\\', '/').split('/').map(encodeURIComponent).join('/')}` : null,
+            renderer: record.manifest.entrypoints.renderer?.runtime === 'javascript' ? `bedrock://plugins/${record.manifest.id}/${record.manifest.entrypoints.renderer.path.replaceAll('\\', '/').split('/').map(encodeURIComponent).join('/')}` : null,
             settings: settings(record.manifest.id).all()
         }));
     }
 
     function start(record) {
-        if (!record.entries.main || record.instance || !enabled(record.manifest.id)) return;
+        const hasNative = Object.values(record.manifest.entrypoints).some(entry => entry.runtime === 'native');
+        if ((!record.entries.main && !hasNative) || record.instance || !enabled(record.manifest.id)) return;
         record.status = 'starting';
         record.error = null;
         let owned;
         try {
-            record.module ||= require(record.entries.main);
+            if (!record.module) {
+                const javascript = record.manifest.entrypoints.main?.runtime === 'javascript' ? require(record.entries.main) : null;
+                if (javascript && typeof javascript.start !== 'function') throw new Error('Main entry point must export start(context)');
+                if (!hasNative) record.module = javascript;
+                else {
+                    const native = createNativeEntryPoints(record, {
+                        log: (level, args) => log(level, record.manifest.id, args),
+                        settings: settings(record.manifest.id),
+                        registerSettings: schema => registerSettings(record.manifest.id, schema),
+                        defaults: key => definitions.get(record.manifest.id)?.[key]?.default,
+                        subscribe(callback) {
+                            const listener = event => { if (event.id === record.manifest.id) callback(event); };
+                            events.on('settings.changed', listener);
+                            return () => events.off('settings.changed', listener);
+                        },
+                        failed(error) { record.error = error.message; log('error', record.manifest.id, [error]); notify(); }
+                    }, options);
+                    record.nativeOwner = native;
+                    record.module = {
+                        settings: javascript?.settings,
+                        async start(ctx) {
+                            try { await javascript?.start(ctx); await native.start(ctx); }
+                            catch (error) { await native.stop(); await javascript?.stop?.(); throw error; }
+                        },
+                        async stop() {
+                            const results = await Promise.allSettled([native.stop(), Promise.resolve().then(() => javascript?.stop?.())]);
+                            for (const result of results) if (result.status === 'rejected') throw result.reason;
+                        }
+                    };
+                }
+            }
             if (typeof record.module.start !== 'function') throw new Error('Main entry point must export start(context)');
             const services = {
                 log, settings: settings(record.manifest.id), patch,
@@ -166,7 +198,7 @@ function createPluginManager(root, options = {}) {
         for (const error of discoveryErrors) log('error', 'loader', [`${error.folder}: ${error.error}`]);
         for (const [id, plugin] of discovered.plugins) {
             if (records.has(id)) continue;
-            const record = { ...plugin, status: plugin.entries.main ? 'stopped' : 'renderer-only' };
+            const record = { ...plugin, status: plugin.entries.main || Object.values(plugin.manifest.entrypoints).some(entry => entry.runtime === 'native') ? 'stopped' : 'renderer-only' };
             try { settings(id); } catch (error) { discoveryErrors.push({ folder: id, error: error.message }); continue; }
             records.set(id, record);
             start(record);
@@ -184,6 +216,7 @@ function createPluginManager(root, options = {}) {
                 if (discovered.plugins.has(id)) continue;
                 const removal = (transitions.get(id) || Promise.resolve()).catch(() => {}).then(async () => {
                     await stop(record);
+                    record.nativeOwner?.close();
                     records.delete(id);
                     definitions.delete(id);
                     for (const key of restartBaselines.keys()) if (key.startsWith(`${id}/`)) restartBaselines.delete(key);

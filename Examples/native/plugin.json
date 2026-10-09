@@ -1,0 +1,9 @@
+{
+    "manifestVersion": 2,
+    "id": "example.native",
+    "name": "Native Example",
+    "version": "1.0.0",
+    "description": "A C plugin demonstrating lifecycle, logging and settings.",
+    "entrypoints": { "gpu": { "runtime": "native", "path": "native-example.dll" } },
+    "readme": "README.md"
+}

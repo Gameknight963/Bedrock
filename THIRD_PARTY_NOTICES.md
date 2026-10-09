@@ -4,14 +4,14 @@ Bedrock's own code is licensed under the [MIT license](LICENSE). The dependencie
 
 | Dependency | License | Used by |
 | --- | --- | --- |
-| jsmn | MIT | Launcher JSON parsing |
+| jsmn | MIT | Launcher and native plugin IPC JSON parsing |
 | Google Test v1.18.0 | BSD-3-Clause | Native tests only; not linked into the launcher |
 | Node.js v24.0.0 Node-API headers | MIT | Native window customization module |
 | Titlebar For Everyone | MIT | Reference for Chromium native frame message handling |
 | SkiaSharp 4.153.1 | MIT | Backdrop blur experiment only; restored through NuGet |
 | Skia | BSD-3-Clause | SkiaSharp experiment and backdrop blur function signatures |
 | Chromium | BSD-3-Clause | Backdrop blur function signatures |
-| Simple Manual Map Injector | MIT | Backdrop blur controller |
+| Simple Manual Map Injector | MIT | Native plugin host and backdrop blur controllers |
 | MinHook v1.3.4 | BSD-2-Clause | Experimental backdrop blur hook |
 
 The backdrop blur experiment uses [SkiaSharp](https://github.com/mono/SkiaSharp/blob/main/LICENSE.txt) and its native [Skia](https://github.com/google/skia/blob/main/LICENSE) dependency. SkiaSharp and its native library are not included in Bedrock's launcher or plugins. Their licenses and additional native dependency notices must accompany any separately distributed experiment binaries.

@@ -53,14 +53,23 @@ function discover(root) {
                 typeof manifest.version !== 'string' || !/^\d+\.\d+\.\d+(?:-[\w.-]+)?(?:\+[\w.-]+)?$/.test(manifest.version))
                 throw new Error('A name and semantic version are required');
             if (!manifest.entrypoints || typeof manifest.entrypoints !== 'object' || Array.isArray(manifest.entrypoints))
-                throw new Error('entrypoints must declare main and/or renderer');
+                throw new Error('entrypoints must declare main, renderer and/or gpu');
             const entries = {};
             for (const [environment, entry] of Object.entries(manifest.entrypoints)) {
-                if (!['main', 'renderer'].includes(environment)) throw new Error(`Unknown environment: ${environment}`);
+                if (!['main', 'renderer', 'gpu'].includes(environment)) throw new Error(`Unknown environment: ${environment}`);
                 if (!entry || typeof entry !== 'object' || Array.isArray(entry))
                     throw new Error(`${environment} must declare runtime, path and requiresApi`);
                 const definition = entry;
-                if (!definition || definition.runtime !== 'javascript') throw new Error(`Unsupported runtime for ${environment}`);
+                if (!['javascript', 'native'].includes(definition.runtime)) throw new Error(`Unsupported runtime for ${environment}`);
+                if (definition.runtime === 'native') {
+                    if (process.platform !== 'win32' || process.arch !== 'x64') throw new Error('Native plugins currently require Windows x64');
+                    if (typeof definition.path !== 'string' || path.extname(definition.path).toLowerCase() !== '.dll')
+                        throw new Error('Native entry points must end in .dll');
+                    if (Object.hasOwn(definition, 'requiresApi')) throw new Error('Native API requirements belong in the DLL descriptor');
+                    entries[environment] = packagePath(folder, definition.path);
+                    continue;
+                }
+                if (environment === 'gpu') throw new Error('GPU entry points require the native runtime');
                 if (!parseVersion(definition.requiresApi))
                     throw new Error(`${environment}.requiresApi must be a semantic version`);
                 if (!supportsApi(definition.requiresApi))

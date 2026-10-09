@@ -41,6 +41,15 @@ function install(options = {}) {
     }
     const logs = createLogFeed(root);
     const manager = createPluginManager(root, {
+        nativeTargets(environment) {
+            if (environment === 'main') return [{ pid: process.pid, creationTime: 0 }];
+            if (!app.isReady()) return [];
+            const metrics = app.getAppMetrics();
+            if (environment === 'gpu') return metrics.filter(metric => metric.type === 'GPU');
+            const pids = new Set([...windows].filter(window => !window.isDestroyed() && allowed(window.webContents.getURL()))
+                .map(window => window.webContents.getOSProcessId()));
+            return metrics.filter(metric => pids.has(metric.pid));
+        },
         changed() { revision++; broadcast('bedrock:update', snapshot()); },
         context(record, own) {
             return { logs: { configureFile: logs.configureFile, publish: logs.publish, subscribe: callback => own(logs.subscribe(callback)) }, windows: {
