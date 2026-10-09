@@ -51,8 +51,8 @@ test('main owns definitions, persistence and validation; callbacks bind again af
     t.after(() => fs.rmSync(root, { recursive: true, force: true }));
     const folder = path.join(root, 'plugins', 'settings');
     fs.mkdirSync(folder, { recursive: true });
-    writeJson(path.join(folder, 'plugin.json'), { manifestVersion: 1, apiVersion: 1,
-        id: 'test.settings', name: 'Settings', version: '1.0.0', entrypoints: { main: 'main.js' } });
+    writeJson(path.join(folder, 'plugin.json'), { manifestVersion: 2,
+        id: 'test.settings', name: 'Settings', version: '1.0.0', entrypoints: { main: { runtime: 'javascript', path: 'main.js', requiresApi: '1.0.0' } } });
     const apiPath = JSON.stringify(path.join(__dirname, '../settings.mjs'));
     fs.writeFileSync(path.join(folder, 'main.js'), `
         const { definePluginSettings, OptionType } = require(${apiPath});

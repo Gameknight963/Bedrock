@@ -88,7 +88,7 @@ function createPluginManager(root, options = {}) {
             restartReason: record.restartReason || null,
             settingsDefinitions: definitions.get(record.manifest.id) || {},
             restartSettings: restartSettings(record.manifest.id),
-            renderer: record.manifest.entrypoints.renderer ? `bedrock://plugins/${record.manifest.id}/${(typeof record.manifest.entrypoints.renderer === 'string' ? record.manifest.entrypoints.renderer : record.manifest.entrypoints.renderer.path).replaceAll('\\', '/').split('/').map(encodeURIComponent).join('/')}` : null,
+            renderer: record.manifest.entrypoints.renderer ? `bedrock://plugins/${record.manifest.id}/${record.manifest.entrypoints.renderer.path.replaceAll('\\', '/').split('/').map(encodeURIComponent).join('/')}` : null,
             settings: settings(record.manifest.id).all()
         }));
     }

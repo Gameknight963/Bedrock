@@ -32,31 +32,26 @@ The loader inspects only immediate plugin folders containing `plugin.json`. Ever
 
 ```json
 {
-    "manifestVersion": 1,
-    "apiVersion": 1,
+    "manifestVersion": 2,
     "id": "example.plugin",
     "name": "Example",
     "version": "1.0.0",
     "description": "A short explanation for the plugin card.",
     "entrypoints": {
-        "main": "main.js",
-        "renderer": "renderer.js"
+        "main": { "runtime": "javascript", "path": "main.js", "requiresApi": "1.0.0" },
+        "renderer": { "runtime": "javascript", "path": "renderer.js", "requiresApi": "1.0.0" }
     },
     "readme": "README.md"
 }
 ```
 
-Required: `manifestVersion`, `apiVersion`, `id`, `name`, `version`, `entrypoints`. IDs use lowercase letters, digits, dots, underscores or hyphens and must be unique. `description`, `readme`, and `icon` are optional. Main and renderer are independently optional, but at least one is required. `.js` and `.mjs` entry points are supported. Prefer `main.js` and `renderer.js`, or `main/index.js` and `renderer/index.js`.
+Required: `manifestVersion`, `id`, `name`, `version`, `entrypoints`. IDs use lowercase letters, digits, dots, underscores or hyphens and must be unique. `description`, `readme`, and `icon` are optional. Main and renderer are independently optional, but at least one is required. `.js` and `.mjs` entry points are supported. Prefer `main.js` and `renderer.js`, or `main/index.js` and `renderer/index.js`.
 
-Entry points also accept an extensible definition:
+Each entry point must be an object declaring `runtime`, `path` and `requiresApi`. Only the `javascript` runtime is supported. The current JavaScript API version is `1.0.0`.
 
-```json
-"main": { "runtime": "javascript", "path": "main.js" }
-```
+`requiresApi` is a semantic version, not a version range. Bedrock accepts requirements with the same major version that are no newer than its API, comparing minor and patch versions in order. For example, API `1.3.2` accepts `1.2.0` and `1.3.2`, but rejects `1.3.3` and `2.0.0`. Prerelease versions follow semantic-version precedence; build metadata does not affect compatibility. Requirements are checked before executing any plugin code.
 
-Only `javascript` is implemented. A future runtime can extend this object with fields such as an assembly path and type without changing the package layout. `.NET` entry points and Vencord/Equicord compatibility are not implemented.
-
-README details support headings, paragraphs, bold, inline code, fenced code, bullet lists, and links. Raw HTML is displayed as text. Unsafe link schemes are rejected. Optional package icons appear on plugin cards.
+`manifestVersion: 2` identifies this package format. The old string entry points and top-level `apiVersion` are no longer accepted.
 
 ## Lifecycle and context
 

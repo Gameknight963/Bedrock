@@ -15,8 +15,8 @@ function plugin(root, id, source, overrides = {}, folder = id) {
     const directory = path.join(root, 'plugins', folder);
     fs.mkdirSync(directory, { recursive: true });
     fs.writeFileSync(path.join(directory, 'main.js'), source);
-    writeJson(path.join(directory, 'plugin.json'), { manifestVersion: 1, apiVersion: 1,
-        id, name: id, version: '1.0.0', entrypoints: { main: 'main.js' }, ...overrides });
+    writeJson(path.join(directory, 'plugin.json'), { manifestVersion: 2,
+        id, name: id, version: '1.0.0', entrypoints: { main: { runtime: 'javascript', path: 'main.js', requiresApi: '1.0.0' } }, ...overrides });
     return directory;
 }
 const quiet = { log() {} };
@@ -100,7 +100,7 @@ test('duplicates, traversal, unsupported runtimes and invalid settings are repor
     fs.writeFileSync(path.join(root, 'outside.js'), '');
     plugin(root, 'test.duplicate', '', {}, 'copy-one');
     plugin(root, 'test.duplicate', '', {}, 'copy-two');
-    plugin(root, 'test.escape', '', { entrypoints: { main: '../../outside.js' } });
+    plugin(root, 'test.escape', '', { entrypoints: { main: { runtime: 'javascript', path: '../../outside.js', requiresApi: '1.0.0' } } });
     plugin(root, 'test.future', '', { entrypoints: { main: { runtime: 'dotnet', path: 'main.js' } } });
     const discovered = discover(root);
     assert.equal(discovered.plugins.size, 0);
@@ -110,7 +110,7 @@ test('duplicates, traversal, unsupported runtimes and invalid settings are repor
 test('rescan discovers additions and explicit nested entry points resolve relative imports', async t => {
     const root = fixture(t);
     const manager = createPluginManager(root, quiet); manager.scan();
-    const directory = plugin(root, 'test.nested', '', { entrypoints: { main: { runtime: 'javascript', path: 'main/entry.mjs' } } });
+    const directory = plugin(root, 'test.nested', '', { entrypoints: { main: { runtime: 'javascript', path: 'main/entry.mjs', requiresApi: '1.0.0' } } });
     fs.mkdirSync(path.join(directory, 'main'));
     fs.writeFileSync(path.join(directory, 'main', 'helper.mjs'), 'export const answer = 123;');
     fs.writeFileSync(path.join(directory, 'main', 'entry.mjs'), `import { answer } from './helper.mjs'; export function start(ctx) { ctx.settings.set('answer', answer); }`);
@@ -119,4 +119,25 @@ test('rescan discovers additions and explicit nested entry points resolve relati
     assert.throws(() => manager.settings('test.nested').set('bad', undefined));
     assert.throws(() => manager.settings('test.nested').set('__proto__', {}));
     await manager.stopAll();
+});
+
+test('incompatible manifests are rejected before executing either entry point', t => {
+    const root = fixture(t);
+    const marker = path.join(root, 'executed');
+    const source = `require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'yes');`;
+    plugin(root, 'test.newer', source, { entrypoints: { main: { runtime: 'javascript', path: 'main.js', requiresApi: '1.0.1' } } });
+    plugin(root, 'test.major', source, { entrypoints: { main: { runtime: 'javascript', path: 'main.js', requiresApi: '2.0.0' } } });
+    plugin(root, 'test.short', source, { entrypoints: { main: 'main.js' } });
+    plugin(root, 'test.missing', source, { entrypoints: { main: { runtime: 'javascript', path: 'main.js' } } });
+    plugin(root, 'test.old', source, { manifestVersion: 1, apiVersion: 1 });
+    plugin(root, 'test.toplevel', source, { apiVersion: 1 });
+    plugin(root, 'test.renderer', source, { entrypoints: {
+        main: { runtime: 'javascript', path: 'main.js', requiresApi: '1.0.0' },
+        renderer: { runtime: 'javascript', path: 'main.js', requiresApi: '1.1.0' }
+    } });
+    const manager = createPluginManager(root, quiet);
+    manager.scan();
+    assert.equal(manager.errors().length, 7);
+    assert.equal(manager.list().length, 0);
+    assert.equal(fs.existsSync(marker), false);
 });

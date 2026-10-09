@@ -9,9 +9,9 @@ const root = globalThis.BedrockMain?.root || process.argv[2] || fs.mkdtempSync(p
 const directory = path.join(root, 'plugins', 'example');
 fs.mkdirSync(directory, { recursive: true });
 writeJson(path.join(directory, 'plugin.json'), {
-    manifestVersion: 1, apiVersion: 1, id: 'test.example', name: 'Example plugin', version: '1.0.0',
+    manifestVersion: 2, id: 'test.example', name: 'Example plugin', version: '1.0.0',
     description: 'Tests styles, patches, settings and immediate enable/disable.',
-    entrypoints: { main: 'main.js', renderer: 'renderer.js' }, readme: 'README.md'
+    entrypoints: { main: { runtime: 'javascript', path: 'main.js', requiresApi: '1.0.0' }, renderer: { runtime: 'javascript', path: 'renderer.js', requiresApi: '1.0.0' } }, readme: 'README.md'
 });
 writeJson(path.join(directory, 'package.json'), { type: 'module' });
 fs.writeFileSync(path.join(directory, 'main.js'), `
@@ -52,8 +52,8 @@ fs.writeFileSync(path.join(directory, 'renderer.js'), `
 fs.writeFileSync(path.join(directory, 'README.md'), '# Example documentation\n\n**Bold** and `code`.\n\n- First\n- Second\n\n<script>globalThis.badReadme = true</script>\n\n[Bad link](javascript:alert(1))\n');
 const pendingDirectory = path.join(root, 'plugins', 'pending');
 fs.mkdirSync(pendingDirectory);
-writeJson(path.join(pendingDirectory, 'plugin.json'), { manifestVersion: 1, apiVersion: 1,
-    id: 'test.pending', name: 'Pending plugin', version: '1.0.0', entrypoints: { renderer: 'renderer.js' } });
+writeJson(path.join(pendingDirectory, 'plugin.json'), { manifestVersion: 2,
+    id: 'test.pending', name: 'Pending plugin', version: '1.0.0', entrypoints: { renderer: { runtime: 'javascript', path: 'renderer.js', requiresApi: '1.0.0' } } });
 fs.writeFileSync(path.join(pendingDirectory, 'renderer.js'), `export async function start(ctx) {
     ctx.styles.add(':root { --pending-plugin: true; }');
     await ctx.webpack.waitFor(value => value?.neverAvailable);

@@ -1,5 +1,6 @@
 const fs = require('node:fs');
 const path = require('node:path');
+const { JAVASCRIPT_API_VERSION, parseVersion, supportsApi } = require('./api-version.cjs');
 
 function readJson(file, fallback) {
     try { return JSON.parse(fs.readFileSync(file, 'utf8')); }
@@ -41,8 +42,10 @@ function discover(root) {
         if (!fs.existsSync(path.join(folder, 'plugin.json'))) continue;
         try {
             const manifest = readJson(path.join(folder, 'plugin.json'), null);
-            if (!manifest || manifest.manifestVersion !== 1 || manifest.apiVersion !== 1)
-                throw new Error('manifestVersion and apiVersion must be 1');
+            if (!manifest || manifest.manifestVersion !== 2)
+                throw new Error('manifestVersion must be 2');
+            if (Object.hasOwn(manifest, 'apiVersion'))
+                throw new Error('Declare requiresApi on each entry point instead of apiVersion');
             if (typeof manifest.id !== 'string' || !/^[a-z0-9][a-z0-9._-]*$/.test(manifest.id) || manifest.id.includes('..') || manifest.id.endsWith('.') ||
                 ['__proto__', 'constructor', 'prototype'].includes(manifest.id) || /^(con|prn|aux|nul|com[1-9]|lpt[1-9])(?:\.|$)/.test(manifest.id))
                 throw new Error('Invalid plugin id');
@@ -54,8 +57,15 @@ function discover(root) {
             const entries = {};
             for (const [environment, entry] of Object.entries(manifest.entrypoints)) {
                 if (!['main', 'renderer'].includes(environment)) throw new Error(`Unknown environment: ${environment}`);
-                const definition = typeof entry === 'string' ? { runtime: 'javascript', path: entry } : entry;
+                if (!entry || typeof entry !== 'object' || Array.isArray(entry))
+                    throw new Error(`${environment} must declare runtime, path and requiresApi`);
+                const definition = entry;
                 if (!definition || definition.runtime !== 'javascript') throw new Error(`Unsupported runtime for ${environment}`);
+                if (!parseVersion(definition.requiresApi))
+                    throw new Error(`${environment}.requiresApi must be a semantic version`);
+                if (!supportsApi(definition.requiresApi))
+                    throw new Error(`${environment} requires JavaScript API ${definition.requiresApi}; Bedrock provides ${JAVASCRIPT_API_VERSION}`);
+                if (typeof definition.path !== 'string') throw new Error(`${environment}.path must be text`);
                 if (path.extname(definition.path || '') !== '.js' && path.extname(definition.path || '') !== '.mjs')
                     throw new Error('JavaScript entry points must end in .js or .mjs');
                 entries[environment] = packagePath(folder, definition.path);
