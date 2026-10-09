@@ -62,8 +62,8 @@ Disabling the plugin exits its fullscreen mode, restores the frame styles it cha
 
 If transparency was enabled when the window was created, disabling the plugin requires a restart to restore an opaque window.
 
-## Installation
+## Native implementation
 
-The launcher build includes the compiled native module automatically. When installing the plugin elsewhere, copy its whole folder, including `native`. The module is written in C and uses Node-API to call WinAPI from Discord's main process.
+The native module is written in C and uses Node-API to call WinAPI from Discord's main process.
 
 The native frame message handling follows the approach used by Ingan121's MIT-licensed [Titlebar For Everyone](https://windhawk.net/mods/titlebar-for-everyone).

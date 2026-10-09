@@ -7,8 +7,3 @@ and Bedrock plugin pages.
 - Disabling restores Discord's normal text selection behavior. Plugin READMEs
   stay selectable because Bedrock supports that directly.
 - Applies to settings, including server settings that use the same layout.
-
-## Install
-
-Builds include this plugin automatically. For another installation, copy the `selectable-settings` folder to `BedrockData\plugins` beside the launcher,
-then choose **Refresh plugins** in Bedrock's Plugins page.

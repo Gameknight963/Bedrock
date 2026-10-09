@@ -8,8 +8,6 @@ Enable **Native GPU hook** in the Settings tab. Turning the option or the plugin
 
 Use it with a transparent window and a theme that uses CSS `backdrop-filter`. Window transparency is configured through [Window Customization](../window-customization/README.md). You'll need a custom theme to control which elements are transparent and where a blur appears.
 
-The launcher build includes the native files automatically. When installing the plugin elsewhere, copy its whole folder, including `native`.
-
 ## Why the bleeding happens
 
 Chromium uses Skia, a graphics library, to draw Discord's interface. For a backdrop-filtered element, Chromium captures the content behind it, applies the filter, and places the result in a layer. It then draws the element's own content and combines that layer with the existing image.
