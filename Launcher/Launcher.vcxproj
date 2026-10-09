@@ -56,7 +56,7 @@
   <ItemGroup><RuntimeFile Include="$(ProjectDir)..\Runtime\*.cjs;$(ProjectDir)..\Runtime\*.mjs" /></ItemGroup>
   <ItemGroup><BundledPluginFile Include="$(ProjectDir)..\Plugins\**\*" /></ItemGroup>
   <ItemGroup>
-    <ProjectReference Include="..\Native\PluginHost\Controller.vcxproj" Condition="'$(Platform)'=='x64'">
+    <ProjectReference Include="..\Native\PluginHost\NativeController.vcxproj" Condition="'$(Platform)'=='x64'">
       <Project>{A2FF9A45-7F03-4FF1-9EC6-4D0EC3B384B5}</Project><LinkLibraryDependencies>false</LinkLibraryDependencies>
     </ProjectReference>
     <ProjectReference Include="..\Native\Console\Console.vcxproj">

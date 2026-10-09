@@ -6,7 +6,7 @@
   <Project Path="Launcher/Launcher.vcxproj" Id="92e08354-8697-438d-9fb9-0ddd4880e9c8" />
   <Project Path="Native/Console/Console.vcxproj" Id="91a18a72-459f-4d73-b9e0-894a284043ea" />
   <Folder Name="/include/bedrock/"><File Path="include/bedrock/plugin.h" /></Folder>
-  <Project Path="Native/PluginHost/Controller.vcxproj" Id="a2ff9a45-7f03-4ff1-9ec6-4d0ec3b384b5"><Platform Solution="*|x86" Project="x64" /></Project>
+  <Project Path="Native/PluginHost/NativeController.vcxproj" Id="a2ff9a45-7f03-4ff1-9ec6-4d0ec3b384b5"><Platform Solution="*|x86" Project="x64" /></Project>
   <Project Path="Native/PluginHost/Host.vcxproj" Id="2ab38798-f37e-4676-903c-169ac0db26fe"><Platform Solution="*|x86" Project="x64" /></Project>
   <Project Path="Examples/native/NativeExample.vcxproj" Id="f05d4061-a47d-4f41-9c16-63903638ff48"><Platform Solution="*|x86" Project="x64" /></Project>
   <Project Path="Tests/BedrockTests.vcxproj" Id="4a781370-71da-4492-989d-10be3655472b" />
