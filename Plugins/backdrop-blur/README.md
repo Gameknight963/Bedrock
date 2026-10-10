@@ -87,13 +87,13 @@ The source reference is [Chromium's Skia renderer](https://github.com/chromium/c
 
 ## Loading and disabling
 
-The JavaScript plugin finds GPU processes through Electron and passes their identity to a native controller. The controller manually maps the hook DLL: it reads the file itself, copies its sections into the GPU process, resolves imports and relocations, registers unwind information, and initializes it. This allows the hook to run with Chromium's GPU sandbox enabled. Discord's executable and installation files are never modified.
+The manifest declares a native GPU entrypoint. Bedrock finds GPU processes through Electron and loads the DLL through its shared native plugin host. The host manually maps the DLL: it copies its sections into the GPU process, resolves imports and relocations, registers unwind information, and initializes it. This allows the hook to run with Chromium's GPU sandbox enabled. Discord's executable and installation files are never modified.
 
-The DLL uses MinHook to redirect the functions in memory. It uses Windows TLS slots to keep each rendering thread's active layer separate from other threads.
+The DLL exports `Bedrock_GetPlugin`, which declares its settings and lifecycle callbacks. Bedrock owns settings persistence and sends saved changes to the GPU host. The plugin uses MinHook to redirect functions in memory and Windows TLS slots to keep each rendering thread's active layer separate.
 
-The plugin retains the mapped address alongside the GPU process's PID and creation time. It maps once per GPU process; disabling switches the hooks to their original behavior, and re-enabling reuses the mapping. The DLL and trampolines remain in memory so threads already executing a hook can finish safely. Exiting the GPU process releases that memory.
+Disabling switches the hooks to their original behavior. The DLL and trampolines remain in memory so threads already executing a hook can finish safely; those hooks do not access the plugin context. Re-enabling reuses the loaded DLL. Exiting the GPU process releases that memory.
 
-If Electron restarts the GPU process, the plugin detects its replacement and installs a new mapping. Technical build and controller details are in [the native README](../../Native/BackdropBlur/README.md).
+If Electron restarts the GPU process, Bedrock loads the entrypoint into its replacement and supplies the saved settings. Technical details are in [the native README](../../Native/BackdropBlur/README.md).
 
 ## Current limitations
 

@@ -14,13 +14,14 @@
     <Link><GenerateDebugInformation>true</GenerateDebugInformation><IgnoreAllDefaultLibraries>true</IgnoreAllDefaultLibraries><AdditionalDependencies>kernel32.lib;%(AdditionalDependencies)</AdditionalDependencies><EntryPointSymbol>DllMain</EntryPointSymbol></Link>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="hook.c" /><ClCompile Include="memory.c" />
+    <ClCompile Include="hook.c" /><ClCompile Include="plugin.c" /><ClCompile Include="memory.c" />
     <ClCompile Include="..\..\lib\minhook\src\buffer.c"><WarningLevel>Level3</WarningLevel></ClCompile>
     <ClCompile Include="..\..\lib\minhook\src\hook.c"><ObjectFileName>$(IntDir)minhook.obj</ObjectFileName><WarningLevel>Level3</WarningLevel><DisableSpecificWarnings>4244;4310;%(DisableSpecificWarnings)</DisableSpecificWarnings></ClCompile>
     <ClCompile Include="..\..\lib\minhook\src\trampoline.c"><WarningLevel>Level3</WarningLevel><DisableSpecificWarnings>4244;%(DisableSpecificWarnings)</DisableSpecificWarnings></ClCompile>
     <ClCompile Include="..\..\lib\minhook\src\hde\hde64.c"><WarningLevel>Level3</WarningLevel><DisableSpecificWarnings>4701;%(DisableSpecificWarnings)</DisableSpecificWarnings></ClCompile>
   </ItemGroup>
   <ItemGroup><ClInclude Include="signatures.h" /></ItemGroup>
-  <ItemGroup><ClInclude Include="status.h" /></ItemGroup>
+  <ItemGroup><ClInclude Include="status.h" /><ClInclude Include="..\..\include\bedrock\plugin.h" /></ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <Target Name="CopyNativeLicenses" AfterTargets="Build"><Copy SourceFiles="$(ProjectDir)..\..\lib\minhook\LICENSE.txt" DestinationFiles="$(OutDir)minhook-LICENSE.txt" SkipUnchangedFiles="true" /><Copy SourceFiles="$(ProjectDir)Skia-LICENSE.txt;$(ProjectDir)Chromium-LICENSE.txt" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" /></Target>
 </Project>

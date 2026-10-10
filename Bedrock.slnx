@@ -14,6 +14,5 @@
     <Platform Project="AnyCPU" />
   </Project>
   <Project Path="Native/WindowCustomization/WindowCustomization.vcxproj" Id="d8312270-05d3-4be3-b4e9-70d39f4cc127" />
-  <Project Path="Native/BackdropBlur/Controller.vcxproj" Id="5dc8c089-b9b1-44c5-89c1-dad90ba466f6"><Platform Solution="*|x86" Project="x64" /></Project>
   <Project Path="Native/BackdropBlur/Hook.vcxproj" Id="50f5d8cb-66b9-4aa5-9c1a-43ea8c27a618"><Platform Solution="*|x86" Project="x64" /></Project>
 </Solution>

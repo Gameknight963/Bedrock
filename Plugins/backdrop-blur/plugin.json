@@ -5,10 +5,9 @@
     "version": "0.1.0",
     "description": "Experimental replacement compositing for backdrop blur which fixes bleeding on transparent backgrounds.",
     "entrypoints": {
-        "main": {
-            "runtime": "javascript",
-            "path": "main.js",
-            "requiresApi": "1.0.0"
+        "gpu": {
+            "runtime": "native",
+            "path": "native/win32-x64/blur-hook.dll"
         }
     },
     "readme": "README.md"

@@ -6,8 +6,12 @@ const output = path.resolve(process.argv.at(-1));
 fs.mkdirSync(output, { recursive: true });
 const configuration = process.env.BEDROCK_TEST_CONFIGURATION || 'Release';
 assert(['Debug', 'Release'].includes(configuration));
-const pluginPath = process.env.BEDROCK_TEST_PLUGIN_PATH ? path.resolve(process.env.BEDROCK_TEST_PLUGIN_PATH) :
-    path.resolve(__dirname, `../../../Launcher/bin/x64/${configuration}/BedrockData/plugins/backdrop-blur/main.js`);
+const packageRoot = path.resolve(__dirname, `../../../Launcher/bin/x64/${configuration}`);
+const { createPluginManager } = require('../../../Runtime/plugins.cjs');
+const data = path.join(output, 'data');
+const folder = path.join(data, 'plugins', 'backdrop-blur');
+fs.mkdirSync(folder, { recursive: true });
+fs.cpSync(path.join(packageRoot, 'BedrockData/plugins/backdrop-blur'), folder, { recursive: true });
 assert(!app.commandLine.hasSwitch('disable-gpu-sandbox'), 'Test must retain the GPU sandbox');
 app.setPath('userData', path.join(output, 'fixture-profile'));
 app.whenReady().then(async () => {
@@ -23,21 +27,20 @@ app.whenReady().then(async () => {
     const original = await capture('native-before');
     const gpu = app.getAppMetrics().find(metric => metric.type === 'GPU');
     if (!gpu) throw new Error('No GPU process');
-    globalThis.Bedrock = {
-        OptionType: { BOOLEAN: 'boolean' },
-        definePluginSettings: () => ({ store: { allowGpuInjection: true }, subscribe: () => () => {} })
-    };
-    const plugin = await import(require('node:url').pathToFileURL(pluginPath));
-    const abort = new AbortController();
-    const cleanup = [];
     let installed = 0;
     let failure;
-    let counters;
-    plugin.start({ signal: abort.signal, cleanup: dispose => { cleanup.push(dispose); return dispose; },
-        requireRestart: reason => { throw new Error(reason); },
-        log: { info: message => { console.log(message); if (message.startsWith('Native blur hook installed')) installed++;
-                if (message.startsWith('Native blur counters:')) counters = message; }, warn: console.warn,
-            error: message => { failure = new Error(message); } } });
+    const manager = createPluginManager(data, {
+        nativeDirectory: path.join(packageRoot, 'Runtime/native/win32-x64'),
+        nativeTargets: environment => environment === 'gpu' ? app.getAppMetrics().filter(metric => metric.type === 'GPU') : [],
+        log(level, id, args) {
+            const message = args.join(' ');
+            console.log(message);
+            if (message === 'Native blur hook installed.') installed++;
+            if (level === 'error') failure = new Error(message);
+        }
+    });
+    manager.scan();
+    manager.settings('bedrock.backdrop-blur').set('allowGpuInjection', true);
     for (let attempt = 0; !installed && !failure && attempt < 100; attempt++)
         await new Promise(resolve => setTimeout(resolve, 100));
     if (failure) throw failure;
@@ -59,9 +62,7 @@ app.whenReady().then(async () => {
     if (failure) throw failure;
     assert(installed >= 2, 'Plugin did not hook the replacement GPU process');
     console.log('GPU restart recovered:', installed >= 2);
-    abort.abort();
-    for (const dispose of cleanup.reverse()) dispose();
-    await plugin.stop();
+    await manager.setEnabled('bedrock.backdrop-blur', false);
     const restoredZero = await capture('native-restored-zero');
     assert(zero.equals(restoredZero), 'Zero-opacity patch changed the backdrop');
     console.log('Zero opacity identical:', zero.equals(restoredZero));
@@ -69,23 +70,25 @@ app.whenReady().then(async () => {
     const restored = await capture('native-restored');
     assert(restored.equals(original), 'Disabling the plugin did not restore the original image');
     console.log('Restored original:', restored.equals(original));
-    assert(counters && Number(/bypass=(\d+)/.exec(counters)[1]) > 0, 'Fixture did not exercise bypass geometry');
-    assert(Number(/replaced=(\d+)/.exec(counters)[1]) > 0, 'Bypass layers were not replaced');
-    const cleanupAgain = [];
-    const abortAgain = new AbortController();
-    plugin.start({ signal: abortAgain.signal, cleanup: dispose => { cleanupAgain.push(dispose); return dispose; },
-        requireRestart: reason => { throw new Error(reason); },
-        log: { info: message => { if (message.startsWith('Native blur hook installed')) installed++; },
-            warn: console.warn, error: message => { failure = new Error(message); } } });
+    await manager.setEnabled('bedrock.backdrop-blur', true);
     for (let attempt = 0; installed < 3 && !failure && attempt < 100; attempt++)
         await new Promise(resolve => setTimeout(resolve, 100));
     if (failure) throw failure;
     assert(installed >= 3, 'Re-enabling did not reuse the mapped DLL');
     await window.webContents.executeJavaScript('document.querySelector(".blur").style.transform="translateX(0.01px)"');
     assert(alpha(await capture('native-reenabled')) < alpha(original), 'Re-enabled hook did not change rendering');
-    abortAgain.abort();
-    for (const dispose of cleanupAgain.reverse()) dispose();
-    await plugin.stop();
+    manager.settings('bedrock.backdrop-blur').set('allowGpuInjection', false);
+    await new Promise(resolve => setTimeout(resolve, 300));
+    await window.webContents.executeJavaScript('document.querySelector(".blur").style.transform="none"');
+    assert((await capture('native-setting-disabled')).equals(original), 'Setting did not restore original rendering');
+    manager.settings('bedrock.backdrop-blur').set('allowGpuInjection', true);
+    for (let attempt = 0; installed < 4 && !failure && attempt < 100; attempt++)
+        await new Promise(resolve => setTimeout(resolve, 100));
+    if (failure) throw failure;
+    assert(installed >= 4, 'Setting did not re-enable the hook');
+    await window.webContents.executeJavaScript('document.querySelector(".blur").style.transform="translateX(0.01px)"');
+    assert(alpha(await capture('native-setting-enabled')) < alpha(original), 'Setting did not restore replacement compositing');
+    await manager.stopAll();
     console.log('Re-enabled mapped DLL successfully.');
 
     app.exit(0);

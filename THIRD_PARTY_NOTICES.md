@@ -11,12 +11,12 @@ Bedrock's own code is licensed under the [MIT license](LICENSE). The dependencie
 | SkiaSharp 4.153.1 | MIT | Backdrop blur experiment only; restored through NuGet |
 | Skia | BSD-3-Clause | SkiaSharp experiment and backdrop blur function signatures |
 | Chromium | BSD-3-Clause | Backdrop blur function signatures |
-| Simple Manual Map Injector | MIT | Native plugin host and backdrop blur controllers |
+| Simple Manual Map Injector | MIT | Native plugin controller |
 | MinHook v1.3.4 | BSD-2-Clause | Experimental backdrop blur hook |
 
 The backdrop blur experiment uses [SkiaSharp](https://github.com/mono/SkiaSharp/blob/main/LICENSE.txt) and its native [Skia](https://github.com/google/skia/blob/main/LICENSE) dependency. SkiaSharp and its native library are not included in Bedrock's launcher or plugins. Their licenses and additional native dependency notices must accompany any separately distributed experiment binaries.
 
-The native backdrop blur plugin contains function signatures derived from Electron 42.11.8's Chromium/Skia implementation. Its native folder includes [Chromium's license](Native/BackdropBlur/Chromium-LICENSE.txt) and [Skia's license](Native/BackdropBlur/Skia-LICENSE.txt), alongside MinHook's and the manual mapper's notices. Keep these files with distributed plugin binaries.
+The native backdrop blur plugin contains function signatures derived from Electron 42.11.8's Chromium/Skia implementation. Its native folder includes [Chromium's license](Native/BackdropBlur/Chromium-LICENSE.txt) and [Skia's license](Native/BackdropBlur/Skia-LICENSE.txt), alongside MinHook's notice. Keep these files with distributed plugin binaries.
 
 ## Simple Manual Map Injector
 
