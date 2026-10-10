@@ -53,7 +53,7 @@
   <ItemGroup><None Include="README.md" /></ItemGroup>
   <ItemGroup>
     <NoticeFile Include="$(MSBuildThisFileDirectory)..\third_party_notices.md" />
-    <None Include="@(NoticeFile)" />
+    <None Include="..\THIRD_PARTY_NOTICES.md" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <Target Name="CopyThirdPartyNotices" AfterTargets="Build">

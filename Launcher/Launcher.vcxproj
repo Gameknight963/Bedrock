@@ -50,11 +50,8 @@
   <ItemGroup><None Include="README.md" /></ItemGroup>
   <ItemGroup>
     <NoticeFile Include="$(MSBuildThisFileDirectory)..\third_party_notices.md" />
-    <None Include="@(NoticeFile)" />
+    <None Include="..\THIRD_PARTY_NOTICES.md" />
   </ItemGroup>
-  <ItemGroup><PublicHeader Include="$(ProjectDir)..\include\bedrock\*.h" /></ItemGroup>
-  <ItemGroup><RuntimeFile Include="$(ProjectDir)..\Runtime\*.cjs;$(ProjectDir)..\Runtime\*.mjs" /></ItemGroup>
-  <ItemGroup><BundledPluginFile Include="$(ProjectDir)..\Plugins\**\*" /></ItemGroup>
   <ItemGroup>
     <ProjectReference Include="..\Native\PluginHost\NativeController.vcxproj" Condition="'$(Platform)'=='x64'">
       <Project>{A2FF9A45-7F03-4FF1-9EC6-4D0EC3B384B5}</Project><LinkLibraryDependencies>false</LinkLibraryDependencies>
@@ -78,6 +75,9 @@
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <Target Name="CopyBedrockRuntime" AfterTargets="Build">
+    <ItemGroup><PublicHeader Include="$(ProjectDir)..\include\bedrock\*.h" /></ItemGroup>
+    <ItemGroup><RuntimeFile Include="$(ProjectDir)..\Runtime\*.cjs;$(ProjectDir)..\Runtime\*.mjs" /></ItemGroup>
+    <ItemGroup><BundledPluginFile Include="$(ProjectDir)..\Plugins\**\*" /></ItemGroup>
     <Delete Files="$(OutDir)BedrockData\plugins\backdrop-blur\plugin.json;$(OutDir)BedrockData\plugins\backdrop-blur\main.js;$(OutDir)BedrockData\plugins\backdrop-blur\native\win32-x64\blur-controller.exe;$(OutDir)BedrockData\plugins\backdrop-blur\native\win32-x64\blur-hook.dll;$(OutDir)BedrockData\plugins\backdrop-blur\native\win32-x64\manual-map-LICENSE.txt" />
     <Copy SourceFiles="@(PublicHeader)" DestinationFolder="$(OutDir)include\bedrock" SkipUnchangedFiles="true" />
     <Copy Condition="'$(Platform)'=='x64'" SourceFiles="$(ProjectDir)..\Native\PluginHost\bin\$(Platform)\$(Configuration)\native-controller.exe;$(ProjectDir)..\Native\PluginHost\bin\$(Platform)\$(Configuration)\native-host.dll" DestinationFolder="$(OutDir)Runtime\native\win32-x64" SkipUnchangedFiles="true" />
