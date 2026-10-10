@@ -4,7 +4,7 @@ Prevents sharp content from showing through backdrop blur on transparent backgro
 
 ## Using the plugin
 
-Enable **Native GPU hook** in the Settings tab. Turning the option or the plugin on and off changes rendering without a restart.
+Enabling the plugin applies the blur fix. Disabling it restores Chromium?s original rendering. Neither requires a restart.
 
 Use it with a transparent window and a theme that uses CSS `backdrop-filter`. Window transparency is configured through [Window Customization](../window-customization/README.md). You'll need a custom theme to control which elements are transparent and where a blur appears.
 
@@ -91,11 +91,11 @@ The source reference is [Chromium's Skia renderer](https://github.com/chromium/c
 
 The manifest declares a native GPU entrypoint. Bedrock finds GPU processes through Electron and loads the DLL through its shared native plugin host. The host manually maps the DLL: it copies its sections into the GPU process, resolves imports and relocations, registers unwind information, and initializes it. This allows the hook to run with Chromium's GPU sandbox enabled. Discord's executable and installation files are never modified.
 
-The DLL exports `Bedrock_GetPlugin`, which declares its settings and lifecycle callbacks. Bedrock owns settings persistence and sends saved changes to the GPU host. The plugin uses MinHook to redirect functions in memory and Windows TLS slots to keep each rendering thread's active layer separate.
+The DLL exports `Bedrock_GetPlugin`, which declares its lifecycle callbacks. The plugin uses MinHook to redirect functions in memory and Windows TLS slots to keep each rendering thread's active layer separate.
 
 Disabling switches the hooks to their original behavior. The DLL and trampolines remain in memory so threads already executing a hook can finish safely; those hooks do not access the plugin context. Re-enabling reuses the loaded DLL. Exiting the GPU process releases that memory.
 
-If Electron restarts the GPU process, Bedrock loads the entrypoint into its replacement and supplies the saved settings. Technical details are in [the native README](../../Native/BackdropBlurFix/README.md).
+If Electron restarts the GPU process, Bedrock loads the entrypoint into its replacement. Technical details are in [the native README](../../Native/BackdropBlurFix/README.md).
 
 ## Current limitations
 

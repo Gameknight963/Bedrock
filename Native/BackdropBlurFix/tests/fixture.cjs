@@ -43,7 +43,6 @@ app.whenReady().then(async () => {
     manager.scan();
     assert.equal(manager.errors().length, 0, 'Plugin discovery failed');
     assert(manager.records.has('bedrock.backdrop-blur-fix'), 'Blur plugin was not discovered');
-    manager.settings('bedrock.backdrop-blur-fix').set('allowGpuInjection', true);
     for (let attempt = 0; !installed && !failure && attempt < 1800; attempt++)
         await new Promise(resolve => setTimeout(resolve, 100));
     if (failure) throw failure;
@@ -80,17 +79,6 @@ app.whenReady().then(async () => {
     assert(installed >= 3, 'Re-enabling did not reuse the mapped DLL');
     await window.webContents.executeJavaScript('document.querySelector(".blur").style.transform="translateX(0.01px)"');
     assert(alpha(await capture('native-reenabled')) < alpha(original), 'Re-enabled hook did not change rendering');
-    manager.settings('bedrock.backdrop-blur-fix').set('allowGpuInjection', false);
-    await new Promise(resolve => setTimeout(resolve, 300));
-    await window.webContents.executeJavaScript('document.querySelector(".blur").style.transform="none"');
-    assert((await capture('native-setting-disabled')).equals(original), 'Setting did not restore original rendering');
-    manager.settings('bedrock.backdrop-blur-fix').set('allowGpuInjection', true);
-    for (let attempt = 0; installed < 4 && !failure && attempt < 100; attempt++)
-        await new Promise(resolve => setTimeout(resolve, 100));
-    if (failure) throw failure;
-    assert(installed >= 4, 'Setting did not re-enable the hook');
-    await window.webContents.executeJavaScript('document.querySelector(".blur").style.transform="translateX(0.01px)"');
-    assert(alpha(await capture('native-setting-enabled')) < alpha(original), 'Setting did not restore replacement compositing');
     await manager.stopAll();
     console.log('Re-enabled mapped DLL successfully.');
 

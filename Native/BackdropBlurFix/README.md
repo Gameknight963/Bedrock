@@ -4,7 +4,7 @@ Build `Launcher/Launcher.vcxproj` for x64. The build produces `backdrop-blur-fix
 
 ## Lifecycle and diagnostics
 
-Bedrock's shared native host loads the DLL into each GPU process and provides settings, logging and lifecycle callbacks. The `allowGpuInjection` setting controls whether the rendering fix is active. Starting with it enabled installs the hooks; changing it updates their behavior. Stopping disables replacement compositing. Re-enabling reuses the DLL and trampolines, and a replacement GPU process receives a fresh instance with saved settings.
+Bedrock's shared native host loads the DLL into each GPU process and provides logging and lifecycle callbacks. Starting installs the hooks; stopping disables replacement compositing. Re-enabling reuses the DLL and trampolines, and a replacement GPU process receives a fresh instance.
 
 Signature failures identify the affected function and whether its signature is missing, ambiguous, lacks unwind information, lies inside another function, or has an unexpected function size. Installation failures identify the TLS or MinHook operation that failed. Diagnostics are sent through Bedrock's logging API.
 

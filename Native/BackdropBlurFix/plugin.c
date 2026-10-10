@@ -47,12 +47,7 @@ static BedrockResult BEDROCK_CALL start(const BedrockContext *host)
 {
     if (host->process_type != BEDROCK_PROCESS_GPU) return BEDROCK_UNSUPPORTED;
     context = host;
-    BedrockValue value;
-    BedrockResult result = host->settings_get(host->host, "allowGpuInjection", &value);
-    if (result != BEDROCK_OK) { context = NULL; return result; }
-    bool enable = value.boolean;
-    host->value_release(host->host, &value);
-    result = enable ? apply() : BEDROCK_OK;
+    BedrockResult result = apply();
     if (result != BEDROCK_OK) { BlurRemove(NULL); context = NULL; }
     return result;
 }
@@ -63,23 +58,8 @@ static void BEDROCK_CALL stop(void)
     context = NULL;
 }
 
-static void BEDROCK_CALL settings_changed(const char *key, const BedrockValue *value)
-{
-    if (lstrcmpA(key, "allowGpuInjection")) return;
-    if (value->boolean) apply();
-    else {
-        BlurRemove(NULL);
-        context->log(context->host, BEDROCK_LOG_INFO, "Restored original backdrop compositing.");
-    }
-}
-
-static const BedrockSetting settings[] = {{
-    .size = sizeof(BedrockSetting), .key = "allowGpuInjection", .label = "Enable native GPU hook",
-    .description = "Prevents sharp content from showing through backdrop blur on transparent backgrounds.",
-    .type = BEDROCK_SETTING_BOOLEAN, .default_value = { .type = BEDROCK_VALUE_BOOLEAN, .boolean = false }
-}};
 static const BedrockPlugin plugin = {
-    .size = sizeof(BedrockPlugin), .required_api = {1, 1, 0}, .settings = settings, .settings_count = 1,
-    .start = start, .stop = stop, .settings_changed = settings_changed
+    .size = sizeof(BedrockPlugin), .required_api = {1, 1, 0},
+    .start = start, .stop = stop
 };
 BEDROCK_EXPORT const BedrockPlugin *BEDROCK_CALL Bedrock_GetPlugin(void) { return &plugin; }
