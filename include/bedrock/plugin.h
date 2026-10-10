@@ -3,6 +3,7 @@
 
 #include <stdbool.h>
 #include <stdint.h>
+#include <stddef.h>
 
 #ifdef _WIN32
 #define BEDROCK_CALL __cdecl
@@ -18,7 +19,7 @@ extern "C" {
 
 typedef struct BedrockVersion { uint32_t major, minor, patch; } BedrockVersion;
 #define BEDROCK_API_MAJOR 1
-#define BEDROCK_API_MINOR 2
+#define BEDROCK_API_MINOR 3
 #define BEDROCK_API_PATCH 0
 
 typedef int32_t BedrockResult;
@@ -92,6 +93,32 @@ typedef struct BedrockSymbolError {
     char message[512];
 } BedrockSymbolError;
 
+typedef uint64_t BedrockJsHandle;
+typedef enum BedrockJsType {
+    BEDROCK_JS_UNDEFINED, BEDROCK_JS_NULL, BEDROCK_JS_BOOLEAN, BEDROCK_JS_NUMBER,
+    BEDROCK_JS_STRING, BEDROCK_JS_BIGINT, BEDROCK_JS_REFERENCE
+} BedrockJsType;
+typedef struct BedrockJsValue {
+    BedrockJsType type;
+    union {
+        bool boolean;
+        double number;
+        struct { const char *data; size_t length; } text;
+        BedrockJsHandle reference;
+    };
+} BedrockJsValue;
+typedef enum BedrockJsErrorCode {
+    BEDROCK_JS_OK, BEDROCK_JS_EXCEPTION, BEDROCK_JS_TIMEOUT,
+    BEDROCK_JS_INVALID_HANDLE, BEDROCK_JS_INVALID_ARGUMENT,
+    BEDROCK_JS_UNAVAILABLE, BEDROCK_JS_STOPPED, BEDROCK_JS_TRANSPORT_ERROR
+} BedrockJsErrorCode;
+typedef struct BedrockJsError {
+    BedrockJsErrorCode code;
+    char message[512];
+} BedrockJsError;
+typedef void (BEDROCK_CALL *BedrockJsCallback)(void *user_data, BedrockResult status,
+    BedrockJsValue *result, const BedrockJsError *error);
+
 /* UTF-8 strings throughout. Host services may be called from plugin threads.
    The context is valid through stop(); finish those threads before returning.
    log and settings_set copy inputs. Successful settings_set means validated
@@ -113,7 +140,22 @@ typedef struct BedrockContext {
     void *(BEDROCK_CALL *resolve_symbol)(void *host, const char *name, BedrockSymbolError *error);
     /* API 1.2.0: copies a UTF-8 initialization status message. No formatting. */
     void (BEDROCK_CALL *report_status)(void *host, const char *message);
+    /* API 1.3.0: function body with arguments available as args. No implicit await.
+       All three pointers are NULL in GPU processes. 0 timeout means 5000 ms.
+       Results own their contents; release each successful result once.
+       Async callback containers are borrowed; copying the value transfers ownership.
+       Accepted async requests complete once on a separate native callback thread.
+       See the native API README for timeout and shutdown semantics. */
+    BedrockResult (BEDROCK_CALL *execute_js)(void *host, const char *body,
+        const BedrockJsValue *arguments, size_t argument_count, uint32_t timeout_ms,
+        BedrockJsValue *result, BedrockJsError *error);
+    BedrockResult (BEDROCK_CALL *execute_js_async)(void *host, const char *body,
+        const BedrockJsValue *arguments, size_t argument_count,
+        BedrockJsCallback callback, void *user_data);
+    BedrockResult (BEDROCK_CALL *release_js_value)(void *host, BedrockJsValue *value);
 } BedrockContext;
+
+#define BEDROCK_PLUGIN_REQUIRES_SYMBOLS (1u << 0)
 
 /* Same major, required minor/patch no newer than host. Fields are appended
    within a major version. The descriptor remains valid for the DLL's lifetime.
@@ -131,6 +173,9 @@ typedef struct BedrockPlugin {
     BedrockResult (BEDROCK_CALL *start)(const BedrockContext *context);
     void (BEDROCK_CALL *stop)(void);
     void (BEDROCK_CALL *settings_changed)(const char *key, const BedrockValue *value);
+    /* API 1.3.0: opt into symbol preparation with BEDROCK_PLUGIN_REQUIRES_SYMBOLS.
+       API 1.1/1.2 descriptors retain their automatic symbol preparation. */
+    uint32_t flags;
 } BedrockPlugin;
 
 BEDROCK_EXPORT const BedrockPlugin *BEDROCK_CALL Bedrock_GetPlugin(void);

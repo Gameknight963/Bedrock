@@ -7,6 +7,19 @@
 #include "json.h"
 #include "symbols.h"
 
+typedef struct JsRequest {
+    struct JsRequest *next;
+    uint64_t id;
+    HANDLE event;
+    bool done;
+    BedrockResult status;
+    BedrockJsValue value;
+    BedrockJsError error;
+    BedrockJsCallback callback;
+    void *user_data;
+} JsRequest;
+typedef struct HostCommand { struct HostCommand *next; char *json; } HostCommand;
+typedef struct HostOutput { struct HostOutput *next; char *data; size_t length; } HostOutput;
 typedef struct Host {
     HANDLE input, output;
     const BedrockPlugin *plugin;
@@ -16,6 +29,17 @@ typedef struct Host {
     SRWLOCK values_lock, output_lock, symbols_lock;
     SymbolReference reference;
     volatile LONG active;
+    SRWLOCK js_lock, commands_lock;
+    JsRequest *requests, *completions, **completion_tail;
+    uint64_t js_sequence;
+    bool js_stopping, callbacks_exit, input_closed;
+    HANDLE callback_event, callbacks_idle, callback_thread, command_event, reader_thread;
+    HostCommand *commands, **command_tail;
+    HostOutput *outgoing, **outgoing_tail;
+    size_t output_bytes;
+    volatile LONG output_closed, reader_exit;
+    bool output_exit;
+    HANDLE output_event, writer_thread;
 } Host;
 
 static void *BEDROCK_CALL resolve_symbol(void *opaque, const char *name, BedrockSymbolError *error)
@@ -34,20 +58,24 @@ static void *BEDROCK_CALL resolve_symbol(void *opaque, const char *name, Bedrock
 
 static bool send_message(Host *host, Text *text)
 {
-    bool sent = false;
-    if (!text->failed && text->data) {
+    HostOutput *item = !text->failed && text->data ? calloc(1, sizeof(*item)) : NULL;
+    bool accepted = false;
+    if (item) {
+        item->data = text->data; item->length = text->length;
         AcquireSRWLockExclusive(&host->output_lock);
-        DWORD written; size_t offset = 0;
-        while (offset < text->length) {
-            if (!WriteFile(host->output, text->data + offset, (DWORD)(text->length - offset), &written, NULL) || !written) break;
-            offset += written;
+        if (!host->output_closed && !host->output_exit && host->output_bytes + item->length <= 4 * BEDROCK_MESSAGE_CAP) {
+            host->output_bytes += item->length;
+            *host->outgoing_tail = item; host->outgoing_tail = &item->next;
+            SetEvent(host->output_event); accepted = true;
         }
-        sent = offset == text->length && WriteFile(host->output, "\n", 1, &written, NULL) && written == 1;
         ReleaseSRWLockExclusive(&host->output_lock);
     }
-    free(text->data);
-    return sent;
+    if (!accepted) { free(item); free(text->data); }
+    return accepted;
 }
+
+#include "javascript.h"
+
 static void host_error(Host *host, const char *message)
 {
     Text text = {0}; text_add(&text, "{\"event\":\"error\",\"message\":"); text_quote(&text, message); text_add(&text, "}"); send_message(host, &text);
@@ -166,7 +194,9 @@ static bool describe(Host *host)
         text_add(&text, "}");
     }
     text_add(&text, "},\"requiresSymbols\":");
-    text_add(&text, host->plugin->required_api.minor >= 1 ? "true" : "false");
+    text_add(&text, ((host->plugin->required_api.minor >= 1 && host->plugin->required_api.minor < 3) ||
+        (host->plugin->size >= offsetof(BedrockPlugin, flags) + sizeof(host->plugin->flags) &&
+         (host->plugin->flags & BEDROCK_PLUGIN_REQUIRES_SYMBOLS))) ? "true" : "false");
     text_add(&text, "}"); bool okay = !text.failed; send_message(host, &text); return okay;
 }
 static FARPROC plugin_export(BYTE *module, const char *name)
@@ -197,6 +227,10 @@ static bool initialize(Host *host, const HostLaunch *launch)
     const BedrockPlugin *plugin = host->plugin;
     if (!plugin || plugin->size < offsetof(BedrockPlugin, settings_changed) + sizeof(plugin->settings_changed) || !plugin->start || !plugin->stop) {
         host_error(host, "Native plugin descriptor is incomplete; size, start and stop are required."); return false;
+    }
+    if (plugin->size >= offsetof(BedrockPlugin, flags) + sizeof(plugin->flags) &&
+        (plugin->flags & ~BEDROCK_PLUGIN_REQUIRES_SYMBOLS)) {
+        host_error(host, "Native plugin declares unsupported descriptor flags."); return false;
     }
     BedrockVersion version = plugin->required_api;
     if (version.major != BEDROCK_API_MAJOR || version.minor > BEDROCK_API_MINOR ||
@@ -230,13 +264,19 @@ static bool initialize(Host *host, const HostLaunch *launch)
         cursor += setting->size;
     }
     host->context = (BedrockContext){ sizeof(BedrockContext), { BEDROCK_API_MAJOR, BEDROCK_API_MINOR, BEDROCK_API_PATCH },
-        host, launch->process_type, log_message, get_setting, set_setting, release_value, resolve_symbol, report_status };
+        host, launch->process_type, log_message, get_setting, set_setting, release_value, resolve_symbol, report_status,
+        launch->process_type == BEDROCK_PROCESS_GPU ? NULL : execute_js,
+        launch->process_type == BEDROCK_PROCESS_GPU ? NULL : execute_js_async,
+        launch->process_type == BEDROCK_PROCESS_GPU ? NULL : release_js_value };
     return describe(host);
 }
 static void stop_plugin(Host *host)
 {
     if (InterlockedCompareExchange(&host->active, 0, 0)) {
+        js_cancel_all(host, BEDROCK_JS_STOPPED, "The native plugin is stopping.");
+        WaitForSingleObject(host->callbacks_idle, INFINITE);
         host->plugin->stop();
+        Text reset = {0}; text_add(&reset, "{\"event\":\"js.reset\"}"); send_message(host, &reset);
         InterlockedExchange(&host->active, 0);
     }
 }
@@ -297,9 +337,15 @@ static void command(Host *host, const char *json, jsmntok_t *tokens, int count)
             release_value(host, &host->values[i]); host->values[i] = value;
         }
         if (result == BEDROCK_OK) {
+            AcquireSRWLockExclusive(&host->js_lock); host->js_stopping = false; ReleaseSRWLockExclusive(&host->js_lock);
             InterlockedExchange(&host->active, 1);
             result = host->plugin->start(&host->context);
-            if (result != BEDROCK_OK) InterlockedExchange(&host->active, 0);
+            if (result != BEDROCK_OK) {
+                js_cancel_all(host, BEDROCK_JS_STOPPED, "Native plugin startup failed.");
+                WaitForSingleObject(host->callbacks_idle, INFINITE);
+                InterlockedExchange(&host->active, 0);
+                Text reset = {0}; text_add(&reset, "{\"event\":\"js.reset\"}"); send_message(host, &reset);
+            }
         }
     } else if (!strcmp(op, "change")) {
         int key_index = json_member(json, tokens, count, 0, "key"), value_index = json_member(json, tokens, count, 0, "value");
@@ -320,28 +366,143 @@ static void command(Host *host, const char *json, jsmntok_t *tokens, int count)
     free(op);
 }
 
-__declspec(dllexport) DWORD WINAPI BedrockHostRun(HostLaunch *launch)
+static DWORD WINAPI write_messages(void *opaque)
 {
-    Host *host = calloc(1, sizeof(*host));
-    if (!host) return ERROR_NOT_ENOUGH_MEMORY;
-    host->input = launch->input; host->output = launch->output;
-    if (!initialize(host, launch)) goto done;
+    Host *host = opaque;
+    for (;;) {
+        WaitForSingleObject(host->output_event, INFINITE);
+        for (;;) {
+            AcquireSRWLockExclusive(&host->output_lock);
+            HostOutput *item = host->outgoing;
+            bool exit = host->output_exit;
+            if (item) { host->outgoing = item->next; if (!host->outgoing) host->outgoing_tail = &host->outgoing; }
+            ReleaseSRWLockExclusive(&host->output_lock);
+            if (!item) { if (exit) return 0; break; }
+            DWORD written = 0; size_t offset = 0;
+            while (offset < item->length) {
+                if (!WriteFile(host->output, item->data + offset, (DWORD)(item->length - offset), &written, NULL) || !written) break;
+                offset += written;
+            }
+            bool sent = offset == item->length && WriteFile(host->output, "\n", 1, &written, NULL) && written == 1;
+            AcquireSRWLockExclusive(&host->output_lock);
+            host->output_bytes -= item->length;
+            if (!sent) InterlockedExchange(&host->output_closed, 1);
+            ReleaseSRWLockExclusive(&host->output_lock);
+            free(item->data); free(item);
+            if (!sent) {
+                js_cancel_all(host, BEDROCK_JS_TRANSPORT_ERROR, "The JavaScript bridge disconnected.");
+                if (host->reader_thread) CancelSynchronousIo(host->reader_thread);
+                AcquireSRWLockExclusive(&host->commands_lock);
+                host->input_closed = true; SetEvent(host->command_event);
+                ReleaseSRWLockExclusive(&host->commands_lock);
+                return 0;
+            }
+        }
+    }
+}
+
+static DWORD WINAPI read_commands(void *opaque)
+{
+    Host *host = opaque;
     char *line = malloc(BEDROCK_MESSAGE_CAP); jsmntok_t *tokens = malloc(16384 * sizeof(*tokens));
-    if (!line || !tokens) { free(line); free(tokens); host_error(host, "Cannot allocate native IPC buffers."); goto done; }
     size_t length = 0; char byte; DWORD read;
-    while (ReadFile(host->input, &byte, 1, &read, NULL) && read) {
+    if (!line || !tokens) goto done;
+    while (!InterlockedCompareExchange(&host->reader_exit, 0, 0) && !InterlockedCompareExchange(&host->output_closed, 0, 0) && ReadFile(host->input, &byte, 1, &read, NULL) && read) {
         if (byte != '\n') {
             if (length + 1 >= BEDROCK_MESSAGE_CAP) { host_error(host, "Native IPC message exceeds one MiB."); break; }
             line[length++] = byte; continue;
         }
         line[length] = 0;
         jsmn_parser parser; jsmn_init(&parser); int count = jsmn_parse(&parser, line, length, tokens, 16384);
-        if (count > 0 && tokens[0].type == JSMN_OBJECT) command(host, line, tokens, count);
-        else host_error(host, "Cannot parse native IPC command.");
-        length = 0;
+        if (count <= 0 || tokens[0].type != JSMN_OBJECT) { host_error(host, "Cannot parse native IPC command."); break; }
+        int index = json_member(line, tokens, count, 0, "op");
+        char *op = index >= 0 ? json_string(line, &tokens[index]) : NULL;
+        if (op && !strcmp(op, "js.reply")) js_receive(host, line, tokens, count);
+        else {
+            if (op && !strcmp(op, "stop")) js_cancel_all(host, BEDROCK_JS_STOPPED, "The native plugin is stopping.");
+            HostCommand *item = calloc(1, sizeof(*item));
+            if (item) item->json = _strdup(line);
+            if (!item || !item->json) { free(item); free(op); break; }
+            AcquireSRWLockExclusive(&host->commands_lock);
+            *host->command_tail = item; host->command_tail = &item->next;
+            SetEvent(host->command_event);
+            ReleaseSRWLockExclusive(&host->commands_lock);
+        }
+        free(op); length = 0;
     }
-    free(line); free(tokens); stop_plugin(host);
 done:
+    free(line); free(tokens);
+    js_cancel_all(host, BEDROCK_JS_TRANSPORT_ERROR, "The JavaScript bridge disconnected.");
+    AcquireSRWLockExclusive(&host->commands_lock);
+    host->input_closed = true; SetEvent(host->command_event);
+    ReleaseSRWLockExclusive(&host->commands_lock);
+    return 0;
+}
+
+static void cancel_and_join(HANDLE thread)
+{
+    // Cancellation can miss a thread between its stop check and the next blocking I/O call.
+    do { CancelSynchronousIo(thread); } while (WaitForSingleObject(thread, 50) == WAIT_TIMEOUT);
+}
+
+__declspec(dllexport) DWORD WINAPI BedrockHostRun(HostLaunch *launch)
+{
+    Host *host = calloc(1, sizeof(*host));
+    if (!host) return ERROR_NOT_ENOUGH_MEMORY;
+    host->input = launch->input; host->output = launch->output;
+    host->completion_tail = &host->completions; host->command_tail = &host->commands; host->outgoing_tail = &host->outgoing;
+    host->output_event = CreateEventW(NULL, FALSE, FALSE, NULL);
+    host->callback_event = CreateEventW(NULL, FALSE, FALSE, NULL);
+    host->callbacks_idle = CreateEventW(NULL, TRUE, TRUE, NULL);
+    host->command_event = CreateEventW(NULL, FALSE, FALSE, NULL);
+    if (!host->output_event || !host->callback_event || !host->callbacks_idle || !host->command_event) goto done;
+    host->writer_thread = CreateThread(NULL, 0, write_messages, host, 0, NULL);
+    if (!host->writer_thread) goto done;
+    host->callback_thread = CreateThread(NULL, 0, js_callbacks, host, 0, NULL);
+    if (!host->callback_thread || !initialize(host, launch)) goto done;
+    host->reader_thread = CreateThread(NULL, 0, read_commands, host, 0, NULL);
+    jsmntok_t *tokens = malloc(16384 * sizeof(*tokens));
+    if (!host->reader_thread || !tokens) {
+        host_error(host, "Cannot start native IPC reader.");
+        if (host->reader_thread) { InterlockedExchange(&host->reader_exit, 1); cancel_and_join(host->reader_thread); }
+        free(tokens); goto done;
+    }
+    for (;;) {
+        WaitForSingleObject(host->command_event, INFINITE);
+        for (;;) {
+            AcquireSRWLockExclusive(&host->commands_lock);
+            HostCommand *item = host->commands;
+            bool closed = host->input_closed;
+            if (item) { host->commands = item->next; if (!host->commands) host->command_tail = &host->commands; }
+            ReleaseSRWLockExclusive(&host->commands_lock);
+            if (!item) { if (closed) goto finished; break; }
+            jsmn_parser parser; jsmn_init(&parser);
+            int count = jsmn_parse(&parser, item->json, strlen(item->json), tokens, 16384);
+            if (count > 0) command(host, item->json, tokens, count);
+            free(item->json); free(item);
+        }
+    }
+finished:
+    InterlockedExchange(&host->reader_exit, 1);
+    cancel_and_join(host->reader_thread);
+    free(tokens); stop_plugin(host);
+done:
+    if (host->callback_thread) {
+        AcquireSRWLockExclusive(&host->js_lock); host->callbacks_exit = true; SetEvent(host->callback_event); ReleaseSRWLockExclusive(&host->js_lock);
+        WaitForSingleObject(host->callback_thread, INFINITE); CloseHandle(host->callback_thread);
+    }
+    if (host->writer_thread) {
+        AcquireSRWLockExclusive(&host->output_lock); host->output_exit = true; SetEvent(host->output_event); ReleaseSRWLockExclusive(&host->output_lock);
+        if (WaitForSingleObject(host->writer_thread, 500) != WAIT_OBJECT_0) cancel_and_join(host->writer_thread);
+        CloseHandle(host->writer_thread);
+    }
+    while (host->outgoing) { HostOutput *item = host->outgoing; host->outgoing = item->next; free(item->data); free(item); }
+    while (host->commands) { HostCommand *item = host->commands; host->commands = item->next; free(item->json); free(item); }
+    if (host->output_event) CloseHandle(host->output_event);
+    if (host->reader_thread) CloseHandle(host->reader_thread);
+    if (host->callback_event) CloseHandle(host->callback_event);
+    if (host->callbacks_idle) CloseHandle(host->callbacks_idle);
+    if (host->command_event) CloseHandle(host->command_event);
     if (host->values && host->plugin) for (uint32_t i = 0; i < host->plugin->settings_count; i++) release_value(host, &host->values[i]);
     free(host->values); free(host->definitions); symbol_close(&host->reference);
     CloseHandle(host->input); CloseHandle(host->output); free(host);

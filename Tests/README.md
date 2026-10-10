@@ -31,3 +31,9 @@ Google Test's sources are pinned in `lib/googletest`, so building does not requi
 ## Symbol resolution
 
 Windows x64 tests cover exact symbol names, address masking, ambiguous matches, reference identity and PE unwind boundaries. An optional integration test reads an executable from disk into a private test allocation; it never launches or injects into that executable. Set `BEDROCK_SYMBOL_TARGET` to the executable path and `BEDROCK_SYMBOL_REFERENCE` to a directory containing matching stock `electron.exe` and `electron.exe.sym`, then run `BedrockTests.exe`. Without those variables, the integration test is skipped.
+
+## Native JavaScript integration
+
+Build `Native/PluginHost/NativeController.vcxproj` and `Native/PluginHost/tests/JavaScriptFixture.vcxproj` as Release / x64. Run a stock Electron executable with `Native/PluginHost/tests/javascript-fixture.cjs` as its application path. Set `BEDROCK_TEST_CONFIGURATION=Debug` to test Debug builds instead.
+
+The fixture uses a temporary profile and maps a test plugin into its own main, sandboxed renderer and GPU processes. It checks typed results, embedded NULs, BigInts, object identity, released handles, exceptions, async callbacks making sync calls, timeouts, disabling and re-enabling. It does not use Discord's profile or need Electron symbols. JavaScript-only bridge tests run with `node --test Runtime/tests/*.test.cjs`.

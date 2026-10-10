@@ -26,7 +26,7 @@ test('native startup failures include plugin diagnostics and do not reuse old lo
     } });
     const sandbox = { module: { exports: {} }, __dirname: path.resolve(__dirname, '..'),
         setTimeout, clearTimeout, setInterval, clearInterval, Buffer, process,
-        require(name) { return name === 'node:child_process' ? { spawn: () => child } : name === './symbols.cjs' ? require('../symbols.cjs') : require(name); } };
+        require(name) { return name === 'node:child_process' ? { spawn: () => child } : name.startsWith('./') ? require('../' + name.slice(2)) : require(name); } };
     vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../native.cjs'), 'utf8') +
         '\nmodule.exports = connectHost;', sandbox);
     const host = sandbox.module.exports({ pid: 123 }, { environment: 'gpu', path: 'plugin.dll' },

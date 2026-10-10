@@ -6,6 +6,7 @@ const { createPluginManager } = require('./plugins.cjs');
 const { packagePath } = require('./storage.cjs');
 const { startControl } = require('./control.cjs');
 const { createLogFeed } = require('./logs.cjs');
+const { createJsSession, rendererJsRequest } = require('./javascript.cjs');
 const { createThemeManager } = require('./themes.cjs');
 
 function install(options = {}) {
@@ -41,6 +42,14 @@ function install(options = {}) {
     }
     const logs = createLogFeed(root);
     const manager = createPluginManager(root, {
+        nativeJavaScript(target, identity, op, message) {
+            const window = [...windows].find(window => !window.isDestroyed() &&
+                !window.webContents.isDestroyed() && allowed(window.webContents.getURL()) &&
+                window.webContents.getOSProcessId() === target.pid);
+            if (!window) throw new Error('The native plugin renderer no longer exists.');
+            return window.webContents.executeJavaScript(`(${rendererJsRequest})(${createJsSession},
+                ${JSON.stringify(identity)}, ${JSON.stringify(op)}, ${JSON.stringify(message)})`);
+        },
         nativeTargets(environment) {
             if (environment === 'main') return [{ pid: process.pid, creationTime: 0 }];
             if (!app.isReady()) return [];

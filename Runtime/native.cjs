@@ -3,6 +3,8 @@ const { spawn } = require('node:child_process');
 const { createInterface } = require('node:readline');
 const { prepareReference, waitForReference } = require('./symbols.cjs');
 
+const { createJsTransport } = require('./javascript.cjs');
+
 const processTypes = { main: 0, renderer: 1, gpu: 2 };
 const levels = ['debug', 'info', 'warn', 'error'];
 
@@ -13,11 +15,13 @@ function connectHost(target, entry, services, options) {
     child.unref();
     child.stdin.unref?.(); child.stdout.unref?.(); child.stderr.unref?.();
     const pending = new Map();
+    let javascript;
     let sequence = 0, closed = false, stderr = '', definitions = {}, requiresSymbols = false, readyResolve, readyReject;
     const ready = new Promise((resolve, reject) => { readyResolve = resolve; readyReject = reject; });
     const fail = error => {
         if (closed) return;
         closed = true;
+        javascript?.close();
         clearTimeout(readyTimer);
         readyReject(error);
         for (const request of pending.values()) { clearTimeout(request.timer); request.reject(error); }
@@ -39,6 +43,22 @@ function connectHost(target, entry, services, options) {
                 definitions = message.definitions;
                 requiresSymbols = message.requiresSymbols === true;
                 clearTimeout(readyTimer); readyResolve();
+            } else if (message.event === 'js.execute') {
+                if (!javascript) javascript = createJsTransport(entry.environment, target, options);
+                javascript.execute(message, response => {
+                    if (!closed) {
+                        let data = JSON.stringify({ op: 'js.reply', id: message.id, ...response }) + '\n';
+                        if (Buffer.byteLength(data) >= 1024 * 1024) data = JSON.stringify({ op: 'js.reply', id: message.id,
+                            code: 7, message: 'The JavaScript result exceeds one MiB.' }) + '\n';
+                        child.stdin.write(data);
+                    }
+                });
+            } else if (message.event === 'js.cancel') {
+                javascript?.cancel(message.id);
+            } else if (message.event === 'js.release') {
+                javascript?.release(message.handle);
+            } else if (message.event === 'js.reset') {
+                javascript?.close(); javascript = undefined;
             } else if (message.event === 'status') {
                 services.reportStatus?.(String(message.message));
             } else if (message.event === 'log') {
@@ -85,7 +105,7 @@ function connectHost(target, entry, services, options) {
                 });
             });
         },
-        close() { child.stdin.end(); }
+        close() { javascript?.close(); child.stdin.end(); }
     };
 }
 
