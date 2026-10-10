@@ -22,7 +22,7 @@ function installRenderer(configuration) {
     let React;
     let layoutTypes;
     const moduleWaiters = new Set();
-    const notify = () => { for (const callback of subscribers) callback(); };
+    const notify = () => { for (const callback of subscribers) callback(); updateTasks(); };
     const log = (id, error) => console.error(`[Bedrock:${id}]`, error);
     const subscribe = callback => { subscribers.add(callback); return () => subscribers.delete(callback); };
     const emitLocal = (name, value) => {
@@ -124,6 +124,7 @@ function installRenderer(configuration) {
         };
         const id = record.info.manifest.id;
         const context = {
+            reportStatus(message) { if (active) { record.statusMessage = String(message); notify(); } },
             id, signal: controller.signal, manifest: structuredClone(record.info.manifest),
             log: Object.fromEntries(['info', 'warn', 'error'].map(level => [level, (...args) => console[level](`[Bedrock:${id}]`, ...args)])),
             settings: {
@@ -180,7 +181,7 @@ function installRenderer(configuration) {
     }
     async function reconcile(record) {
         if (record.info.enabled && record.info.renderer && !record.instance) {
-            record.status = 'starting'; notify();
+            record.status = 'starting'; record.statusMessage = null; record.error = null; notify();
             let instance;
             try {
                 await settingsReady;
@@ -200,7 +201,7 @@ function installRenderer(configuration) {
                 }
                 await Promise.race([Promise.resolve(record.module.start(instance.context)), new Promise(resolve =>
                     instance.context.signal.addEventListener('abort', resolve, { once: true }))]);
-                record.status = 'running'; record.error = null;
+                record.status = 'running'; record.statusMessage = null; record.error = null;
             } catch (error) {
                 if (!instance?.context.signal.aborted) {
                     instance?.dispose(); record.instance = null;
@@ -275,13 +276,38 @@ function installRenderer(configuration) {
     }
     function list() {
         return [...records.values()].map(record => ({ ...record.info, rendererStatus: record.status,
-            error: record.error || record.info.error, restartReason: record.restartReason || record.info.restartReason }));
+            rendererMessage: record.statusMessage, error: record.error || record.info.error, restartReason: record.restartReason || record.info.restartReason }));
+    }
+    const taskStarts = new Map();
+    let taskPanel, taskTimer;
+    function updateTasks() {
+        if (!document.body) { clearTimeout(taskTimer); taskTimer = setTimeout(updateTasks, 500); return; }
+        const tasks = list().filter(plugin => plugin.enabled && !plugin.error &&
+            ([plugin.mainStatus, plugin.rendererStatus].includes('starting') || plugin.statusMessage && plugin.mainStatus === 'running'));
+        const now = Date.now();
+        for (const id of taskStarts.keys()) if (!tasks.some(plugin => plugin.manifest.id === id)) taskStarts.delete(id);
+        for (const plugin of tasks) if (!taskStarts.has(plugin.manifest.id)) taskStarts.set(plugin.manifest.id, now);
+        clearTimeout(taskTimer);
+        const visible = tasks.filter(plugin => now - taskStarts.get(plugin.manifest.id) >= 1500);
+        taskPanel?.remove(); taskPanel = null;
+        if (visible.length && !document.querySelector('.bedrock-plugin-page')) {
+            taskPanel = document.createElement('aside');
+            taskPanel.className = 'bedrock-tasks'; taskPanel.setAttribute('role', 'status');
+            for (const plugin of visible) {
+                const row = document.createElement('div'), name = document.createElement('strong'), status = document.createElement('div');
+                name.textContent = plugin.manifest.name; status.textContent = displayStatus(plugin);
+                status.className = 'bedrock-muted'; row.append(name, status); taskPanel.append(row);
+            }
+            document.body.append(taskPanel);
+        }
+        if (tasks.length) taskTimer = setTimeout(updateTasks, 500);
     }
     function displayStatus(plugin) {
         if (!plugin.enabled) return 'Disabled';
         const states = [plugin.mainStatus, plugin.rendererStatus];
-        if (states.includes('failed')) return 'Failed';
-        if (states.includes('starting')) return 'Starting';
+        if (plugin.error || states.includes('failed')) return 'Couldn?t start';
+        if (plugin.statusMessage && plugin.mainStatus === 'running') return plugin.statusMessage;
+        if (states.includes('starting')) return plugin.rendererStatus === 'starting' && plugin.rendererMessage || plugin.statusMessage || 'Initializing?';
         if (states.includes('stopping')) return 'Stopping';
         return 'Enabled';
     }
@@ -292,15 +318,16 @@ function installRenderer(configuration) {
     }
 
     const css = `
+        .bedrock-tasks{position:fixed;right:20px;bottom:20px;z-index:10000;width:260px;padding:12px;border-radius:8px;background:var(--background-floating,#18191c);color:var(--text-normal,#dbdee1);box-shadow:0 4px 16px #0005;font:14px var(--font-primary,sans-serif);pointer-events:none}.bedrock-tasks>div+div{margin-top:10px}.bedrock-tasks strong{font-size:14px}.bedrock-tasks .bedrock-muted{font-size:12px;margin-top:3px}
         .bedrock-page{color:var(--text-normal,#dbdee1);font-family:var(--font-primary,sans-serif);max-width:760px}
         .bedrock-page h2{font-size:24px;margin:0 0 8px}.bedrock-page p{line-height:1.5}
         .bedrock-muted{color:var(--text-muted,#949ba4);font-size:14px}.bedrock-toolbar{display:flex;gap:10px;flex-wrap:wrap;margin:0 0 16px}
         .bedrock-page input[type=search]{flex:1;min-width:180px;height:32px;box-sizing:border-box;padding:5px 10px;border-radius:6px;border:1px solid var(--border-subtle,#41434a);background:var(--input-background,#1e1f22);color:inherit}
         .bedrock-button{min-height:30px;padding:5px 10px;border:0;border-radius:5px;background:var(--background-modifier-hover,#35373c);color:inherit;cursor:pointer}
         .bedrock-button:focus-visible,.bedrock-switch:focus-visible{outline:2px solid var(--blurple-50,#5865f2);outline-offset:3px}
-        .bedrock-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,280px),1fr));gap:14px}
-        .bedrock-card{border:1px solid var(--border-subtle,#41434a);border-radius:8px;padding:14px;background:var(--background-secondary,#2b2d31)}
-        .bedrock-card-header{display:flex;align-items:center;justify-content:space-between;gap:12px}.bedrock-card h3{font-size:17px;margin:0;flex:1}.bedrock-icon{width:28px;height:28px;object-fit:contain;border-radius:5px}
+        .bedrock-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,280px),1fr));gap:10px}
+        .bedrock-card{border:1px solid var(--border-subtle,#41434a);border-radius:8px;padding:10px;background:var(--background-secondary,#2b2d31)}
+        .bedrock-card-header{display:flex;align-items:center;justify-content:space-between;gap:12px}.bedrock-card h3{font-size:15px;margin:0;flex:1}.bedrock-icon{width:24px;height:24px;object-fit:contain;border-radius:5px}
         .bedrock-switch{width:42px;height:24px;border:0;border-radius:15px;background:var(--background-modifier-accent,#4e5058);padding:3px;cursor:pointer;flex-shrink:0}
         .bedrock-switch[aria-checked=true]{background:var(--status-positive,#23a559)}.bedrock-switch span{display:block;width:18px;height:18px;background:white;border-radius:50%;transition:transform .12s}
         .bedrock-switch[aria-checked=true] span{transform:translateX(18px)}.bedrock-switch:disabled{opacity:.5;cursor:default}
@@ -308,7 +335,7 @@ function installRenderer(configuration) {
         .bedrock-readme,.bedrock-readme *{user-select:text!important;-webkit-user-select:text!important}
         .bedrock-readme{line-height:1.6;overflow-wrap:anywhere}.bedrock-readme pre{white-space:pre-wrap;background:var(--background-tertiary,#1e1f22);padding:14px;border-radius:6px}
         .bedrock-readme code{font-family:var(--font-code,monospace)}.bedrock-readme a{color:var(--text-link,#00a8fc)}
-        .bedrock-card p{margin:10px 0}.bedrock-name{padding:0;border:0;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer}
+        .bedrock-card p{margin:6px 0;font-size:13px}.bedrock-card-description{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}.bedrock-error{white-space:pre-wrap;user-select:text!important;-webkit-user-select:text!important}.bedrock-status{display:flex;align-items:center;gap:6px}.bedrock-spinner{width:10px;height:10px;border:2px solid var(--text-muted,#949ba4);border-right-color:transparent;border-radius:50%;animation:bedrock-spin .8s linear infinite;flex-shrink:0}@keyframes bedrock-spin{to{transform:rotate(360deg)}}@media(prefers-reduced-motion:reduce){.bedrock-spinner{animation:none}}.bedrock-name{padding:0;border:0;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer}
         .bedrock-theme-website{color:var(--text-link,#00a8fc)}
         .bedrock-detail-header{display:flex;align-items:center;gap:12px;margin:16px 0 8px}.bedrock-detail-header h2{margin:0;font-size:20px;flex:1}
         .bedrock-tabs{display:flex;gap:24px;border-bottom:1px solid var(--border-subtle,#41434a);margin:18px 0 24px}
@@ -494,14 +521,20 @@ function installRenderer(configuration) {
         const toggle = plugin => h('button', { role: 'switch', 'aria-checked': plugin.enabled,
             'aria-label': `Enable ${plugin.manifest.name}`, className: 'bedrock-switch', disabled: !!busy,
             onClick: () => run(plugin.manifest.id, () => setEnabled(plugin.manifest.id, !plugin.enabled)) }, h('span'));
-        if (detail) return h('section', { className: 'bedrock-page', ref: page },
+        if (detail) return h('section', { className: 'bedrock-page bedrock-plugin-page', ref: page },
             h('button', { className: 'bedrock-button', onClick: () => { setError(''); select(null); } }, `${backArrow} Back to plugins`),
             h('div', { className: 'bedrock-detail-header' }, h('h2', null, detail.manifest.name), toggle(detail)),
             h('p', { className: 'bedrock-muted' }, `v${detail.manifest.version} ${metadataSeparator} ${displayStatus(detail)} ${metadataSeparator} ${detail.manifest.id}`),
             detail.manifest.description && h('p', null, detail.manifest.description),
             restartBanner,
             error && h('p', { className: 'bedrock-error', role: 'alert' }, error),
-            detail.error && h('p', { className: 'bedrock-error', role: 'alert' }, detail.error),
+            detail.error && h('div', null,
+                h('p', { className: 'bedrock-error', role: 'alert' }, detail.error),
+                h('div', { className: 'bedrock-toolbar' },
+                    h('button', { className: 'bedrock-button', disabled: !!busy, onClick: () => run('retry', async () => {
+                        await setEnabled(detail.manifest.id, false); await setEnabled(detail.manifest.id, true);
+                    }) }, 'Retry'),
+                    h('button', { className: 'bedrock-button', onClick: () => run('copy', () => navigator.clipboard.writeText(detail.error)) }, 'Copy error'))),
             detail.restartReason && h('p', { className: 'bedrock-restart' }, `Restart needed: ${detail.restartReason}`),
             h('div', { className: 'bedrock-tabs', role: 'tablist', 'aria-label': 'Plugin information' },
                 ['details', 'settings'].map(name => h('button', { key: name, className: 'bedrock-tab', id: `bedrock-${name}-tab`, role: 'tab',
@@ -532,9 +565,11 @@ function installRenderer(configuration) {
                     plugin.manifest.icon && h('img', { className: 'bedrock-icon', alt: '', src: `bedrock://plugins/${plugin.manifest.id}/${plugin.manifest.icon.replaceAll('\\', '/').split('/').map(encodeURIComponent).join('/')}` }),
                     h('h3', null, h('button', { className: 'bedrock-name', onClick: () => open(plugin.manifest.id) }, plugin.manifest.name)),
                     toggle(plugin)),
-                h('p', null, plugin.manifest.description || 'No description provided.'),
-                h('p', { className: 'bedrock-muted' }, `v${plugin.manifest.version} ${metadataSeparator} ${displayStatus(plugin)}`),
-                plugin.error && h('p', { className: 'bedrock-error', role: 'alert' }, plugin.error),
+                h('p', { className: 'bedrock-card-description' }, plugin.manifest.description || 'No description provided.'),
+                h('p', { className: 'bedrock-muted bedrock-status', role: 'status' },
+                    plugin.enabled && !plugin.error && ([plugin.mainStatus, plugin.rendererStatus].includes('starting') || plugin.statusMessage && plugin.mainStatus === 'running') && h('span', { className: 'bedrock-spinner', 'aria-hidden': true }),
+                    `v${plugin.manifest.version} ${metadataSeparator} ${displayStatus(plugin)}`),
+
                 plugin.restartReason && h('p', { className: 'bedrock-restart' }, `Restart needed: ${plugin.restartReason}`),
                 h('button', { className: 'bedrock-button', onClick: () => open(plugin.manifest.id) }, 'Open')))),
             plugins.length === 0 && h('p', { className: 'bedrock-muted' }, 'No plugins installed. Open the plugins folder, add a plugin folder, then choose Refresh plugins.'),
@@ -567,7 +602,7 @@ function installRenderer(configuration) {
                     h('button', { className: 'bedrock-switch', role: 'switch', 'aria-label': `Enable ${theme.name}`, 'aria-checked': theme.enabled,
                         'aria-busy': busy === theme.id, disabled: !!busy,
                         onClick: () => run(theme.id, async () => update(await native.request('themesEnable', theme.id, !theme.enabled))) }, h('span'))),
-                theme.description && h('p', null, theme.description),
+                theme.description && h('p', { className: 'bedrock-card-description', title: theme.description }, theme.description),
                 h('p', { className: 'bedrock-muted' }, [theme.author, theme.version && `v${theme.version}`, theme.id].filter(Boolean).join(` ${metadataSeparator} `)),
                 theme.website && h('a', { className: 'bedrock-theme-website', href: theme.website, target: '_blank', rel: 'noreferrer',
                     onClick: event => { event.preventDefault(); run(`website-${theme.id}`, () => native.request('themeWebsite', theme.id)); } }, 'Website'),

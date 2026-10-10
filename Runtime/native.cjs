@@ -39,6 +39,8 @@ function connectHost(target, entry, services, options) {
                 definitions = message.definitions;
                 requiresSymbols = message.requiresSymbols === true;
                 clearTimeout(readyTimer); readyResolve();
+            } else if (message.event === 'status') {
+                services.reportStatus?.(String(message.message));
             } else if (message.event === 'log') {
                 if (message.level === 3) for (const request of pending.values()) {
                     if (request.op === 'start') request.diagnostics =
@@ -125,17 +127,21 @@ function createNativeEntryPoints(record, services, options = {}) {
                 if (context.signal.aborted) continue;
                 if (instance.host.requiresSymbols && !instance.referenceReady) {
                     const signal = context.signal;
+                    services.reportStatus?.("Preparing Electron symbols");
                     const reference = options.symbolReference || await waitForReference(
                         prepareReference(process.versions.electron, options.symbolCacheDirectory || path.join(path.dirname(process.execPath), 'BedrockData', 'cache', 'symbols'),
-                            (level, args) => { if (!signal.aborted) services.log(level, args); }), signal);
+                            (level, args) => { if (!signal.aborted) services.log(level, args); },
+                            message => { if (!signal.aborted) services.reportStatus?.(message); }), signal);
                     if (context.signal.aborted) continue;
                     await instance.host.request('reference', reference);
                     instance.referenceReady = true;
                 }
+                services.reportStatus?.("Starting native plugin");
                 instance.starting = true;
                 await instance.host.request('start', { values: services.settings.all() });
                 instance.started = true;
-            } catch (error) { if (!context.signal.aborted) { services.failed(error); failure ||= error; } }
+                services.reportStatus?.(null);
+            } catch (error) { if (!context.signal.aborted) { services.reportStatus?.(null); services.failed(error); failure ||= error; } }
             finally { instance.starting = false; }
         }
         for (const [key, instance] of instances) if (!live.has(key)) {

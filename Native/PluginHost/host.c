@@ -52,6 +52,13 @@ static void host_error(Host *host, const char *message)
 {
     Text text = {0}; text_add(&text, "{\"event\":\"error\",\"message\":"); text_quote(&text, message); text_add(&text, "}"); send_message(host, &text);
 }
+static void BEDROCK_CALL report_status(void *opaque, const char *message)
+{
+    Host *host = opaque;
+    if (!message || !InterlockedCompareExchange(&host->active, 0, 0)) return;
+    Text text = {0}; text_add(&text, "{\"event\":\"status\",\"message\":");
+    text_quote(&text, message); text_add(&text, "}"); send_message(host, &text);
+}
 static void BEDROCK_CALL log_message(void *opaque, BedrockLogLevel level, const char *message)
 {
     Host *host = opaque;
@@ -223,7 +230,7 @@ static bool initialize(Host *host, const HostLaunch *launch)
         cursor += setting->size;
     }
     host->context = (BedrockContext){ sizeof(BedrockContext), { BEDROCK_API_MAJOR, BEDROCK_API_MINOR, BEDROCK_API_PATCH },
-        host, launch->process_type, log_message, get_setting, set_setting, release_value, resolve_symbol };
+        host, launch->process_type, log_message, get_setting, set_setting, release_value, resolve_symbol, report_status };
     return describe(host);
 }
 static void stop_plugin(Host *host)

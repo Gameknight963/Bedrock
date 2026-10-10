@@ -85,7 +85,7 @@ function createPluginManager(root, options = {}) {
     function list() {
         return [...records.values()].map(record => ({
             manifest: record.manifest, enabled: enabled(record.manifest.id),
-            mainStatus: record.status, error: record.error || null,
+            mainStatus: record.status, statusMessage: record.statusMessage || null, error: record.error || null,
             restartReason: record.restartReason || null,
             settingsDefinitions: definitions.get(record.manifest.id) || {},
             restartSettings: restartSettings(record.manifest.id),
@@ -98,6 +98,7 @@ function createPluginManager(root, options = {}) {
         const hasNative = Object.values(record.manifest.entrypoints).some(entry => entry.runtime === 'native');
         if ((!record.entries.main && !hasNative) || record.instance || !enabled(record.manifest.id)) return;
         record.status = 'starting';
+        record.statusMessage = null;
         record.error = null;
         let owned;
         try {
@@ -116,6 +117,7 @@ function createPluginManager(root, options = {}) {
                             events.on('settings.changed', listener);
                             return () => events.off('settings.changed', listener);
                         },
+                        reportStatus(message) { if (record.instance && !record.instance.context.signal.aborted) { record.statusMessage = message == null ? null : String(message); notify(); } },
                         failed(error) { record.error = error.message; log('error', record.manifest.id, [error]); notify(); }
                     }, { symbolCacheDirectory: path.join(root, 'cache', 'symbols'), ...options });
                     record.nativeOwner = native;
@@ -135,6 +137,7 @@ function createPluginManager(root, options = {}) {
             if (typeof record.module.start !== 'function') throw new Error('Main entry point must export start(context)');
             const services = {
                 log, settings: settings(record.manifest.id), patch,
+                reportStatus(message) { record.statusMessage = message; notify(); },
                 subscribe(name, callback) {
                     if (['settings.changed', 'window.created'].includes(name)) {
                         events.on(name, callback); return () => events.off(name, callback);
@@ -163,13 +166,13 @@ function createPluginManager(root, options = {}) {
             if (completion && typeof completion.then === 'function') {
                 record.startPromise = Promise.race([Promise.resolve(completion), new Promise(resolve =>
                     owned.context.signal.addEventListener('abort', resolve, { once: true }))]).then(() => {
-                    if (record.instance === owned) record.status = 'running';
+                    if (record.instance === owned) { record.status = 'running'; record.statusMessage = null; }
                     notify();
                 }).catch(error => {
                     if (record.instance === owned) { owned.dispose(); record.instance = null; record.status = 'failed'; record.error = error.message; }
                     log('error', record.manifest.id, [error]); notify();
                 });
-            } else record.status = 'running';
+            } else { record.status = 'running'; record.statusMessage = null; }
         } catch (error) {
             owned?.dispose(); record.instance = null; record.status = 'failed'; record.error = error.message;
             log('error', record.manifest.id, [error]);

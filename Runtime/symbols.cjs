@@ -41,11 +41,12 @@ try {
         { windowsHide: true, timeout: 180000, maxBuffer: 8192 });
 }
 
-async function prepare(version, cache, log) {
+async function prepare(version, cache, log, status) {
     if (!/^\d+\.\d+\.\d+$/.test(version || '')) throw new Error('Cannot determine a supported Electron release version for symbol resolution.');
     const folder = path.join(cache, 'electron', version, 'win32-x64');
     const image = path.join(folder, 'electron.exe'), symbols = path.join(folder, 'electron.exe.sym');
     try {
+        status?.('Checking cached Electron symbols');
         const metadata = JSON.parse(await fs.promises.readFile(path.join(folder, 'reference.json'), 'utf8'));
         if (metadata.version === version && metadata.image === await digest(image) && metadata.symbols === await digest(symbols))
             return { image, symbols };
@@ -53,6 +54,7 @@ async function prepare(version, cache, log) {
     await fs.promises.mkdir(path.dirname(folder), { recursive: true });
     const temporary = await fs.promises.mkdtemp(path.join(path.dirname(folder), 'download-'));
     try {
+        status?.('Downloading Electron binary and symbols');
         log('info', [`Downloading Electron ${version} reference binary and symbols.`]);
         const base = `https://github.com/electron/electron/releases/download/v${version}/`;
         const response = await fetch(base + 'SHASUMS256.txt', { signal: AbortSignal.timeout(30000) });
@@ -68,6 +70,7 @@ async function prepare(version, cache, log) {
         const downloaded = await Promise.allSettled(archives.map(name =>
             download(base + name, path.join(temporary, name), checksums.get(name), 512 * 1024 * 1024)));
         for (const result of downloaded) if (result.status === 'rejected') throw result.reason;
+        status?.('Extracting Electron symbols');
         const extracted = await Promise.allSettled([
             extract(path.join(temporary, archives[0]), 'electron.exe', path.join(temporary, 'electron.exe'), 512 * 1024 * 1024),
             extract(path.join(temporary, archives[1]), 'electron.exe.sym', path.join(temporary, 'electron.exe.sym'), 2 * 1024 * 1024 * 1024)
@@ -85,10 +88,10 @@ async function prepare(version, cache, log) {
     }
 }
 
-function prepareReference(version, cache, log) {
+function prepareReference(version, cache, log, status) {
     const key = path.resolve(cache) + ':' + version;
     if (!preparations.has(key)) {
-        const pending = prepare(version, cache, log).catch(error => { preparations.delete(key); throw error; });
+        const pending = prepare(version, cache, log, status).catch(error => { preparations.delete(key); throw error; });
         preparations.set(key, pending);
     }
     return preparations.get(key);

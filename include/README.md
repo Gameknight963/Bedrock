@@ -2,7 +2,7 @@
 
 Include `<bedrock/plugin.h>` and export `Bedrock_GetPlugin`. The returned descriptor declares the native API requirement, lifecycle callbacks and optional settings. No Bedrock import library is required.
 
-The current native API is **1.1.0**. The requirement must share its major version and be no newer than the host. `size` fields describe extensible structures supplied by the plugin; settings array entries are traversed using each entry's size. Small value types, including `BedrockSymbolError`, have fixed layouts within API major version 1.
+The current native API is **1.2.0**. The requirement must share its major version and be no newer than the host. `size` fields describe extensible structures supplied by the plugin; settings array entries are traversed using each entry's size. Small value types, including `BedrockSymbolError`, have fixed layouts within API major version 1.
 
 ## Package
 
@@ -72,3 +72,7 @@ The final argument is an optional substring filter for listing; resolution itsel
 ## Example
 
 `Examples/native/NativeExample.vcxproj` builds the C example. Its output folder contains the DLL, manifest and README for a plugin package. It is not bundled into the normal plugin list.
+
+## Initialization status
+
+Native API 1.2.0 adds `ctx->report_status(ctx->host, message)`. Pass plain UTF-8 text describing the current initialization task; Bedrock copies it before returning. Format variable content in your own buffer if needed. JavaScript contexts provide `ctx.reportStatus(message)`. Status appears while initialization is in progress and clears from the UI when startup finishes. Errors are reported separately.

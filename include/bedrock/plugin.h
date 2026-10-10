@@ -18,7 +18,7 @@ extern "C" {
 
 typedef struct BedrockVersion { uint32_t major, minor, patch; } BedrockVersion;
 #define BEDROCK_API_MAJOR 1
-#define BEDROCK_API_MINOR 1
+#define BEDROCK_API_MINOR 2
 #define BEDROCK_API_PATCH 0
 
 typedef int32_t BedrockResult;
@@ -111,6 +111,8 @@ typedef struct BedrockContext {
        Returns NULL on failure. Optional error is cleared on success.
        Synchronous; call during initialization, not from a rendering hook. */
     void *(BEDROCK_CALL *resolve_symbol)(void *host, const char *name, BedrockSymbolError *error);
+    /* API 1.2.0: copies a UTF-8 initialization status message. No formatting. */
+    void (BEDROCK_CALL *report_status)(void *host, const char *message);
 } BedrockContext;
 
 /* Same major, required minor/patch no newer than host. Fields are appended

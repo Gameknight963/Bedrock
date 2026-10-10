@@ -20,6 +20,7 @@ function createContext(manifest, services) {
         manifest: structuredClone(manifest),
         log: Object.fromEntries(['info', 'warn', 'error'].map(level => [level, (...args) => services.log(level, manifest.id, args)])),
         settings: services.settings,
+        reportStatus(message) { if (active) services.reportStatus?.(String(message)); },
         events: {
             emit: (name, value) => services.emit(name, value),
             on(name, callback) {

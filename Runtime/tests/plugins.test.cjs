@@ -141,3 +141,25 @@ test('incompatible manifests are rejected before executing either entry point', 
     assert.equal(manager.list().length, 0);
     assert.equal(fs.existsSync(marker), false);
 });
+
+
+test('initialization status is visible while pending, clears on success, and ignores stopped contexts', async t => {
+    const root = fixture(t);
+    plugin(root, 'test.status', `exports.start = ctx => {
+        globalThis.bedrockStatusContext = ctx;
+        ctx.reportStatus('Preparing resources');
+        return new Promise(resolve => { globalThis.bedrockStatusFinish = resolve; });
+    };`);
+    t.after(() => { delete globalThis.bedrockStatusContext; delete globalThis.bedrockStatusFinish; });
+    const manager = createPluginManager(root, quiet);
+    manager.scan();
+    assert.equal(manager.list()[0].mainStatus, 'starting');
+    assert.equal(manager.list()[0].statusMessage, 'Preparing resources');
+    globalThis.bedrockStatusFinish();
+    await manager.records.get('test.status').startPromise;
+    assert.equal(manager.list()[0].mainStatus, 'running');
+    assert.equal(manager.list()[0].statusMessage, null);
+    await manager.setEnabled('test.status', false);
+    globalThis.bedrockStatusContext.reportStatus('Late work');
+    assert.equal(manager.list()[0].statusMessage, null);
+});

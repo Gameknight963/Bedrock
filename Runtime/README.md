@@ -230,3 +230,7 @@ node Runtime/tests/obj/node_modules/electron/install.js
 ```
 
 The Electron fixture checks the real sandboxed preload/context bridge, preserved existing preload, settings layout injection, rendered React switches, plugin cleanup and re-enable, relative imports, cross-process settings/events, Markdown, and origin restriction. Dependencies are test-only; the runtime uses Discord's Electron and React. Tests use isolated temporary data and do not launch or alter Discord.
+
+## Initialization status
+
+Use `ctx.reportStatus("Preparing resources")` during startup to describe the current task. The Plugins page shows this message while the plugin initializes. Longer tasks also appear in a compact panel when you are outside the Plugins page. Startup errors can be selected or copied from the plugin?s detail page; Retry disables and enables the plugin again.
