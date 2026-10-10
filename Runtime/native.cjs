@@ -38,6 +38,10 @@ function connectHost(target, entry, services, options) {
                 definitions = message.definitions;
                 clearTimeout(readyTimer); readyResolve();
             } else if (message.event === 'log') {
+                if (message.level === 3) for (const request of pending.values()) {
+                    if (request.op === 'start') request.diagnostics =
+                        (request.diagnostics + (request.diagnostics ? '\n' : '') + String(message.message)).slice(0, 8192);
+                }
                 services.log(levels[message.level] || 'error', [String(message.message)]);
             } else if (message.event === 'error') {
                 const error = new Error(String(message.message));
@@ -53,7 +57,8 @@ function connectHost(target, entry, services, options) {
                 else {
                     const results = ['BEDROCK_OK', 'BEDROCK_ERROR', 'BEDROCK_UNSUPPORTED', 'BEDROCK_INVALID_ARGUMENT',
                         'BEDROCK_UNKNOWN_SETTING', 'BEDROCK_INVALID_VALUE', 'BEDROCK_STOPPED'];
-                    request.reject(new Error(`Native ${request.op} failed: ${results[message.result] || 'unknown result'} (${message.result}).${message.message ? ' ' + message.message : ''}`));
+                    const detail = message.message || request.diagnostics || 'The plugin returned a failure without logging a reason.';
+                    request.reject(new Error(`Native ${request.op} failed: ${results[message.result] || 'unknown result'} (${message.result}).\n${detail}`));
                 }
             }
         } catch (error) { services.log('error', [error]); fail(error); }
@@ -69,7 +74,7 @@ function connectHost(target, entry, services, options) {
             if (Buffer.byteLength(data) >= 1024 * 1024) return Promise.reject(new Error('Native command exceeds one MiB.'));
             return new Promise((resolve, reject) => {
                 const timer = setTimeout(() => { pending.delete(id); reject(new Error(`Native ${op} did not finish within 10 seconds.`)); }, 10000);
-                pending.set(id, { resolve, reject, timer, op });
+                pending.set(id, { resolve, reject, timer, op, diagnostics: '' });
                 child.stdin.write(data, error => {
                     if (error) { pending.delete(id); clearTimeout(timer); reject(error); }
                 });
