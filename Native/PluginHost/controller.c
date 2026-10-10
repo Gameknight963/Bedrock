@@ -4,10 +4,69 @@
 #include <wchar.h>
 #include <fcntl.h>
 #include <io.h>
+#include <math.h>
 #include "transport.h"
 #include "mapper.h"
+#include "json.h"
 
 static HANDLE target, pipe_input;
+
+static bool reference_file(const char *path, HANDLE *remote_handle, DWORD *size)
+{
+    if (!path) return false;
+    int length = MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, path, -1, NULL, 0);
+    wchar_t *wide = length > 0 ? calloc((size_t)length, sizeof(wchar_t)) : NULL;
+    if (!wide) return false;
+    MultiByteToWideChar(CP_UTF8, MB_ERR_INVALID_CHARS, path, -1, wide, length);
+    HANDLE file = CreateFileW(wide, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, FILE_ATTRIBUTE_NORMAL, NULL);
+    free(wide);
+    if (file == INVALID_HANDLE_VALUE) return false;
+    LARGE_INTEGER bytes;
+    bool okay = GetFileSizeEx(file, &bytes) && bytes.QuadPart > 0 && bytes.QuadPart <= MAXDWORD;
+    HANDLE mapping = okay ? CreateFileMappingW(file, NULL, PAGE_READONLY, 0, 0, NULL) : NULL;
+    CloseHandle(file);
+    if (!mapping) return false;
+    okay = DuplicateHandle(GetCurrentProcess(), mapping, target, remote_handle, FILE_MAP_READ, FALSE, 0) != FALSE;
+    CloseHandle(mapping);
+    if (okay) *size = (DWORD)bytes.QuadPart;
+    return okay;
+}
+
+static bool forward_command(char *line, size_t length)
+{
+    jsmntok_t tokens[128]; jsmn_parser parser; jsmn_init(&parser);
+    int count = jsmn_parse(&parser, line, length, tokens, 128);
+    int op_index = count > 0 ? json_member(line, tokens, count, 0, "op") : -1;
+    char *op = op_index >= 0 ? json_string(line, &tokens[op_index]) : NULL;
+    Text replacement = {0};
+    if (op && !strcmp(op, "reference")) {
+        int image_index = json_member(line, tokens, count, 0, "image"), symbols_index = json_member(line, tokens, count, 0, "symbols");
+        int id_index = json_member(line, tokens, count, 0, "id");
+        char *image = image_index >= 0 ? json_string(line, &tokens[image_index]) : NULL;
+        char *symbols = symbols_index >= 0 ? json_string(line, &tokens[symbols_index]) : NULL;
+        HANDLE image_handle = NULL, symbols_handle = NULL; DWORD image_size = 0, symbols_size = 0;
+        reference_file(image, &image_handle, &image_size); reference_file(symbols, &symbols_handle, &symbols_size);
+        BedrockValue id = {0};
+        if (id_index >= 0) json_value(line, &tokens[id_index], &id);
+        text_add(&replacement, "{\"op\":\"reference\",\"id\":"); text_number(&replacement, id.number);
+        text_add(&replacement, ",\"imageHandle\":"); text_number(&replacement, (double)(uintptr_t)image_handle);
+        text_add(&replacement, ",\"imageSize\":"); text_number(&replacement, image_size);
+        text_add(&replacement, ",\"symbolsHandle\":"); text_number(&replacement, (double)(uintptr_t)symbols_handle);
+        text_add(&replacement, ",\"symbolsSize\":"); text_number(&replacement, symbols_size); text_add(&replacement, "}");
+        free(image); free(symbols);
+        line = replacement.data; length = replacement.length;
+    }
+    free(op);
+    bool okay = line && !replacement.failed;
+    size_t offset = 0; DWORD written;
+    while (okay && offset < length) {
+        okay = WriteFile(pipe_input, line + offset, (DWORD)(length - offset), &written, NULL) && written;
+        if (okay) offset += written;
+    }
+    if (okay) okay = WriteFile(pipe_input, "\n", 1, &written, NULL) && written == 1;
+    free(replacement.data);
+    return okay;
+}
 static void fail(const wchar_t *operation)
 {
     fwprintf(stderr, L"%ls failed (Windows error %lu).\n", operation, GetLastError());
@@ -16,13 +75,23 @@ static DWORD WINAPI forward_input(void *unused)
 {
     (void)unused;
     BYTE buffer[4096]; DWORD read;
+    char *line = malloc(BEDROCK_MESSAGE_CAP);
+    if (!line) return 1;
+    size_t length = 0;
     while (ReadFile(GetStdHandle(STD_INPUT_HANDLE), buffer, sizeof(buffer), &read, NULL) && read) {
-        DWORD offset = 0, written;
-        while (offset < read) {
-            if (!WriteFile(pipe_input, buffer + offset, read - offset, &written, NULL) || !written) return 1;
-            offset += written;
+        for (DWORD offset = 0; offset < read; offset++) {
+            if (buffer[offset] == '\n') {
+                line[length] = 0;
+                if (!forward_command(line, length)) goto done;
+                length = 0;
+            } else {
+                if (length + 1 >= BEDROCK_MESSAGE_CAP) goto done;
+                line[length++] = buffer[offset];
+            }
         }
     }
+done:
+    free(line);
     CloseHandle(pipe_input); pipe_input = NULL;
     return 0;
 }

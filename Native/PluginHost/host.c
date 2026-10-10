@@ -5,6 +5,7 @@
 #include <math.h>
 #include "transport.h"
 #include "json.h"
+#include "symbols.h"
 
 typedef struct Host {
     HANDLE input, output;
@@ -12,9 +13,24 @@ typedef struct Host {
     BedrockContext context;
     const BedrockSetting **definitions;
     BedrockValue *values;
-    SRWLOCK values_lock, output_lock;
+    SRWLOCK values_lock, output_lock, symbols_lock;
+    SymbolReference reference;
     volatile LONG active;
 } Host;
+
+static void *BEDROCK_CALL resolve_symbol(void *opaque, const char *name, BedrockSymbolError *error)
+{
+    Host *host = opaque;
+    if (error) ZeroMemory(error, sizeof(*error));
+    if (!InterlockedCompareExchange(&host->active, 0, 0)) {
+        if (error) { error->code = BEDROCK_SYMBOL_STOPPED; strcpy_s(error->message, sizeof(error->message), "The native plugin context is stopped."); }
+        return NULL;
+    }
+    AcquireSRWLockExclusive(&host->symbols_lock);
+    void *address = symbol_resolve(&host->reference, (BYTE *)GetModuleHandleW(NULL), name, error);
+    ReleaseSRWLockExclusive(&host->symbols_lock);
+    return address;
+}
 
 static bool send_message(Host *host, Text *text)
 {
@@ -142,7 +158,9 @@ static bool describe(Host *host)
         }
         text_add(&text, "}");
     }
-    text_add(&text, "}}"); bool okay = !text.failed; send_message(host, &text); return okay;
+    text_add(&text, "},\"requiresSymbols\":");
+    text_add(&text, host->plugin->required_api.minor >= 1 ? "true" : "false");
+    text_add(&text, "}"); bool okay = !text.failed; send_message(host, &text); return okay;
 }
 static FARPROC plugin_export(BYTE *module, const char *name)
 {
@@ -205,7 +223,7 @@ static bool initialize(Host *host, const HostLaunch *launch)
         cursor += setting->size;
     }
     host->context = (BedrockContext){ sizeof(BedrockContext), { BEDROCK_API_MAJOR, BEDROCK_API_MINOR, BEDROCK_API_PATCH },
-        host, launch->process_type, log_message, get_setting, set_setting, release_value };
+        host, launch->process_type, log_message, get_setting, set_setting, release_value, resolve_symbol };
     return describe(host);
 }
 static void stop_plugin(Host *host)
@@ -228,7 +246,39 @@ static void command(Host *host, const char *json, jsmntok_t *tokens, int count)
     BedrockValue id; if (!json_value(json, &tokens[id_index], &id) || id.type != BEDROCK_VALUE_NUMBER) return;
     char *op = json_string(json, &tokens[op_index]); if (!op) return;
     BedrockResult result = BEDROCK_OK;
-    if (!strcmp(op, "stop")) stop_plugin(host);
+    if (!strcmp(op, "reference")) {
+        const char *fields[] = { "imageHandle", "imageSize", "symbolsHandle", "symbolsSize" };
+        BedrockValue values[4] = {0};
+        bool valid = true;
+        for (unsigned i = 0; i < 4; i++) {
+            int index = json_member(json, tokens, count, 0, fields[i]);
+            if (index < 0 || !json_value(json, &tokens[index], &values[i]) || values[i].type != BEDROCK_VALUE_NUMBER ||
+                values[i].number <= 0 || values[i].number > MAXDWORD || floor(values[i].number) != values[i].number) valid = false;
+        }
+        const char *reason = "Cannot map the Electron reference files into the native host.";
+        if (!valid || host->active || host->reference.image) {
+            result = BEDROCK_INVALID_ARGUMENT;
+            for (unsigned i = 0; i < 4; i += 2) if (values[i].type == BEDROCK_VALUE_NUMBER && values[i].number > 0 && values[i].number <= MAXDWORD)
+                CloseHandle((HANDLE)(uintptr_t)values[i].number);
+        }
+        else {
+            HANDLE image = (HANDLE)(uintptr_t)values[0].number, symbols = (HANDLE)(uintptr_t)values[2].number;
+            host->reference.image_size = (size_t)values[1].number;
+            host->reference.symbols_size = (size_t)values[3].number;
+            host->reference.image = MapViewOfFile(image, FILE_MAP_READ, 0, 0, host->reference.image_size);
+            host->reference.symbols = MapViewOfFile(symbols, FILE_MAP_READ, 0, 0, host->reference.symbols_size);
+            CloseHandle(image); CloseHandle(symbols);
+            if (!host->reference.image || !host->reference.symbols) { symbol_close(&host->reference); result = BEDROCK_ERROR; }
+            else if (!symbol_reference_valid(&host->reference)) {
+                symbol_close(&host->reference); result = BEDROCK_INVALID_VALUE;
+                reason = "Electron reference symbols do not match the reference executable's PDB identity and architecture.";
+            }
+        }
+        for (unsigned i = 0; i < 4; i++) release_value(host, &values[i]);
+        reply(host, id.number, result, result == BEDROCK_OK ? NULL : reason);
+        free(op); return;
+    }
+    else if (!strcmp(op, "stop")) stop_plugin(host);
     else if (!strcmp(op, "start")) {
         if (host->active) { reply(host, id.number, BEDROCK_ERROR, "Plugin is already running."); free(op); return; }
         int values = json_member(json, tokens, count, 0, "values");
@@ -286,7 +336,7 @@ __declspec(dllexport) DWORD WINAPI BedrockHostRun(HostLaunch *launch)
     free(line); free(tokens); stop_plugin(host);
 done:
     if (host->values && host->plugin) for (uint32_t i = 0; i < host->plugin->settings_count; i++) release_value(host, &host->values[i]);
-    free(host->values); free(host->definitions);
+    free(host->values); free(host->definitions); symbol_close(&host->reference);
     CloseHandle(host->input); CloseHandle(host->output); free(host);
     return ERROR_SUCCESS;
 }

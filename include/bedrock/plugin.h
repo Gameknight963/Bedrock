@@ -18,7 +18,7 @@ extern "C" {
 
 typedef struct BedrockVersion { uint32_t major, minor, patch; } BedrockVersion;
 #define BEDROCK_API_MAJOR 1
-#define BEDROCK_API_MINOR 0
+#define BEDROCK_API_MINOR 1
 #define BEDROCK_API_PATCH 0
 
 typedef int32_t BedrockResult;
@@ -74,6 +74,24 @@ typedef struct BedrockSetting {
     uint32_t choice_count;
 } BedrockSetting;
 
+typedef int32_t BedrockSymbolResult;
+#define BEDROCK_SYMBOL_OK 0
+#define BEDROCK_SYMBOL_INVALID_ARGUMENT 1
+#define BEDROCK_SYMBOL_REFERENCE_UNAVAILABLE 2
+#define BEDROCK_SYMBOL_NAME_NOT_FOUND 3
+#define BEDROCK_SYMBOL_NAME_AMBIGUOUS 4
+#define BEDROCK_SYMBOL_TARGET_NOT_FOUND 5
+#define BEDROCK_SYMBOL_TARGET_AMBIGUOUS 6
+#define BEDROCK_SYMBOL_TARGET_INVALID 7
+#define BEDROCK_SYMBOL_STOPPED 8
+#define BEDROCK_SYMBOL_REFERENCE_INVALID 9
+
+/* Fixed layout for API major 1. No allocation or release is needed. */
+typedef struct BedrockSymbolError {
+    BedrockSymbolResult code;
+    char message[512];
+} BedrockSymbolError;
+
 /* UTF-8 strings throughout. Host services may be called from plugin threads.
    The context is valid through stop(); finish those threads before returning.
    log and settings_set copy inputs. Successful settings_set means validated
@@ -89,6 +107,10 @@ typedef struct BedrockContext {
     BedrockResult (BEDROCK_CALL *settings_get)(void *host, const char *key, BedrockValue *value);
     BedrockResult (BEDROCK_CALL *settings_set)(void *host, const char *key, const BedrockValue *value);
     void (BEDROCK_CALL *value_release)(void *host, BedrockValue *value);
+    /* API 1.1.0: one exact UTF-8 reference symbol name; current executable only.
+       Returns NULL on failure. Optional error is cleared on success.
+       Synchronous; call during initialization, not from a rendering hook. */
+    void *(BEDROCK_CALL *resolve_symbol)(void *host, const char *name, BedrockSymbolError *error);
 } BedrockContext;
 
 /* Same major, required minor/patch no newer than host. Fields are appended

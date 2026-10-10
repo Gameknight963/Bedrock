@@ -12,7 +12,7 @@ Bedrock's own code is licensed under the [MIT license](LICENSE). The dependencie
 | Skia | BSD-3-Clause | SkiaSharp experiment and backdrop blur function signatures |
 | Chromium | BSD-3-Clause | Backdrop blur function signatures |
 | Simple Manual Map Injector | MIT | Native plugin controller |
-| MinHook v1.3.4 | BSD-2-Clause | Experimental backdrop blur hook |
+| MinHook v1.3.4 | BSD-2-Clause | Backdrop blur hook and native symbol decoder |
 
 The backdrop blur experiment uses [SkiaSharp](https://github.com/mono/SkiaSharp/blob/main/LICENSE.txt) and its native [Skia](https://github.com/google/skia/blob/main/LICENSE) dependency. SkiaSharp and its native library are not included in Bedrock's launcher or plugins. Their licenses and additional native dependency notices must accompany any separately distributed experiment binaries.
 
@@ -31,7 +31,7 @@ The native backdrop blur plugin contains function signatures derived from Electr
 - Source: [TsudaKageyu/minhook](https://github.com/TsudaKageyu/minhook/tree/c3fcafdc10146beb5919319d0683e44e3c30d537)
 - Vendored files: `lib/minhook`
 - Commit: `c3fcafdc10146beb5919319d0683e44e3c30d537`
-- License and included disassembler notices: [lib/minhook/LICENSE.txt](lib/minhook/LICENSE.txt). This file must accompany distributed backdrop blur binaries.
+- License and included disassembler notices: [lib/minhook/LICENSE.txt](lib/minhook/LICENSE.txt). This file must accompany distributed backdrop blur binaries and the native host, which uses MinHook?s HDE64 instruction decoder.
 
 ## jsmn
 

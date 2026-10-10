@@ -82,6 +82,7 @@
     <Copy SourceFiles="@(PublicHeader)" DestinationFolder="$(OutDir)include\bedrock" SkipUnchangedFiles="true" />
     <Copy Condition="'$(Platform)'=='x64'" SourceFiles="$(ProjectDir)..\Native\PluginHost\bin\$(Platform)\$(Configuration)\native-controller.exe;$(ProjectDir)..\Native\PluginHost\bin\$(Platform)\$(Configuration)\native-host.dll" DestinationFolder="$(OutDir)Runtime\native\win32-x64" SkipUnchangedFiles="true" />
     <Copy Condition="'$(Platform)'=='x64'" SourceFiles="$(ProjectDir)..\lib\manual-map\LICENSE" DestinationFiles="$(OutDir)Runtime\native\win32-x64\manual-map-LICENSE.txt" SkipUnchangedFiles="true" />
+    <Copy Condition="'$(Platform)'=='x64'" SourceFiles="$(ProjectDir)..\lib\minhook\LICENSE.txt" DestinationFiles="$(OutDir)Runtime\native\win32-x64\minhook-LICENSE.txt" SkipUnchangedFiles="true" />
     <Copy SourceFiles="@(RuntimeFile)" DestinationFolder="$(OutDir)Runtime" SkipUnchangedFiles="true" />
     <Copy SourceFiles="@(NoticeFile)" DestinationFolder="$(OutDir)" SkipUnchangedFiles="true" />
     <Copy SourceFiles="@(BundledPluginFile)" DestinationFiles="@(BundledPluginFile->'$(OutDir)BedrockData\plugins\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />

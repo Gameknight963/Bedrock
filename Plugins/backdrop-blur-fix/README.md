@@ -79,9 +79,11 @@ The clip limits where that combination applies. At half opacity, some sharp cont
 
 The implementation was developed against Electron 42.11.8 and its Chromium/Skia code. The main hook intercepts `viz::SkiaRenderer::PrepareCanvasForRPDQ`, where Chromium prepares a render-pass layer and chooses its blend mode. Additional hooks replace that layer's blender and suppress its clearing operation. Other paint calls retain their original behavior.
 
-Functions are located by matching machine-code signatures in the running executable. Address-dependent instruction operands are ignored, and every match must be unique and agree with the function boundaries recorded in the executable's PE unwind information. The code also relies on structure offsets identified from that build.
+Bedrock downloads and caches the stock Electron binary and symbols matching Discord?s Electron version. The plugin requests six functions by their exact symbol names. Bedrock extracts their machine code from the reference binary, ignores address-dependent operands, and searches the running executable. Every match must be unique and agree with the boundaries recorded in its PE unwind information.
 
-This avoids depending on a fixed load address, but it is still version-sensitive. If the signatures or function boundaries do not match, the plugin refuses to install the hooks. Matching signatures do not guarantee that every future Electron build has compatible internal layouts.
+The plugin separately checks four resolved functions against the implementation whose structure offsets and call sites it understands. These checks protect the hook?s assumptions about private Chromium and Skia layouts.
+
+This avoids depending on a fixed load address, but it is still version-sensitive. If a function cannot be resolved or its layout checks do not match, the plugin refuses to install the hooks. Matching signatures do not guarantee that every future Electron build has compatible internal layouts.
 
 The source reference is [Chromium's Skia renderer](https://github.com/chromium/chromium/blob/148.0.7778.0/components/viz/service/display/skia_renderer.cc), with [the matching Skia revision](https://github.com/google/skia/tree/2085e414ce371c7f4ef5c86be341ef5428ac535b).
 

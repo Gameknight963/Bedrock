@@ -11,7 +11,7 @@ const { createPluginManager } = require('../../../Runtime/plugins.cjs');
 const data = path.join(output, 'data');
 const folder = path.join(data, 'plugins', 'backdrop-blur-fix');
 fs.mkdirSync(folder, { recursive: true });
-fs.cpSync(path.join(packageRoot, 'BedrockData/plugins/backdrop-blur'), folder, { recursive: true });
+fs.cpSync(path.join(packageRoot, 'BedrockData/plugins/backdrop-blur-fix'), folder, { recursive: true });
 assert(!app.commandLine.hasSwitch('disable-gpu-sandbox'), 'Test must retain the GPU sandbox');
 app.setPath('userData', path.join(output, 'fixture-profile'));
 app.whenReady().then(async () => {
@@ -31,6 +31,7 @@ app.whenReady().then(async () => {
     let failure;
     const manager = createPluginManager(data, {
         nativeDirectory: path.join(packageRoot, 'Runtime/native/win32-x64'),
+        symbolCacheDirectory: process.env.BEDROCK_TEST_SYMBOL_CACHE || path.join(output, 'cache', 'symbols'),
         nativeTargets: environment => environment === 'gpu' ? app.getAppMetrics().filter(metric => metric.type === 'GPU') : [],
         log(level, id, args) {
             const message = args.join(' ');
@@ -40,8 +41,10 @@ app.whenReady().then(async () => {
         }
     });
     manager.scan();
+    assert.equal(manager.errors().length, 0, 'Plugin discovery failed');
+    assert(manager.records.has('bedrock.backdrop-blur-fix'), 'Blur plugin was not discovered');
     manager.settings('bedrock.backdrop-blur-fix').set('allowGpuInjection', true);
-    for (let attempt = 0; !installed && !failure && attempt < 100; attempt++)
+    for (let attempt = 0; !installed && !failure && attempt < 1800; attempt++)
         await new Promise(resolve => setTimeout(resolve, 100));
     if (failure) throw failure;
     assert(installed, 'Plugin did not install the native hook');

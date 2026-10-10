@@ -3,7 +3,7 @@
 #include "../../lib/minhook/include/MinHook.h"
 #include "status.h"
 
-DWORD WINAPI BlurInstall(void *unused);
+DWORD WINAPI BlurInstall(const BedrockContext *context);
 DWORD WINAPI BlurRemove(void *unused);
 extern BlurInstallDiagnostic BlurDiagnostics;
 static const BedrockContext *context;
@@ -20,7 +20,7 @@ static void append_number(char *text, DWORD number)
 
 static BedrockResult apply(void)
 {
-    DWORD result = BlurInstall(NULL);
+    DWORD result = BlurInstall(context);
     if (!result) {
         context->log(context->host, BEDROCK_LOG_INFO, "Native blur hook installed.");
         return BEDROCK_OK;
@@ -30,24 +30,7 @@ static BedrockResult apply(void)
         result == ERROR_DLL_INIT_FAILED ? "ERROR_DLL_INIT_FAILED" : "ERROR_NOT_ENOUGH_MEMORY";
     lstrcatA(message, name); lstrcatA(message, " ("); append_number(message, result); lstrcatA(message, ").");
     context->log(context->host, BEDROCK_LOG_ERROR, message);
-    if (result == ERROR_REVISION_MISMATCH) {
-        const char *names[] = { "SkiaRenderer::PrepareCanvasForRPDQ", "SkPaint::setBlendMode",
-            "SkiaRenderer backdrop clearing", "SkBlenders::Arithmetic", "SkCanvas::clipPath", "SkCanvas::clipRect" };
-        const char *reasons[] = { "matched", "no matching machine-code signature", "more than one signature match",
-            "signature matched, but no PE unwind entry was found", "signature matched inside a function rather than at its start",
-            "signature matched, but the function size differs" };
-        for (unsigned i = 0; i < 6; i++) {
-            const BlurMatchDiagnostic *match = &BlurDiagnostics.functions[i];
-            if (!match->result) continue;
-            lstrcpyA(message, names[i]); lstrcatA(message, ": ");
-            lstrcatA(message, match->result <= BLUR_MATCH_SIZE ? reasons[match->result] : "unknown validation failure");
-            if (match->result == BLUR_MATCH_SIZE) {
-                lstrcatA(message, " (expected "); append_number(message, match->expected_size);
-                lstrcatA(message, " bytes, found "); append_number(message, match->actual_size); lstrcatA(message, ")");
-            }
-            lstrcatA(message, "."); context->log(context->host, BEDROCK_LOG_ERROR, message);
-        }
-    } else {
+    if (result != ERROR_REVISION_MISMATCH) {
         const char *stages[] = { "locating functions", "allocating a Windows TLS slot", "initializing MinHook",
             "creating the render-pass hook", "creating the blend-mode hook", "creating the backdrop-clearing hook", "enabling hooks" };
         lstrcpyA(message, "Failed while ");
@@ -96,7 +79,7 @@ static const BedrockSetting settings[] = {{
     .type = BEDROCK_SETTING_BOOLEAN, .default_value = { .type = BEDROCK_VALUE_BOOLEAN, .boolean = false }
 }};
 static const BedrockPlugin plugin = {
-    .size = sizeof(BedrockPlugin), .required_api = {1, 0, 0}, .settings = settings, .settings_count = 1,
+    .size = sizeof(BedrockPlugin), .required_api = {1, 1, 0}, .settings = settings, .settings_count = 1,
     .start = start, .stop = stop, .settings_changed = settings_changed
 };
 BEDROCK_EXPORT const BedrockPlugin *BEDROCK_CALL Bedrock_GetPlugin(void) { return &plugin; }

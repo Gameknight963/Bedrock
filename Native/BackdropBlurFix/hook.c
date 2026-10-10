@@ -5,6 +5,7 @@
 #include "../../lib/minhook/include/MinHook.h"
 #include "signatures.h"
 #include "status.h"
+#include "../../include/bedrock/plugin.h"
 
 __declspec(dllexport) BlurStatus BlurCounters;
 __declspec(dllexport) BlurInstallDiagnostic BlurDiagnostics;
@@ -96,41 +97,17 @@ static void prepare_hook(void *renderer, const unsigned char *rpdq, unsigned cha
     release_blender(layer.blender);
 }
 
-static unsigned char *find_signature(unsigned char *module, const Signature *signature, BlurMatchDiagnostic *diagnostic)
+static BOOL compatible_function(const unsigned char *function, const Signature *signature)
 {
-    diagnostic->result = BLUR_MATCH_MISSING;
-    diagnostic->expected_size = signature->function_size;
-    IMAGE_DOS_HEADER *dos = (IMAGE_DOS_HEADER *)module;
-    IMAGE_NT_HEADERS64 *nt = (IMAGE_NT_HEADERS64 *)(module + dos->e_lfanew);
-    IMAGE_SECTION_HEADER *sections = IMAGE_FIRST_SECTION(nt);
-    unsigned char *found = NULL;
-    for (WORD section = 0; section < nt->FileHeader.NumberOfSections; section++) {
-        if (!(sections[section].Characteristics & IMAGE_SCN_MEM_EXECUTE)) continue;
-        size_t size = sections[section].Misc.VirtualSize;
-        unsigned char *bytes = module + sections[section].VirtualAddress;
-        for (size_t offset = 0; offset + signature->length <= size; offset++) {
-            if (bytes[offset] != signature->bytes[0]) continue;
-            size_t index = 1;
-            while (index < signature->length && (!signature->mask[index] ||
-                bytes[offset + index] == signature->bytes[index])) index++;
-            if (index != signature->length) continue;
-            if (found) { diagnostic->result = BLUR_MATCH_DUPLICATE; return NULL; }
-            found = bytes + offset;
-        }
-    }
-    if (found) {
-        DWORD64 base;
-        PRUNTIME_FUNCTION function = RtlLookupFunctionEntry((DWORD64)found, &base, NULL);
-        if (!function) { diagnostic->result = BLUR_MATCH_NO_UNWIND; return NULL; }
-        diagnostic->actual_size = function->EndAddress - function->BeginAddress;
-        if (base + function->BeginAddress != (DWORD64)found) { diagnostic->result = BLUR_MATCH_NOT_START; return NULL; }
-        if (diagnostic->actual_size != signature->function_size) { diagnostic->result = BLUR_MATCH_SIZE; return NULL; }
-        diagnostic->result = BLUR_MATCH_OK;
-    }
-    return found;
+    DWORD64 base;
+    PRUNTIME_FUNCTION bounds = RtlLookupFunctionEntry((DWORD64)function, &base, NULL);
+    if (!bounds || bounds->EndAddress - bounds->BeginAddress != signature->function_size) return FALSE;
+    for (size_t i = 0; i < signature->length; i++)
+        if (signature->mask[i] && function[i] != signature->bytes[i]) return FALSE;
+    return TRUE;
 }
 
-static DWORD install_hooks(void)
+static DWORD install_hooks(const BedrockContext *context)
 {
     if (InterlockedCompareExchange(&installed, 0, 0)) {
         InterlockedExchange(&enabled, 1);
@@ -138,15 +115,33 @@ static DWORD install_hooks(void)
         return ERROR_SUCCESS;
     }
     ZeroMemory(&BlurDiagnostics, sizeof(BlurDiagnostics));
-    unsigned char *module = (unsigned char *)GetModuleHandleW(NULL);
-    prepare_address = find_signature(module, &sig_prepare, &BlurDiagnostics.functions[0]);
-    void *blend = find_signature(module, &sig_blend, &BlurDiagnostics.functions[1]);
-    void *clear = find_signature(module, &sig_clear, &BlurDiagnostics.functions[2]);
-    arithmetic = (Arithmetic)find_signature(module, &sig_arithmetic, &BlurDiagnostics.functions[3]);
-    clip_path = (Clip)find_signature(module, &sig_clip_path, &BlurDiagnostics.functions[4]);
-    clip_rect = (Clip)find_signature(module, &sig_clip_rect, &BlurDiagnostics.functions[5]);
-    if (!prepare_address || !blend || !clear || !arithmetic || !clip_path || !clip_rect)
+    const char *names[] = {
+        "viz::SkiaRenderer::PrepareCanvasForRPDQ(const struct viz::SkiaRenderer::DrawRPDQParams & const, struct viz::SkiaRenderer::DrawQuadParams *)",
+        "SkPaint::setBlendMode(SkBlendMode)",
+        "viz::SkiaRenderer::DrawRPDQParams::ClearOutsideBackdropBounds(class SkCanvas *, const struct viz::SkiaRenderer::DrawQuadParams *)",
+        "SkBlenders::Arithmetic(float,float,float,float,bool)",
+        "SkCanvas::clipPath(SkPath const &,SkClipOp,bool)",
+        "SkCanvas::clipRect(SkRect const &,SkClipOp,bool)"
+    };
+    void *functions[6];
+    for (unsigned i = 0; i < 6; i++) {
+        BedrockSymbolError error = {0};
+        functions[i] = context->resolve_symbol(context->host, names[i], &error);
+        if (!functions[i]) {
+            context->log(context->host, BEDROCK_LOG_ERROR, error.message);
+            return ERROR_REVISION_MISMATCH;
+        }
+    }
+    // Locating code does not validate our private Skia layouts. Guard the functions whose internals we depend on.
+    const Signature *guards[] = { &sig_prepare, &sig_blend, &sig_clear, &sig_arithmetic };
+    for (unsigned i = 0; i < 4; i++) if (!compatible_function(functions[i], guards[i])) {
+        context->log(context->host, BEDROCK_LOG_ERROR, names[i]);
+        context->log(context->host, BEDROCK_LOG_ERROR, "Function located, but its machine code differs from the layouts supported by the blur hook.");
         return ERROR_REVISION_MISMATCH;
+    }
+    prepare_address = functions[0];
+    void *blend = functions[1], *clear = functions[2];
+    arithmetic = (Arithmetic)functions[3]; clip_path = (Clip)functions[4]; clip_rect = (Clip)functions[5];
     BlurDiagnostics.stage = 1;
     if (active_slot == TLS_OUT_OF_INDEXES) active_slot = TlsAlloc();
     if (active_slot == TLS_OUT_OF_INDEXES) return ERROR_NOT_ENOUGH_MEMORY;
@@ -176,11 +171,10 @@ static DWORD install_hooks(void)
     return ERROR_SUCCESS;
 }
 
-__declspec(dllexport) DWORD WINAPI BlurInstall(void *unused)
+__declspec(dllexport) DWORD WINAPI BlurInstall(const BedrockContext *context)
 {
-    (void)unused;
     AcquireSRWLockExclusive(&control_lock);
-    DWORD result = install_hooks();
+    DWORD result = install_hooks(context);
     ReleaseSRWLockExclusive(&control_lock);
     return result;
 }

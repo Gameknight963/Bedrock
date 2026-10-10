@@ -27,3 +27,7 @@ Run one group with `--gtest_filter=FuseParsing.*`. Debug and Release support bot
 - The existing Node/Electron smoke scripts check the inspector and renderer together. Run those separately when changing the bootstrap or renderer.
 
 Google Test's sources are pinned in `lib/googletest`, so building does not require downloading packages. The fuse parser and its unit tests use no WinAPI, leaving them usable in a future Linux test build.
+
+## Symbol resolution
+
+Windows x64 tests cover exact symbol names, address masking, ambiguous matches, reference identity and PE unwind boundaries. An optional integration test reads an executable from disk into a private test allocation; it never launches or injects into that executable. Set `BEDROCK_SYMBOL_TARGET` to the executable path and `BEDROCK_SYMBOL_REFERENCE` to a directory containing matching stock `electron.exe` and `electron.exe.sym`, then run `BedrockTests.exe`. Without those variables, the integration test is skipped.

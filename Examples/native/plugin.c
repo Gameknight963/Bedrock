@@ -38,7 +38,7 @@ static void BEDROCK_CALL changed(const char *key, const BedrockValue *value)
 BEDROCK_EXPORT const BedrockPlugin *BEDROCK_CALL Bedrock_GetPlugin(void)
 {
     static const BedrockPlugin plugin = {
-        .size = sizeof(BedrockPlugin), .required_api = { BEDROCK_API_MAJOR, BEDROCK_API_MINOR, BEDROCK_API_PATCH },
+        .size = sizeof(BedrockPlugin), .required_api = { 1, 0, 0 },
         .settings = settings, .settings_count = sizeof(settings) / sizeof(settings[0]),
         .start = start, .stop = stop, .settings_changed = changed
     };

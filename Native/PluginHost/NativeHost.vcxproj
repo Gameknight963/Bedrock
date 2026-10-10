@@ -13,6 +13,6 @@
     <ClCompile><CompileAs>CompileAsC</CompileAs><LanguageStandard_C>stdc17</LanguageStandard_C><WarningLevel>Level4</WarningLevel><RuntimeLibrary>MultiThreaded</RuntimeLibrary><PreprocessorDefinitions>UNICODE;_UNICODE;WIN32_LEAN_AND_MEAN;_WIN32_WINNT=0x0A00;%(PreprocessorDefinitions)</PreprocessorDefinitions><AdditionalIncludeDirectories>$(ProjectDir)..\..\include;%(AdditionalIncludeDirectories)</AdditionalIncludeDirectories></ClCompile>
     <Link><GenerateDebugInformation>true</GenerateDebugInformation></Link>
   </ItemDefinitionGroup>
-  <ItemGroup><ClCompile Include="host.c" /><ClInclude Include="transport.h" /><ClInclude Include="json.h" /><ClInclude Include="..\..\include\bedrock\plugin.h" /></ItemGroup>
+  <ItemGroup><ClCompile Include="host.c" /><ClCompile Include="symbols.c" /><ClCompile Include="..\..\lib\minhook\src\hde\hde64.c"><DisableSpecificWarnings>4701;%(DisableSpecificWarnings)</DisableSpecificWarnings></ClCompile><ClInclude Include="symbols.h" /><ClInclude Include="transport.h" /><ClInclude Include="json.h" /><ClInclude Include="..\..\include\bedrock\plugin.h" /></ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
 </Project>

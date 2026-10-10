@@ -117,7 +117,7 @@ function createPluginManager(root, options = {}) {
                             return () => events.off('settings.changed', listener);
                         },
                         failed(error) { record.error = error.message; log('error', record.manifest.id, [error]); notify(); }
-                    }, options);
+                    }, { symbolCacheDirectory: path.join(root, 'cache', 'symbols'), ...options });
                     record.nativeOwner = native;
                     record.module = {
                         settings: javascript?.settings,

@@ -43,6 +43,9 @@
   <ItemGroup>
     <ClCompile Include="fuse-tests.cpp" />
     <ClCompile Include="shutdown-tests.cpp" />
+    <ClCompile Include="symbols-tests.cpp"><ExcludedFromBuild Condition="'$(Platform)'!='x64'">true</ExcludedFromBuild></ClCompile>
+    <ClCompile Include="..\Native\PluginHost\symbols.c"><ExcludedFromBuild Condition="'$(Platform)'!='x64'">true</ExcludedFromBuild><CompileAs>CompileAsC</CompileAs></ClCompile>
+    <ClCompile Include="..\lib\minhook\src\hde\hde64.c"><ExcludedFromBuild Condition="'$(Platform)'!='x64'">true</ExcludedFromBuild><CompileAs>CompileAsC</CompileAs><DisableSpecificWarnings>4701;%(DisableSpecificWarnings)</DisableSpecificWarnings></ClCompile>
     <ClCompile Include="..\Launcher\logging.c"><CompileAs>CompileAsC</CompileAs></ClCompile>
     <ClCompile Include="..\Launcher\shutdown.c"><CompileAs>CompileAsC</CompileAs></ClCompile>
     <ClCompile Include="..\Launcher\fuse.c"><CompileAs>CompileAsC</CompileAs></ClCompile>

@@ -1,6 +1,7 @@
 const path = require('node:path');
 const { spawn } = require('node:child_process');
 const { createInterface } = require('node:readline');
+const { prepareReference, waitForReference } = require('./symbols.cjs');
 
 const processTypes = { main: 0, renderer: 1, gpu: 2 };
 const levels = ['debug', 'info', 'warn', 'error'];
@@ -12,7 +13,7 @@ function connectHost(target, entry, services, options) {
     child.unref();
     child.stdin.unref?.(); child.stdout.unref?.(); child.stderr.unref?.();
     const pending = new Map();
-    let sequence = 0, closed = false, stderr = '', definitions = {}, readyResolve, readyReject;
+    let sequence = 0, closed = false, stderr = '', definitions = {}, requiresSymbols = false, readyResolve, readyReject;
     const ready = new Promise((resolve, reject) => { readyResolve = resolve; readyReject = reject; });
     const fail = error => {
         if (closed) return;
@@ -36,6 +37,7 @@ function connectHost(target, entry, services, options) {
             if (message.event === 'ready') {
                 services.registerSettings(message.definitions);
                 definitions = message.definitions;
+                requiresSymbols = message.requiresSymbols === true;
                 clearTimeout(readyTimer); readyResolve();
             } else if (message.event === 'log') {
                 if (message.level === 3) for (const request of pending.values()) {
@@ -66,6 +68,7 @@ function connectHost(target, entry, services, options) {
     return {
         target, ready,
         get definitions() { return definitions; },
+        get requiresSymbols() { return requiresSymbols; },
         get closed() { return closed; },
         request(op, args = {}) {
             if (closed) return Promise.reject(new Error(stderr.trim() || 'Native host is disconnected.'));
@@ -120,10 +123,19 @@ function createNativeEntryPoints(record, services, options = {}) {
             try {
                 await instance.host.ready;
                 if (context.signal.aborted) continue;
+                if (instance.host.requiresSymbols && !instance.referenceReady) {
+                    const signal = context.signal;
+                    const reference = options.symbolReference || await waitForReference(
+                        prepareReference(process.versions.electron, options.symbolCacheDirectory || path.join(path.dirname(process.execPath), 'BedrockData', 'cache', 'symbols'),
+                            (level, args) => { if (!signal.aborted) services.log(level, args); }), signal);
+                    if (context.signal.aborted) continue;
+                    await instance.host.request('reference', reference);
+                    instance.referenceReady = true;
+                }
                 instance.starting = true;
                 await instance.host.request('start', { values: services.settings.all() });
                 instance.started = true;
-            } catch (error) { services.failed(error); failure ||= error; }
+            } catch (error) { if (!context.signal.aborted) { services.failed(error); failure ||= error; } }
             finally { instance.starting = false; }
         }
         for (const [key, instance] of instances) if (!live.has(key)) {
