@@ -106,10 +106,19 @@ function install(options = {}) {
         ses.protocol.handle('bedrock', request => {
             try {
                 const url = new URL(request.url);
-                if (request.method === 'GET' && url.hostname === 'api' && url.pathname === '/settings.mjs')
-                    return new Response(fs.readFileSync(path.join(__dirname, 'settings.mjs')), { headers: {
+                if (request.method === 'GET' && url.hostname === 'api' && ['/settings.mjs', '/dotnet.mjs'].includes(url.pathname))
+                    return new Response(fs.readFileSync(path.join(__dirname, url.pathname.slice(1))), { headers: {
                         'Content-Type': 'text/javascript', 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-store'
                     } });
+                if (request.method === 'GET' && url.hostname === 'managed') {
+                    const relative = url.pathname.slice(1).split('/').map(decodeURIComponent).join('/');
+                    const file = packagePath(path.join(__dirname, 'dotnet'), relative);
+                    const types = { '.js': 'text/javascript', '.wasm': 'application/wasm', '.json': 'application/json' };
+                    return new Response(fs.readFileSync(file), { headers: {
+                        'Content-Type': types[path.extname(file)] || 'application/octet-stream',
+                        'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-store'
+                    } });
+                }
                 if (request.method === 'GET' && url.hostname === 'themes') {
                     const relative = url.pathname.slice(1).split('/').map(decodeURIComponent).join('/');
                     const file = packagePath(themes.directory, relative);

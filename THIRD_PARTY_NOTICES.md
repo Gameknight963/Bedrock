@@ -4,6 +4,7 @@ Bedrock's own code is licensed under the [MIT license](LICENSE). The dependencie
 
 | Dependency | License | Used by |
 | --- | --- | --- |
+| .NET browser WASM runtime | MIT and included dependency notices | Shared renderer runtime for C# plugins |
 | jsmn | MIT | Launcher and native plugin IPC JSON parsing |
 | Google Test v1.18.0 | BSD-3-Clause | Native tests only; not linked into the launcher |
 | Node.js v24.0.0 Node-API headers | MIT | Native window customization module |
@@ -182,3 +183,5 @@ LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
 ```
+
+The managed runtime is built from the .NET SDK browser runtime pack. Distributions include its LICENSE.TXT and THIRD-PARTY-NOTICES.TXT under Runtime/dotnet/licenses.

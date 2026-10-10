@@ -12,7 +12,7 @@ Bedrock stores its own plugins, themes, and settings in `BedrockData` beside the
 
 ## Get started
 
-Build `Launcher.vcxproj` (C17, Visual Studio v145).
+Build `Launcher.vcxproj` (C17, Visual Studio v145, .NET 10 SDK).
 
 The launcher first closes processes using the selected Discord executable in your
 Windows session. Existing Bedrock instances receive a graceful quit request over

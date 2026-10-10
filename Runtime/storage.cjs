@@ -60,7 +60,14 @@ function discover(root) {
                 if (!entry || typeof entry !== 'object' || Array.isArray(entry))
                     throw new Error(`${environment} must declare runtime, path and requiresApi`);
                 const definition = entry;
-                if (!['javascript', 'native'].includes(definition.runtime)) throw new Error(`Unsupported runtime for ${environment}`);
+                if (!['javascript', 'native', 'dotnet'].includes(definition.runtime)) throw new Error(`Unsupported runtime for ${environment}`);
+                if (definition.runtime === 'dotnet') {
+                    if (environment !== 'renderer') throw new Error('Managed WASM plugins run in the renderer');
+                    if (typeof definition.path !== 'string' || path.extname(definition.path).toLowerCase() !== '.dll') throw new Error('Managed entry points must end in .dll');
+                    if (Object.hasOwn(definition, 'requiresApi')) throw new Error('Managed API requirements belong in the assembly attribute');
+                    entries[environment] = packagePath(folder, definition.path);
+                    continue;
+                }
                 if (definition.runtime === 'native') {
                     if (process.platform !== 'win32' || process.arch !== 'x64') throw new Error('Native plugins currently require Windows x64');
                     if (typeof definition.path !== 'string' || path.extname(definition.path).toLowerCase() !== '.dll')

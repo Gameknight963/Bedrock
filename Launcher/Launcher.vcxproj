@@ -74,6 +74,11 @@
     <PluginArchitecture Condition="'$(Platform)'=='Win32'">ia32</PluginArchitecture>
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <Target Name="PublishManagedRuntime" BeforeTargets="CopyBedrockRuntime">
+    <Exec Command="dotnet publish &quot;$(ProjectDir)..\Managed\Host\Host.csproj&quot; -c $(Configuration) --nologo -o &quot;$(IntDir)managed-publish&quot;" />
+    <ItemGroup><ManagedRuntimeFile Include="$(IntDir)managed-publish\wwwroot\**\*" /></ItemGroup>
+    <Copy SourceFiles="@(ManagedRuntimeFile)" DestinationFiles="@(ManagedRuntimeFile->'$(OutDir)Runtime\dotnet\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
+  </Target>
   <Target Name="CopyBedrockRuntime" AfterTargets="Build">
     <ItemGroup><PublicHeader Include="$(ProjectDir)..\include\bedrock\*.h" /></ItemGroup>
     <ItemGroup><RuntimeFile Include="$(ProjectDir)..\Runtime\*.cjs;$(ProjectDir)..\Runtime\*.mjs" /></ItemGroup>

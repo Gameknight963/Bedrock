@@ -234,3 +234,7 @@ The Electron fixture checks the real sandboxed preload/context bridge, preserved
 ## Initialization status
 
 Use `ctx.reportStatus("Preparing resources")` during startup to describe the current task. The Plugins page shows this message while the plugin initializes. Longer tasks also appear in a compact panel when you are outside the Plugins page. Startup errors can be selected or copied from the plugin?s detail page; Retry disables and enables the plugin again.
+
+## C# renderer plugins
+
+Renderer entry points can use `runtime: "dotnet"` with a managed DLL path. The assembly declares its entry type and API requirement through an assembly-level `BedrockPlugin` attribute. See [the managed API](../Managed/README.md) and [the C# example](../Examples/dotnet/ExamplePlugin.cs).

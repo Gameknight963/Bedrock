@@ -15,4 +15,7 @@
   </Project>
   <Project Path="Native/WindowCustomization/WindowCustomization.vcxproj" Id="d8312270-05d3-4be3-b4e9-70d39f4cc127" />
   <Project Path="Native/BackdropBlurFix/BackdropBlurFix.vcxproj" Id="50f5d8cb-66b9-4aa5-9c1a-43ea8c27a618"><Platform Solution="*|x86" Project="x64" /></Project>
+  <Project Path="Managed/Bedrock/Bedrock.csproj"><Platform Project="AnyCPU" /></Project>
+  <Project Path="Managed/Host/Host.csproj"><Platform Project="AnyCPU" /></Project>
+  <Project Path="Examples/dotnet/ManagedExample.csproj"><Platform Project="AnyCPU" /></Project>
 </Solution>

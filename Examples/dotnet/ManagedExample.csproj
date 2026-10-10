@@ -1,0 +1,17 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../../Managed/Bedrock/Bedrock.csproj" Private="false"/>
+  </ItemGroup>
+  <Target Name="PackagePlugin" AfterTargets="Build">
+    <ItemGroup>
+      <PluginFile Include="plugin.json;README.md;renderer.mjs"/>
+    </ItemGroup>
+    <Copy SourceFiles="@(PluginFile)" DestinationFolder="$(TargetDir)"/>
+  </Target>
+</Project>

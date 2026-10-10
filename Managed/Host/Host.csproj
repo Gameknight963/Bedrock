@@ -1,0 +1,22 @@
+<Project Sdk="Microsoft.NET.Sdk.WebAssembly">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <RuntimeIdentifier>browser-wasm</RuntimeIdentifier>
+    <OutputType>Exe</OutputType>
+    <AssemblyName>Bedrock.Host</AssemblyName>
+    <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <WasmBuildNative>false</WasmBuildNative>
+    <PublishTrimmed>false</PublishTrimmed>
+  </PropertyGroup>
+  <ItemGroup>
+    <ProjectReference Include="../Bedrock/Bedrock.csproj"/>
+  </ItemGroup>
+  <Target Name="CopyRuntimeNotices" AfterTargets="Publish">
+    <ItemGroup>
+      <RuntimeNotice Include="$(NuGetPackageRoot)microsoft.netcore.app.runtime.mono.browser-wasm/$(BundledNETCoreAppPackageVersion)/LICENSE.TXT;$(NuGetPackageRoot)microsoft.netcore.app.runtime.mono.browser-wasm/$(BundledNETCoreAppPackageVersion)/THIRD-PARTY-NOTICES.TXT"/>
+    </ItemGroup>
+    <Copy SourceFiles="@(RuntimeNotice)" DestinationFolder="$(PublishDir)wwwroot/licenses"/>
+  </Target>
+</Project>

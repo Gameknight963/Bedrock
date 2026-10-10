@@ -185,7 +185,9 @@ function installRenderer(configuration) {
             let instance;
             try {
                 await settingsReady;
-                record.module ||= await import(record.info.renderer);
+                record.module ||= record.info.manifest.entrypoints.renderer.runtime === 'dotnet'
+                    ? await (await import('bedrock://api/dotnet.mjs')).loadPlugin(record.info)
+                    : await import(record.info.renderer);
                 if (typeof record.module.start !== 'function') throw new Error('Renderer entry point must export start(context)');
                 if (record.module.settings) update(await native.request('settingsDefine', record.info.manifest.id, record.module.settings.definitions));
                 if (!record.info.enabled) { record.status = 'stopped'; notify(); return; }
