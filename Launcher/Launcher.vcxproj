@@ -63,7 +63,7 @@
       <Project>{91A18A72-459F-4D73-B9E0-894A284043EA}</Project>
       <LinkLibraryDependencies>false</LinkLibraryDependencies>
     </ProjectReference>
-    <ProjectReference Include="..\Native\BackdropBlur\Hook.vcxproj" Condition="'$(Platform)'=='x64'">
+    <ProjectReference Include="..\Native\BackdropBlurFix\BackdropBlurFix.vcxproj" Condition="'$(Platform)'=='x64'">
       <Project>{50F5D8CB-66B9-4AA5-9C1A-43EA8C27A618}</Project>
       <LinkLibraryDependencies>false</LinkLibraryDependencies>
     </ProjectReference>
@@ -78,7 +78,7 @@
   </PropertyGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <Target Name="CopyBedrockRuntime" AfterTargets="Build">
-    <Delete Files="$(OutDir)BedrockData\plugins\backdrop-blur\main.js;$(OutDir)BedrockData\plugins\backdrop-blur\native\win32-x64\blur-controller.exe;$(OutDir)BedrockData\plugins\backdrop-blur\native\win32-x64\manual-map-LICENSE.txt" />
+    <Delete Files="$(OutDir)BedrockData\plugins\backdrop-blur\plugin.json;$(OutDir)BedrockData\plugins\backdrop-blur\main.js;$(OutDir)BedrockData\plugins\backdrop-blur\native\win32-x64\blur-controller.exe;$(OutDir)BedrockData\plugins\backdrop-blur\native\win32-x64\blur-hook.dll;$(OutDir)BedrockData\plugins\backdrop-blur\native\win32-x64\manual-map-LICENSE.txt" />
     <Copy SourceFiles="@(PublicHeader)" DestinationFolder="$(OutDir)include\bedrock" SkipUnchangedFiles="true" />
     <Copy Condition="'$(Platform)'=='x64'" SourceFiles="$(ProjectDir)..\Native\PluginHost\bin\$(Platform)\$(Configuration)\native-controller.exe;$(ProjectDir)..\Native\PluginHost\bin\$(Platform)\$(Configuration)\native-host.dll" DestinationFolder="$(OutDir)Runtime\native\win32-x64" SkipUnchangedFiles="true" />
     <Copy Condition="'$(Platform)'=='x64'" SourceFiles="$(ProjectDir)..\lib\manual-map\LICENSE" DestinationFiles="$(OutDir)Runtime\native\win32-x64\manual-map-LICENSE.txt" SkipUnchangedFiles="true" />
@@ -87,7 +87,7 @@
     <Copy SourceFiles="@(BundledPluginFile)" DestinationFiles="@(BundledPluginFile->'$(OutDir)BedrockData\plugins\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
     <Copy SourceFiles="$(ProjectDir)..\Native\Console\bin\$(Platform)\$(Configuration)\console.node" DestinationFolder="$(OutDir)BedrockData\plugins\console\native\win32-$(PluginArchitecture)" SkipUnchangedFiles="true" />
     <Copy SourceFiles="$(ProjectDir)..\Native\WindowCustomization\bin\$(Platform)\$(Configuration)\window.node" DestinationFolder="$(OutDir)BedrockData\plugins\window-customization\native\win32-$(PluginArchitecture)" SkipUnchangedFiles="true" />
-    <Copy Condition="'$(Platform)'=='x64'" SourceFiles="$(ProjectDir)..\Native\BackdropBlur\bin\$(Platform)\$(Configuration)\blur-hook.dll" DestinationFolder="$(OutDir)BedrockData\plugins\backdrop-blur\native\win32-x64" SkipUnchangedFiles="true" />
-    <Copy Condition="'$(Platform)'=='x64'" SourceFiles="$(ProjectDir)..\Native\BackdropBlur\bin\$(Platform)\$(Configuration)\minhook-LICENSE.txt;$(ProjectDir)..\Native\BackdropBlur\bin\$(Platform)\$(Configuration)\Skia-LICENSE.txt;$(ProjectDir)..\Native\BackdropBlur\bin\$(Platform)\$(Configuration)\Chromium-LICENSE.txt" DestinationFolder="$(OutDir)BedrockData\plugins\backdrop-blur\native\win32-x64" SkipUnchangedFiles="true" />
+    <Copy Condition="'$(Platform)'=='x64'" SourceFiles="$(ProjectDir)..\Native\BackdropBlurFix\bin\$(Platform)\$(Configuration)\backdrop-blur-fix.dll" DestinationFolder="$(OutDir)BedrockData\plugins\backdrop-blur-fix\native\win32-x64" SkipUnchangedFiles="true" />
+    <Copy Condition="'$(Platform)'=='x64'" SourceFiles="$(ProjectDir)..\Native\BackdropBlurFix\bin\$(Platform)\$(Configuration)\minhook-LICENSE.txt;$(ProjectDir)..\Native\BackdropBlurFix\bin\$(Platform)\$(Configuration)\Skia-LICENSE.txt;$(ProjectDir)..\Native\BackdropBlurFix\bin\$(Platform)\$(Configuration)\Chromium-LICENSE.txt" DestinationFolder="$(OutDir)BedrockData\plugins\backdrop-blur-fix\native\win32-x64" SkipUnchangedFiles="true" />
   </Target>
 </Project>

@@ -14,6 +14,6 @@
     <Link><GenerateDebugInformation>true</GenerateDebugInformation></Link>
   </ItemDefinitionGroup>
   <ItemGroup><ClCompile Include="controller.c" /><ClCompile Include="mapper.cpp"><CompileAs>CompileAsCpp</CompileAs></ClCompile><ClCompile Include="..\..\lib\manual-map\injector.cpp"><CompileAs>CompileAsCpp</CompileAs><PreprocessorDefinitions>DISABLE_OUTPUT;%(PreprocessorDefinitions)</PreprocessorDefinitions><BufferSecurityCheck>false</BufferSecurityCheck><SDLCheck>false</SDLCheck></ClCompile></ItemGroup>
-  <ItemGroup><ProjectReference Include="Host.vcxproj"><LinkLibraryDependencies>false</LinkLibraryDependencies></ProjectReference></ItemGroup>
+  <ItemGroup><ProjectReference Include="NativeHost.vcxproj"><LinkLibraryDependencies>false</LinkLibraryDependencies></ProjectReference></ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
 </Project>

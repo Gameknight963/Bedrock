@@ -93,7 +93,7 @@ The DLL exports `Bedrock_GetPlugin`, which declares its settings and lifecycle c
 
 Disabling switches the hooks to their original behavior. The DLL and trampolines remain in memory so threads already executing a hook can finish safely; those hooks do not access the plugin context. Re-enabling reuses the loaded DLL. Exiting the GPU process releases that memory.
 
-If Electron restarts the GPU process, Bedrock loads the entrypoint into its replacement and supplies the saved settings. Technical details are in [the native README](../../Native/BackdropBlur/README.md).
+If Electron restarts the GPU process, Bedrock loads the entrypoint into its replacement and supplies the saved settings. Technical details are in [the native README](../../Native/BackdropBlurFix/README.md).
 
 ## Current limitations
 

@@ -1,6 +1,6 @@
 # Native backdrop blur experiment
 
-Build `Launcher/Launcher.vcxproj` for x64. The build produces `blur-hook.dll` and copies it and its notices into the Backdrop Blur Fix plugin. The DLL is written in C and statically links MinHook. It exports the [Bedrock C plugin API](../../include/README.md), with a GPU entrypoint declared in its manifest.
+Build `Launcher/Launcher.vcxproj` for x64. The build produces `backdrop-blur-fix.dll` and copies it and its notices into the Backdrop Blur Fix plugin. The DLL is written in C and statically links MinHook. It exports the [Bedrock C plugin API](../../include/README.md), with a GPU entrypoint declared in its manifest.
 
 ## Lifecycle and diagnostics
 
@@ -41,7 +41,7 @@ Disabling switches the hooks to pass-through behavior. The DLL and trampolines s
 Use a stock Electron 42.11.8 Windows x64 distribution in a scratch directory, with a copy of `electron.exe` named `Discord.exe` there. Build the Release x64 launcher first, then run from the repository root:
 
 ```powershell
-& 'path/to/fixture/Discord.exe' "$PWD/Native/BackdropBlur/tests/fixture.cjs" "$PWD/Native/BackdropBlur/obj/fixture"
+& 'path/to/fixture/Discord.exe' "$PWD/Native/BackdropBlurFix/tests/fixture.cjs" "$PWD/Native/BackdropBlurFix/obj/fixture"
 ```
 
 The fixture defaults to the Release package; set `BEDROCK_TEST_CONFIGURATION=Debug` to test Debug. The fixture uses its own profile and synthetic page. It verifies rounded corners, full/half/zero opacity, GPU process replacement, re-enabling the existing mapped DLL, and restoring the original image when the plugin stops. Captures are written under the supplied output directory. It does not open Discord or access its profile.

@@ -9,7 +9,7 @@ assert(['Debug', 'Release'].includes(configuration));
 const packageRoot = path.resolve(__dirname, `../../../Launcher/bin/x64/${configuration}`);
 const { createPluginManager } = require('../../../Runtime/plugins.cjs');
 const data = path.join(output, 'data');
-const folder = path.join(data, 'plugins', 'backdrop-blur');
+const folder = path.join(data, 'plugins', 'backdrop-blur-fix');
 fs.mkdirSync(folder, { recursive: true });
 fs.cpSync(path.join(packageRoot, 'BedrockData/plugins/backdrop-blur'), folder, { recursive: true });
 assert(!app.commandLine.hasSwitch('disable-gpu-sandbox'), 'Test must retain the GPU sandbox');
@@ -40,7 +40,7 @@ app.whenReady().then(async () => {
         }
     });
     manager.scan();
-    manager.settings('bedrock.backdrop-blur').set('allowGpuInjection', true);
+    manager.settings('bedrock.backdrop-blur-fix').set('allowGpuInjection', true);
     for (let attempt = 0; !installed && !failure && attempt < 100; attempt++)
         await new Promise(resolve => setTimeout(resolve, 100));
     if (failure) throw failure;
@@ -62,7 +62,7 @@ app.whenReady().then(async () => {
     if (failure) throw failure;
     assert(installed >= 2, 'Plugin did not hook the replacement GPU process');
     console.log('GPU restart recovered:', installed >= 2);
-    await manager.setEnabled('bedrock.backdrop-blur', false);
+    await manager.setEnabled('bedrock.backdrop-blur-fix', false);
     const restoredZero = await capture('native-restored-zero');
     assert(zero.equals(restoredZero), 'Zero-opacity patch changed the backdrop');
     console.log('Zero opacity identical:', zero.equals(restoredZero));
@@ -70,18 +70,18 @@ app.whenReady().then(async () => {
     const restored = await capture('native-restored');
     assert(restored.equals(original), 'Disabling the plugin did not restore the original image');
     console.log('Restored original:', restored.equals(original));
-    await manager.setEnabled('bedrock.backdrop-blur', true);
+    await manager.setEnabled('bedrock.backdrop-blur-fix', true);
     for (let attempt = 0; installed < 3 && !failure && attempt < 100; attempt++)
         await new Promise(resolve => setTimeout(resolve, 100));
     if (failure) throw failure;
     assert(installed >= 3, 'Re-enabling did not reuse the mapped DLL');
     await window.webContents.executeJavaScript('document.querySelector(".blur").style.transform="translateX(0.01px)"');
     assert(alpha(await capture('native-reenabled')) < alpha(original), 'Re-enabled hook did not change rendering');
-    manager.settings('bedrock.backdrop-blur').set('allowGpuInjection', false);
+    manager.settings('bedrock.backdrop-blur-fix').set('allowGpuInjection', false);
     await new Promise(resolve => setTimeout(resolve, 300));
     await window.webContents.executeJavaScript('document.querySelector(".blur").style.transform="none"');
     assert((await capture('native-setting-disabled')).equals(original), 'Setting did not restore original rendering');
-    manager.settings('bedrock.backdrop-blur').set('allowGpuInjection', true);
+    manager.settings('bedrock.backdrop-blur-fix').set('allowGpuInjection', true);
     for (let attempt = 0; installed < 4 && !failure && attempt < 100; attempt++)
         await new Promise(resolve => setTimeout(resolve, 100));
     if (failure) throw failure;

@@ -1,13 +1,13 @@
 {
     "manifestVersion": 2,
-    "id": "bedrock.backdrop-blur",
+    "id": "bedrock.backdrop-blur-fix",
     "name": "Backdrop Blur Fix",
     "version": "0.1.0",
     "description": "Experimental replacement compositing for backdrop blur which fixes bleeding on transparent backgrounds.",
     "entrypoints": {
         "gpu": {
             "runtime": "native",
-            "path": "native/win32-x64/blur-hook.dll"
+            "path": "native/win32-x64/backdrop-blur-fix.dll"
         }
     },
     "readme": "README.md"
