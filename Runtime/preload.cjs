@@ -328,7 +328,7 @@ function installRenderer(configuration) {
         .bedrock-button{min-height:30px;padding:5px 10px;border:0;border-radius:5px;background:var(--background-modifier-hover,#35373c);color:inherit;cursor:pointer}
         .bedrock-button:focus-visible,.bedrock-switch:focus-visible{outline:2px solid var(--blurple-50,#5865f2);outline-offset:3px}
         .bedrock-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,280px),1fr));gap:10px}
-        .bedrock-card{border:1px solid var(--border-subtle,#41434a);border-radius:8px;padding:10px;background:var(--background-secondary,#2b2d31)}
+        .bedrock-card{display:flex;flex-direction:column;border:1px solid var(--border-subtle,#41434a);border-radius:8px;padding:10px;background:var(--background-secondary,#2b2d31)}
         .bedrock-card-header{display:flex;align-items:center;justify-content:space-between;gap:12px}.bedrock-card h3{font-size:15px;margin:0;flex:1}.bedrock-icon{width:24px;height:24px;object-fit:contain;border-radius:5px}
         .bedrock-switch{width:42px;height:24px;border:0;border-radius:15px;background:var(--background-modifier-accent,#4e5058);padding:3px;cursor:pointer;flex-shrink:0}
         .bedrock-switch[aria-checked=true]{background:var(--status-positive,#23a559)}.bedrock-switch span{display:block;width:18px;height:18px;background:white;border-radius:50%;transition:transform .12s}
@@ -340,6 +340,8 @@ function installRenderer(configuration) {
         .bedrock-card p{margin:6px 0;font-size:13px}.bedrock-card-description{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}.bedrock-error{white-space:pre-wrap;user-select:text!important;-webkit-user-select:text!important}.bedrock-status{display:flex;align-items:center;gap:6px}.bedrock-spinner{width:10px;height:10px;border:2px solid var(--text-muted,#949ba4);border-right-color:transparent;border-radius:50%;animation:bedrock-spin .8s linear infinite;flex-shrink:0}@keyframes bedrock-spin{to{transform:rotate(360deg)}}@media(prefers-reduced-motion:reduce){.bedrock-spinner{animation:none}}.bedrock-name{padding:0;border:0;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer}
         .bedrock-theme-website{color:var(--text-link,#00a8fc)}
         .bedrock-detail-header{display:flex;align-items:center;gap:12px;margin:16px 0 8px}.bedrock-detail-header h2{margin:0;font-size:20px;flex:1}
+        .bedrock-danger{color:var(--text-danger,#f23f43)!important}.bedrock-card-actions{display:flex;align-items:center;gap:8px;margin-top:auto;padding-top:10px}.bedrock-card-actions .bedrock-danger{background:transparent}.bedrock-card-actions .bedrock-danger:hover:not(:disabled){background:var(--background-modifier-hover,#35373c)}
+        .bedrock-remove-dialog{width:min(440px,calc(100vw - 48px));max-height:calc(100vh - 48px);box-sizing:border-box;padding:0;border:0;border-radius:8px;background:var(--background-secondary,#2b2d31);color:var(--text-normal,#dbdee1);font:14px var(--font-primary,sans-serif);box-shadow:0 8px 32px #0006;overflow:auto}.bedrock-remove-dialog::backdrop{background:#0009}.bedrock-remove-body{padding:24px}.bedrock-remove-dialog .bedrock-remove-body h2{font-size:20px;font-weight:600;line-height:1.3;margin:0 0 12px}.bedrock-remove-dialog .bedrock-remove-body p{font-size:14px;line-height:1.5;margin:0 0 20px}.bedrock-remove-dialog .bedrock-remove-body .bedrock-remove-hint{font-size:12px;margin:16px 0 0;color:var(--text-muted,#949ba4)}.bedrock-remove-option{display:flex;align-items:center;gap:10px;line-height:20px;cursor:pointer}.bedrock-remove-option input{width:18px;height:18px;margin:0;flex-shrink:0;accent-color:var(--blurple-50,#5865f2)}.bedrock-dialog-actions{display:flex;justify-content:flex-end;gap:8px;padding:16px 24px;background:var(--background-tertiary,#1e1f22)}.bedrock-dialog-actions .bedrock-button{font:500 14px var(--font-primary,sans-serif);min-height:34px;padding:7px 16px}.bedrock-dialog-actions .bedrock-confirm-remove{background:var(--button-danger-background,#da373c);color:white}.bedrock-dialog-actions .bedrock-confirm-remove:hover:not(:disabled){background:var(--button-danger-background-hover,#a12828)}.bedrock-remove-dialog button:disabled{opacity:.5;cursor:default}
         .bedrock-tabs{display:flex;gap:24px;border-bottom:1px solid var(--border-subtle,#41434a);margin:18px 0 24px}
         .bedrock-tab{padding:8px 0;background:none;border:0;border-bottom:2px solid var(--blurple-50,#5865f2);color:inherit;font:inherit}
         .bedrock-tab{border-bottom-color:transparent;cursor:pointer}.bedrock-tab[aria-selected=true]{border-bottom-color:var(--blurple-50,#5865f2)}
@@ -481,6 +483,24 @@ function installRenderer(configuration) {
                 h(SettingControl, { plugin, settingKey: key, definition }));
         });
     }
+    function RemovePluginDialog({ plugin, busy, error, cancel, confirm }) {
+        const h = React.createElement;
+        const dialog = React.useRef(null);
+        const [deleteSettings, setDeleteSettings] = React.useState(false);
+        React.useEffect(() => { dialog.current.showModal(); }, []);
+        return h('dialog', { ref: dialog, className: 'bedrock-remove-dialog', 'aria-labelledby': 'bedrock-remove-title',
+            onCancel: event => { if (busy) event.preventDefault(); else cancel(); } },
+            h('div', { className: 'bedrock-remove-body' },
+                h('h2', { id: 'bedrock-remove-title' }, `Remove ${plugin.manifest.name}?`),
+                h('p', null, 'The plugin will be disabled and its installed files deleted.'),
+                h('label', { className: 'bedrock-remove-option' }, h('input', { type: 'checkbox', checked: deleteSettings, disabled: busy,
+                    onChange: event => setDeleteSettings(event.target.checked) }), 'Also delete saved settings'),
+                h('p', { className: 'bedrock-remove-hint' }, 'Tip: Shift-click Remove to skip this dialog and keep saved settings'),
+                error && h('p', { className: 'bedrock-error', role: 'alert' }, error)),
+            h('div', { className: 'bedrock-dialog-actions' },
+                h('button', { className: 'bedrock-button', disabled: busy, autoFocus: true, onClick: cancel }, 'Cancel'),
+                h('button', { className: 'bedrock-button bedrock-confirm-remove', disabled: busy, onClick: () => confirm(deleteSettings) }, busy ? 'Removing...' : 'Remove')));
+    }
     function PluginsPage() {
         React = renderingReact() || React;
         const h = React.createElement;
@@ -489,6 +509,7 @@ function installRenderer(configuration) {
         const [selected, select] = React.useState(null);
         const [tab, setTab] = React.useState('details');
         const [readme, setReadme] = React.useState(null);
+        const [removing, setRemoving] = React.useState(null);
         const page = React.useRef(null);
         const listScroll = React.useRef(0);
         const scrollContainer = () => {
@@ -515,6 +536,20 @@ function installRenderer(configuration) {
             try { await operation(); } catch (error) { setError(error.message); } finally { setBusy(null); }
         };
         const plugins = list();
+        const remove = (plugin, deleteSettings) => run(`remove-${plugin.manifest.id}`, async () => {
+            await setEnabled(plugin.manifest.id, false);
+            update(await native.request('remove', plugin.manifest.id, deleteSettings));
+            setRemoving(null);
+            if (selected === plugin.manifest.id) select(null);
+        });
+        const removalButton = plugin => h('button', { className: 'bedrock-button bedrock-danger', disabled: !!busy,
+            title: 'Shift-click to remove without confirmation. Saved settings are kept',
+            onClick: event => {
+                if (event.shiftKey) remove(plugin, false);
+                else { setError(''); setRemoving(plugin); }
+            } }, 'Remove');
+        const removalDialog = removing && h(RemovePluginDialog, { key: removing.manifest.id, plugin: removing, busy: !!busy, error,
+            cancel: () => { setRemoving(null); setError(''); }, confirm: deleteSettings => remove(removing, deleteSettings) });
         const restartNeeded = plugins.some(plugin => plugin.restartReason || plugin.restartSettings?.length);
         const restartBanner = restartNeeded && h('div', { className: 'bedrock-restart-banner' },
             h('span', { className: 'bedrock-restart' }, 'Some changes require a restart.'),
@@ -524,8 +559,9 @@ function installRenderer(configuration) {
             'aria-label': `Enable ${plugin.manifest.name}`, className: 'bedrock-switch', disabled: !!busy,
             onClick: () => run(plugin.manifest.id, () => setEnabled(plugin.manifest.id, !plugin.enabled)) }, h('span'));
         if (detail) return h('section', { className: 'bedrock-page bedrock-plugin-page', ref: page },
+            removalDialog,
             h('button', { className: 'bedrock-button', onClick: () => { setError(''); select(null); } }, `${backArrow} Back to plugins`),
-            h('div', { className: 'bedrock-detail-header' }, h('h2', null, detail.manifest.name), toggle(detail)),
+            h('div', { className: 'bedrock-detail-header' }, h('h2', null, detail.manifest.name), removalButton(detail), toggle(detail)),
             h('p', { className: 'bedrock-muted' }, `v${detail.manifest.version} ${metadataSeparator} ${displayStatus(detail)} ${metadataSeparator} ${detail.manifest.id}`),
             detail.manifest.description && h('p', null, detail.manifest.description),
             restartBanner,
@@ -553,11 +589,12 @@ function installRenderer(configuration) {
                 readme ? markdown(readme, `bedrock://plugins/${selected}/${(detail.manifest.readme || '').replaceAll('\\', '/')}`)
                     : h('p', { className: 'bedrock-muted' }, readme === null && detail.manifest.readme ? `Loading documentation${ellipsis}` : 'No README provided.')));
         return h('div', { className: 'bedrock-page', ref: page },
+            removalDialog,
             restartBanner,
             h('div', { className: 'bedrock-toolbar' },
                 h('input', { type: 'search', placeholder: 'Search plugins', 'aria-label': 'Search plugins', value: search, onChange: event => setSearch(event.target.value) }),
                 h('button', { className: 'bedrock-button', disabled: !!busy, onClick: () => run('folder', () => native.request('openFolder')) }, 'Open plugins folder'),
-                h('button', { className: 'bedrock-button', disabled: !!busy, onClick: () => run('rescan', async () => update(await native.request('rescan'))) }, 'Refresh list')),
+                h('button', { className: 'bedrock-button', disabled: !!busy, onClick: () => run('rescan', async () => update(await native.request('rescan'))) }, 'Refresh')),
             error && h('p', { className: 'bedrock-error', role: 'alert' }, error),
             ...snapshot.errors.map((item, key) => h('p', { key: `error-${key}`, className: 'bedrock-error' }, `${item.folder}: ${item.error}`)),
             h('div', { className: 'bedrock-grid' }, plugins.filter(plugin =>
@@ -573,8 +610,10 @@ function installRenderer(configuration) {
                     `v${plugin.manifest.version} ${metadataSeparator} ${displayStatus(plugin)}`),
 
                 plugin.restartReason && h('p', { className: 'bedrock-restart' }, `Restart needed: ${plugin.restartReason}`),
-                h('button', { className: 'bedrock-button', onClick: () => open(plugin.manifest.id) }, 'Open')))),
-            plugins.length === 0 && h('p', { className: 'bedrock-muted' }, 'No plugins installed. Open the plugins folder, add a plugin folder, then choose Refresh plugins.'),
+                h('div', { className: 'bedrock-card-actions' },
+                    h('button', { className: 'bedrock-button', onClick: () => open(plugin.manifest.id) }, 'Details'),
+                    removalButton(plugin))))),
+            plugins.length === 0 && h('p', { className: 'bedrock-muted' }, 'No plugins installed. Open the plugins folder, add a plugin folder, then choose Refresh.'),
             plugins.length > 0 && !plugins.some(plugin => `${plugin.manifest.name} ${plugin.manifest.id} ${plugin.manifest.description || ''}`.toLowerCase().includes(search.toLowerCase())) && h('p', { className: 'bedrock-muted' }, 'No plugins match your search.'));
 
     }

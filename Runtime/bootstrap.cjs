@@ -193,6 +193,7 @@ function install(options = {}) {
         if (operation === 'list') return snapshot();
         if (operation === 'enable') { await manager.setEnabled(id, key); return snapshot(); }
         if (operation === 'rescan') { await manager.refresh(); return snapshot(); }
+        if (operation === 'remove') { await manager.remove(id, key === true); return snapshot(); }
         if (operation === 'themesEnable') { themes.setEnabled(id, key); return snapshot(); }
         if (operation === 'themeWebsite') {
             const theme = themes.list().find(theme => theme.id === id);

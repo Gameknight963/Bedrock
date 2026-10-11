@@ -21,6 +21,38 @@ function plugin(root, id, source, overrides = {}, folder = id) {
 }
 const quiet = { log() {} };
 
+test('removing a plugin stops it, deletes its actual folder and retains settings by default', async t => {
+    const root = fixture(t);
+    const directory = plugin(root, 'test.uninstall', `export function start(ctx) {
+        ctx.settings.set('keep', 42);
+        ctx.cleanup(() => globalThis.bedrockUninstallCleaned = true);
+    }`, {}, 'different-folder');
+    t.after(() => { delete globalThis.bedrockUninstallCleaned; });
+    const manager = createPluginManager(root, quiet);
+    manager.scan();
+    await manager.remove('test.uninstall');
+    assert.equal(globalThis.bedrockUninstallCleaned, true);
+    assert.equal(fs.existsSync(directory), false);
+    assert.deepEqual(manager.list(), []);
+    assert.equal(manager.settings('test.uninstall').get('keep'), 42);
+    await manager.refresh();
+    assert.deepEqual(manager.list(), []);
+    await assert.rejects(manager.remove('test.unknown'), /Unknown plugin/);
+});
+
+test('removing with settings deletion clears disk and cached values but preserves other plugin data', async t => {
+    const root = fixture(t);
+    plugin(root, 'test.clear', `export function start(ctx) { ctx.settings.set('saved', true); }`);
+    const manager = createPluginManager(root, quiet);
+    manager.scan();
+    const data = path.join(root, 'data', 'test.clear');
+    fs.writeFileSync(path.join(data, 'other.txt'), 'Keep');
+    await manager.remove('test.clear', true);
+    assert.equal(fs.existsSync(path.join(data, 'settings.json')), false);
+    assert.equal(fs.readFileSync(path.join(data, 'other.txt'), 'utf8'), 'Keep');
+    assert.deepEqual(manager.settings('test.clear').all(), {});
+});
+
 test('refresh unloads removed plugins and retains their saved settings', async t => {
     const root = fixture(t);
     globalThis.bedrockRemoved = { method: () => 1, stopped: false };

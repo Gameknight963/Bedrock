@@ -1,4 +1,5 @@
 const path = require('node:path');
+const fs = require('node:fs');
 const { EventEmitter } = require('node:events');
 const { discover, readJson, writeJson } = require('./storage.cjs');
 const { createNativeEntryPoints } = require('./native.cjs');
@@ -244,7 +245,30 @@ function createPluginManager(root, options = {}) {
         transitions.set(id, work);
         return work;
     }
-    return { root, records, events, settings, list, scan, refresh, setEnabled, registerSettings, definePluginSettings, OptionType, errors: () => discoveryErrors,
+    function remove(id, deleteSettings = false) {
+        refreshWork = refreshWork.catch(() => {}).then(async () => {
+            await setEnabled(id, false);
+            const record = records.get(id);
+            const directory = path.resolve(root, 'plugins');
+            const folder = path.resolve(record.folder);
+            if (path.dirname(folder) !== directory) throw new Error('Plugin folder must be directly inside the plugins directory');
+            record.nativeOwner?.close();
+            fs.rmSync(folder, { recursive: true });
+            records.delete(id);
+            definitions.delete(id);
+            for (const key of restartBaselines.keys()) if (key.startsWith(`${id}/`)) restartBaselines.delete(key);
+            if (deleteSettings) {
+                fs.rmSync(path.join(root, 'data', id, 'settings.json'), { force: true });
+                settingsStores.delete(id);
+            }
+            delete configuration.plugins[id];
+            writeJson(configurationPath, configuration);
+            notify();
+            return list();
+        });
+        return refreshWork;
+    }
+    return { root, records, events, settings, list, scan, refresh, setEnabled, remove, registerSettings, definePluginSettings, OptionType, errors: () => discoveryErrors,
         stopAll: () => Promise.all([...records.values()].map(stop)) };
 }
 

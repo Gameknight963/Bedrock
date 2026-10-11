@@ -2,7 +2,9 @@
 
 Build and run the Launcher project after quitting Discord. Its build copies the runtime next to the executable. No browser debugger, separate Node installation, or JavaScript build step is needed to use Bedrock. The launcher installs `bootstrap.cjs` before Discord's application entry point, then closes the inspector port. The bootstrap supplies the plugin loader and renderer preload for the rest of the session.
 
-In Discord's User Settings, **Bedrock → Plugins** provides search, enable switches, and a detail page with **Details** and **Settings** tabs. **Open plugins folder** opens your installed packages; **Refresh plugins** discovers new ones and unloads removed or invalid packages. This is independently implemented; Equicord's settings behavior informed the design, but its GPL source is not included.
+In Discord's User Settings, **Bedrock → Plugins** provides search, enable switches, and a detail page with **Details** and **Settings** tabs. **Open plugins folder** opens your installed packages; **Refresh** discovers new ones and unloads removed or invalid packages.
+
+Remove a plugin using the **Remove** button on its card or the **Remove** button on its details page. Removal disables the plugin and deletes its installed folder. Saved settings are kept unless you check **Also delete saved settings** in the confirmation dialog. Shift-click **Remove** to skip confirmation and keep settings.
 
 ## Locations
 
