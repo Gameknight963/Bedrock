@@ -32,4 +32,4 @@ function supportsApi(required, available = JAVASCRIPT_API_VERSION) {
     return Boolean(requirement && host && requirement.core[0] === host.core[0] && compareVersions(requirement, host) <= 0);
 }
 
-module.exports = { JAVASCRIPT_API_VERSION, parseVersion, supportsApi };
+module.exports = { JAVASCRIPT_API_VERSION, parseVersion, compareVersions, supportsApi };

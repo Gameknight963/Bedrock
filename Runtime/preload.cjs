@@ -306,6 +306,7 @@ function installRenderer(configuration) {
     }
     function displayStatus(plugin) {
         if (!plugin.enabled) return 'Disabled';
+        if (plugin.updatePending) return 'Restart to load';
         const states = [plugin.mainStatus, plugin.rendererStatus];
         if (plugin.error || states.includes('failed')) return 'Couldn?t start';
         if (plugin.statusMessage && plugin.mainStatus === 'running') return plugin.statusMessage;
@@ -338,6 +339,7 @@ function installRenderer(configuration) {
         .bedrock-readme{line-height:1.6;overflow-wrap:anywhere}.bedrock-readme pre{white-space:pre-wrap;background:var(--background-tertiary,#1e1f22);padding:14px;border-radius:6px}
         .bedrock-readme code{font-family:var(--font-code,monospace)}.bedrock-readme a{color:var(--text-link,#00a8fc)}
         .bedrock-card p{margin:6px 0;font-size:13px}.bedrock-card-description{display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}.bedrock-error{white-space:pre-wrap;user-select:text!important;-webkit-user-select:text!important}.bedrock-status{display:flex;align-items:center;gap:6px}.bedrock-spinner{width:10px;height:10px;border:2px solid var(--text-muted,#949ba4);border-right-color:transparent;border-radius:50%;animation:bedrock-spin .8s linear infinite;flex-shrink:0}@keyframes bedrock-spin{to{transform:rotate(360deg)}}@media(prefers-reduced-motion:reduce){.bedrock-spinner{animation:none}}.bedrock-name{padding:0;border:0;background:none;color:inherit;font:inherit;text-align:left;cursor:pointer}
+        .bedrock-badge{flex-shrink:0;border-radius:4px;padding:3px 6px;font-size:11px;font-weight:500;line-height:16px;background:var(--background-modifier-accent,#4e5058);color:var(--text-normal,#dbdee1)}.bedrock-badge-update{color:var(--text-warning,#f0b232)}
         .bedrock-theme-website{color:var(--text-link,#00a8fc)}
         .bedrock-detail-header{display:flex;align-items:center;gap:12px;margin:16px 0 8px}.bedrock-detail-header h2{margin:0;font-size:20px;flex:1}
         .bedrock-danger{color:var(--text-danger,#f23f43)!important}.bedrock-card-actions{display:flex;align-items:center;gap:8px;margin-top:auto;padding-top:10px}.bedrock-card-actions .bedrock-danger{background:transparent}.bedrock-card-actions .bedrock-danger:hover:not(:disabled){background:var(--background-modifier-hover,#35373c)}
@@ -472,6 +474,7 @@ function installRenderer(configuration) {
     function PluginSettings({ plugin }) {
         const h = React.createElement;
         const definitions = Object.entries(plugin.settingsDefinitions || {});
+        if (plugin.updatePending) return h('p', { className: 'bedrock-muted' }, 'Restart Discord to load this version and its settings.');
         if (!settingsAPI) return h('p', { className: 'bedrock-muted' }, 'Loading settings...');
         if (!definitions.length) return h('p', { className: 'bedrock-muted' },
             plugin.enabled ? 'This plugin has no settings.' : 'Enable this plugin to load its settings, if it provides any.');
@@ -510,6 +513,10 @@ function installRenderer(configuration) {
         const [tab, setTab] = React.useState('details');
         const [readme, setReadme] = React.useState(null);
         const [removing, setRemoving] = React.useState(null);
+        const [view, setView] = React.useState('installed');
+        const [catalog, setCatalog] = React.useState(null);
+        const [catalogLoading, setCatalogLoading] = React.useState(false);
+        const [catalogError, setCatalogError] = React.useState('');
         const page = React.useRef(null);
         const listScroll = React.useRef(0);
         const scrollContainer = () => {
@@ -528,9 +535,17 @@ function installRenderer(configuration) {
         React.useEffect(() => {
             let current = true;
             setReadme(null);
-            if (selected) native.request('readme', selected).then(text => { if (current) setReadme(text); }).catch(error => { if (current) setError(error.message); });
+            if (selected && !list().some(plugin => plugin.manifest.id === selected)) { setReadme(catalog?.plugins.find(entry => entry.manifest.id === selected)?.readme || ''); }
+            else if (selected) native.request('readme', selected).then(text => { if (current) setReadme(text); }).catch(error => { if (current) setError(error.message); });
             return () => { current = false; };
-        }, [selected]);
+        }, [selected, catalog]);
+        const loadCollection = async (force = false) => {
+            setCatalogLoading(true); setCatalogError('');
+            try { setCatalog(await native.request('collection', force)); }
+            catch (error) { setCatalogError(error.message); }
+            finally { setCatalogLoading(false); }
+        };
+        React.useEffect(() => { if (view === 'browse') loadCollection(); }, [view]);
         const run = async (key, operation) => {
             setBusy(key); setError('');
             try { await operation(); } catch (error) { setError(error.message); } finally { setBusy(null); }
@@ -554,15 +569,39 @@ function installRenderer(configuration) {
         const restartBanner = restartNeeded && h('div', { className: 'bedrock-restart-banner' },
             h('span', { className: 'bedrock-restart' }, 'Some changes require a restart.'),
             h('button', { className: 'bedrock-button', disabled: !!busy, onClick: () => run('restart', () => native.request('restart')) }, 'Restart Discord'));
-        const detail = plugins.find(plugin => plugin.manifest.id === selected);
+        const installedDetail = plugins.find(plugin => plugin.manifest.id === selected);
+        const catalogDetail = catalog?.plugins.find(entry => entry.manifest.id === selected);
+        const detail = installedDetail || (catalogDetail && { manifest: catalogDetail.manifest });
+        const source = catalogDetail?.source;
+        const readmeURL = !installedDetail && source?.path && /^[a-f0-9]{40}$/.test(source.commit)
+            ? `https://github.com/bedrock-client/bedrock-plugins/blob/${source.commit}/${source.path}/${detail.manifest.readme || 'README.md'}`
+            : `bedrock://plugins/${selected}/${(detail?.manifest.readme || '').replaceAll('\\', '/')}`;
+        const collectionAction = entry => {
+            const installed = plugins.find(plugin => plugin.manifest.id === entry.manifest.id);
+            const available = entry.updateAvailable && installed?.manifest.version !== entry.manifest.version;
+            const working = busy === `install-${entry.manifest.id}`;
+            return h('button', { className: 'bedrock-button', disabled: !!busy || !!installed && !available,
+                onClick: () => run(`install-${entry.manifest.id}`, async () => {
+                    if (installed) await setEnabled(entry.manifest.id, false);
+                    try { update(await native.request('install', entry.manifest.id, installed?.enabled ?? true)); }
+                    catch (error) { if (installed) await setEnabled(entry.manifest.id, installed.enabled); throw error; }
+                    await loadCollection();
+                }) }, working ? (installed ? 'Updating...' : 'Installing...') : installed ? (available ? 'Update' : 'Installed') : 'Install');
+        };
+        const collectionBadge = entry => {
+            const installed = plugins.find(plugin => plugin.manifest.id === entry.manifest.id);
+            if (!installed) return null;
+            const available = entry.updateAvailable && installed.manifest.version !== entry.manifest.version;
+            return h('span', { className: `bedrock-badge${available ? ' bedrock-badge-update' : ''}` }, available ? 'Update available' : 'Installed');
+        };
         const toggle = plugin => h('button', { role: 'switch', 'aria-checked': plugin.enabled,
             'aria-label': `Enable ${plugin.manifest.name}`, className: 'bedrock-switch', disabled: !!busy,
             onClick: () => run(plugin.manifest.id, () => setEnabled(plugin.manifest.id, !plugin.enabled)) }, h('span'));
         if (detail) return h('section', { className: 'bedrock-page bedrock-plugin-page', ref: page },
             removalDialog,
             h('button', { className: 'bedrock-button', onClick: () => { setError(''); select(null); } }, `${backArrow} Back to plugins`),
-            h('div', { className: 'bedrock-detail-header' }, h('h2', null, detail.manifest.name), removalButton(detail), toggle(detail)),
-            h('p', { className: 'bedrock-muted' }, `v${detail.manifest.version} ${metadataSeparator} ${displayStatus(detail)} ${metadataSeparator} ${detail.manifest.id}`),
+            h('div', { className: 'bedrock-detail-header' }, h('h2', null, detail.manifest.name), catalogDetail && collectionAction(catalogDetail), installedDetail && removalButton(detail), installedDetail && toggle(detail)),
+            h('p', { className: 'bedrock-muted' }, `v${detail.manifest.version} ${metadataSeparator} ${detail.manifest.id}${detail.manifest.license ? ` ${metadataSeparator} ${detail.manifest.license}` : ''}`),
             detail.manifest.description && h('p', null, detail.manifest.description),
             restartBanner,
             error && h('p', { className: 'bedrock-error', role: 'alert' }, error),
@@ -575,7 +614,7 @@ function installRenderer(configuration) {
                     h('button', { className: 'bedrock-button', onClick: () => run('copy', () => navigator.clipboard.writeText(detail.error)) }, 'Copy error'))),
             detail.restartReason && h('p', { className: 'bedrock-restart' }, `Restart needed: ${detail.restartReason}`),
             h('div', { className: 'bedrock-tabs', role: 'tablist', 'aria-label': 'Plugin information' },
-                ['details', 'settings'].map(name => h('button', { key: name, className: 'bedrock-tab', id: `bedrock-${name}-tab`, role: 'tab',
+                (installedDetail ? ['details', 'settings'] : ['details']).map(name => h('button', { key: name, className: 'bedrock-tab', id: `bedrock-${name}-tab`, role: 'tab',
                     'aria-selected': tab === name, tabIndex: tab === name ? 0 : -1, 'aria-controls': `bedrock-${name}-panel`, onClick: () => setTab(name),
                     onKeyDown: event => {
                         if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
@@ -583,12 +622,37 @@ function installRenderer(configuration) {
                         const next = event.key === 'Home' ? 'details' : event.key === 'End' ? 'settings' : tab === 'details' ? 'settings' : 'details';
                         setTab(next); document.getElementById(`bedrock-${next}-tab`).focus();
                     } }, name === 'details' ? 'Details' : 'Settings'))),
-            tab === 'settings' ? h('div', { id: 'bedrock-settings-panel', role: 'tabpanel', 'aria-labelledby': 'bedrock-settings-tab' },
+            tab === 'settings' && installedDetail ? h('div', { id: 'bedrock-settings-panel', role: 'tabpanel', 'aria-labelledby': 'bedrock-settings-tab' },
                 h(PluginSettings, { key: selected, plugin: detail })) :
             h('div', { className: 'bedrock-readme', id: 'bedrock-details-panel', role: 'tabpanel', 'aria-labelledby': 'bedrock-details-tab' },
-                readme ? markdown(readme, `bedrock://plugins/${selected}/${(detail.manifest.readme || '').replaceAll('\\', '/')}`)
+                readme ? markdown(readme, readmeURL)
                     : h('p', { className: 'bedrock-muted' }, readme === null && detail.manifest.readme ? `Loading documentation${ellipsis}` : 'No README provided.')));
+        const navigation = h('div', { className: 'bedrock-tabs', role: 'tablist', 'aria-label': 'Plugin collection' },
+            ['installed', 'browse'].map(name => h('button', { key: name, className: 'bedrock-tab', role: 'tab',
+                'aria-selected': view === name, onClick: () => { select(null); setView(name); } }, name === 'installed' ? 'Installed' : 'Browse')));
+        if (view === 'browse') {
+            const entries = (catalog?.plugins || []).filter(entry =>
+                `${entry.manifest.name} ${entry.manifest.id} ${entry.manifest.description || ''}`.toLowerCase().includes(search.toLowerCase()));
+            return h('div', { className: 'bedrock-page', ref: page }, navigation, restartBanner,
+                h('div', { className: 'bedrock-toolbar' },
+                    h('input', { type: 'search', placeholder: 'Search plugins', 'aria-label': 'Search plugins', value: search, onChange: event => setSearch(event.target.value) }),
+                    h('button', { className: 'bedrock-button', disabled: catalogLoading || !!busy, onClick: () => loadCollection(true) }, 'Check for updates')),
+                catalogLoading && h('p', { className: 'bedrock-muted', role: 'status' }, 'Loading collection...'),
+                catalogError && h('div', { className: 'bedrock-error', role: 'alert' }, catalogError,
+                    h('button', { className: 'bedrock-button', disabled: catalogLoading, onClick: () => loadCollection(true) }, 'Retry')),
+                catalog?.warning && h('p', { className: 'bedrock-muted', role: 'status' }, catalog.warning),
+                error && h('p', { className: 'bedrock-error', role: 'alert' }, error),
+                h('div', { className: 'bedrock-grid' }, entries.map(entry => h('article', { key: entry.manifest.id, className: 'bedrock-card' },
+                    h('div', { className: 'bedrock-card-header' },
+                        h('h3', null, h('button', { className: 'bedrock-name', onClick: () => open(entry.manifest.id) }, entry.manifest.name)), collectionBadge(entry)),
+                    h('p', { className: 'bedrock-card-description' }, entry.manifest.description || 'No description provided.'),
+                    h('p', { className: 'bedrock-muted' }, `v${entry.manifest.version}${entry.manifest.license ? ` ${metadataSeparator} ${entry.manifest.license}` : ''}`),
+                    h('div', { className: 'bedrock-card-actions' },
+                        h('button', { className: 'bedrock-button', onClick: () => open(entry.manifest.id) }, 'Details'), collectionAction(entry))))),
+                catalog && !entries.length && h('p', { className: 'bedrock-muted' }, catalog.plugins.length ? 'No plugins match your search.' : 'No plugins published yet.'));
+        }
         return h('div', { className: 'bedrock-page', ref: page },
+            navigation,
             removalDialog,
             restartBanner,
             h('div', { className: 'bedrock-toolbar' },

@@ -4,6 +4,7 @@ const { EventEmitter } = require('node:events');
 const { discover, readJson, writeJson } = require('./storage.cjs');
 const { createNativeEntryPoints } = require('./native.cjs');
 const { createContext, createPatcher } = require('./context.cjs');
+const { parseVersion, compareVersions } = require('./api-version.cjs');
 const { definePluginSettings, OptionType, normalizeDefinitions, validateSetting, bindPluginSettings } = require('./settings.mjs');
 
 function createPluginManager(root, options = {}) {
@@ -20,6 +21,7 @@ function createPluginManager(root, options = {}) {
     const settingsStores = new Map();
     const definitions = new Map();
     const restartBaselines = new Map();
+    const loadedPackages = new Set();
 
     function registerSettings(id, schema) {
         if (!records.has(id)) throw new Error('Unknown plugin');
@@ -87,15 +89,17 @@ function createPluginManager(root, options = {}) {
         return [...records.values()].map(record => ({
             manifest: record.manifest, enabled: enabled(record.manifest.id),
             mainStatus: record.status, statusMessage: record.statusMessage || null, error: record.error || null,
+            updatePending: !!record.pendingUpdate,
             restartReason: record.restartReason || null,
             settingsDefinitions: definitions.get(record.manifest.id) || {},
             restartSettings: restartSettings(record.manifest.id),
-            renderer: ['javascript', 'dotnet'].includes(record.manifest.entrypoints.renderer?.runtime) ? `bedrock://plugins/${record.manifest.id}/${record.manifest.entrypoints.renderer.path.replaceAll('\\', '/').split('/').map(encodeURIComponent).join('/')}` : null,
+            renderer: !record.pendingUpdate && ['javascript', 'dotnet'].includes(record.manifest.entrypoints.renderer?.runtime) ? `bedrock://plugins/${record.manifest.id}/${record.manifest.entrypoints.renderer.path.replaceAll('\\', '/').split('/').map(encodeURIComponent).join('/')}` : null,
             settings: settings(record.manifest.id).all()
         }));
     }
 
     function start(record) {
+        if (record.pendingUpdate) return;
         const hasNative = Object.values(record.manifest.entrypoints).some(entry => entry.runtime === 'native');
         if ((!record.entries.main && !hasNative) || record.instance || !enabled(record.manifest.id)) return;
         record.status = 'starting';
@@ -205,6 +209,7 @@ function createPluginManager(root, options = {}) {
             const record = { ...plugin, status: plugin.entries.main || Object.values(plugin.manifest.entrypoints).some(entry => entry.runtime === 'native') ? 'stopped' : 'renderer-only' };
             try { settings(id); } catch (error) { discoveryErrors.push({ folder: id, error: error.message }); continue; }
             records.set(id, record);
+            loadedPackages.add(id);
             start(record);
         }
         notify();
@@ -245,6 +250,61 @@ function createPluginManager(root, options = {}) {
         transitions.set(id, work);
         return work;
     }
+    function installPackage(folder, id, restoreEnabled) {
+        refreshWork = refreshWork.catch(() => {}).then(async () => {
+            const previous = records.get(id);
+            const manifest = readJson(path.join(folder, 'plugin.json'), null);
+            if (previous && compareVersions(parseVersion(manifest.version), parseVersion(previous.manifest.version)) <= 0)
+                throw new Error('The installed plugin is already at this version or newer.');
+            const target = previous?.folder || path.join(root, 'plugins', id);
+            if (path.dirname(path.resolve(target)) !== path.resolve(root, 'plugins')) throw new Error('Plugin folder leaves the plugins directory.');
+            if (!previous && fs.existsSync(target)) throw new Error('A folder already exists at this plugin location. Refresh the installed list first.');
+            const wasEnabled = typeof restoreEnabled === 'boolean' ? restoreEnabled : previous ? enabled(id) : true;
+            const needsRestart = loadedPackages.has(id);
+            const cache = path.join(root, 'cache');
+            fs.mkdirSync(cache, { recursive: true });
+            const backup = fs.mkdtempSync(path.join(cache, 'previous-plugin-'));
+            let moved = false;
+            try {
+                if (previous) {
+                    await setEnabled(id, false);
+                    fs.renameSync(target, path.join(backup, 'plugin'));
+                    moved = true;
+                }
+                try { fs.renameSync(folder, target); }
+                catch (error) {
+                    if (moved) { fs.renameSync(path.join(backup, 'plugin'), target); moved = false; }
+                    throw error;
+                }
+            } catch (error) {
+                if (previous && !moved) await setEnabled(id, wasEnabled);
+                throw new Error(`Could not install ${id}: ${error.message}${moved ? `. Previous files are preserved in ${backup}` : ''}`);
+            } finally {
+                if (!moved) fs.rmSync(backup, { recursive: true, force: true });
+            }
+            previous?.nativeOwner?.close();
+            records.delete(id);
+            definitions.delete(id);
+            for (const key of restartBaselines.keys()) if (key.startsWith(`${id}/`)) restartBaselines.delete(key);
+            configuration.plugins[id] = { ...(configuration.plugins[id] || {}), enabled: needsRestart ? false : wasEnabled };
+            writeJson(configurationPath, configuration);
+            scan();
+            const record = records.get(id);
+            if (needsRestart && record) {
+                record.pendingUpdate = true;
+                record.restartReason = 'Restart Discord to load the installed version.';
+                configuration.plugins[id].enabled = wasEnabled;
+                writeJson(configurationPath, configuration);
+            }
+            if (moved) {
+                try { fs.rmSync(backup, { recursive: true, force: true }); }
+                catch (error) { log('warn', id, [`Updated plugin; previous files remain at ${backup}: ${error.message}`]); }
+            }
+            notify();
+            return list();
+        });
+        return refreshWork;
+    }
     function remove(id, deleteSettings = false) {
         refreshWork = refreshWork.catch(() => {}).then(async () => {
             await setEnabled(id, false);
@@ -268,7 +328,7 @@ function createPluginManager(root, options = {}) {
         });
         return refreshWork;
     }
-    return { root, records, events, settings, list, scan, refresh, setEnabled, remove, registerSettings, definePluginSettings, OptionType, errors: () => discoveryErrors,
+    return { root, records, events, settings, list, scan, refresh, setEnabled, remove, installPackage, registerSettings, definePluginSettings, OptionType, errors: () => discoveryErrors,
         stopAll: () => Promise.all([...records.values()].map(stop)) };
 }
 

@@ -73,7 +73,25 @@ fs.mkdirSync(path.dirname(fixtureNative), { recursive: true });
 fs.copyFileSync(path.join(customizationPackage, 'native/win32-x64/window.node'), fixtureNative);
 const nativeWindows = require(fixtureNative);
 
-require('../bootstrap.cjs').install({ root, allowURL: url => url.origin === 'https://bedrock.test', restart: () => { globalThis.fixtureRestartRequested = true; return true; } });
+const { archive } = require('./collection-fixture.cjs');
+const crypto = require('node:crypto');
+const remoteManifest = { manifestVersion: 2, id: 'test.catalog', name: 'Catalog plugin', version: '1.0.0',
+    description: 'Remote install fixture.', entrypoints: { renderer: { runtime: 'javascript', path: 'renderer.js', requiresApi: '1.0.0' } }, readme: 'README.md', license: 'MIT' };
+const remoteArchive = archive([['catalog/plugin.json', JSON.stringify(remoteManifest)], ['catalog/renderer.js', 'export function start() { globalThis.fixtureDownloaded = true; }'], ['catalog/README.md', '# Remote documentation'], ['catalog/LICENSE', 'MIT']]);
+const remoteEntry = { manifest: remoteManifest, readme: '# Remote documentation', package: {
+    url: 'https://github.com/bedrock-client/bedrock-plugins/releases/download/collection-2026-10-10-1/test.catalog-1.0.0.zip',
+    size: remoteArchive.length, sha256: crypto.createHash('sha256').update(remoteArchive).digest('hex') } };
+const updateManifest = { manifestVersion: 2, id: 'bedrock.example', name: 'Example plugin', version: '1.1.0',
+    entrypoints: { main: { runtime: 'javascript', path: 'main.js', requiresApi: '1.0.0' } }, readme: 'README.md', license: 'MIT' };
+const updateArchive = archive([['example/plugin.json', JSON.stringify(updateManifest)], ['example/main.js', 'export function start() { globalThis.fixtureUpdatedCode = true; }'], ['example/README.md', '# Updated documentation'], ['example/LICENSE', 'MIT']]);
+const updateEntry = { manifest: updateManifest, readme: '# Updated documentation', package: {
+    url: 'https://github.com/bedrock-client/bedrock-plugins/releases/download/collection-2026-10-10-1/bedrock.example-1.1.0.zip',
+    size: updateArchive.length, sha256: crypto.createHash('sha256').update(updateArchive).digest('hex') } };
+const collectionFetch = async url => {
+    if (url.endsWith('/latest')) return Response.json({ assets: [{ name: 'catalog.json', browser_download_url: 'https://github.com/bedrock-client/bedrock-plugins/releases/download/collection-2026-10-10-1/catalog.json' }] });
+    return url.endsWith('/catalog.json') ? Response.json({ catalogVersion: 1, plugins: [remoteEntry, updateEntry] }) : new Response(url.endsWith('/bedrock.example-1.1.0.zip') ? updateArchive : remoteArchive);
+};
+require('../bootstrap.cjs').install({ root, collection: { fetch: collectionFetch }, allowURL: url => url.origin === 'https://bedrock.test', restart: () => { globalThis.fixtureRestartRequested = true; return true; } });
 globalThis.BedrockMain.scan();
 const themesDirectory = globalThis.BedrockMain.themes.directory;
 fs.mkdirSync(path.join(themesDirectory, 'assets'));
@@ -299,7 +317,7 @@ app.whenReady().then(async () => {
             globalThis.savedPluginScroll = container.scrollTop;
         })()`);
         assert.equal(await evaluate('globalThis.savedPluginScroll > 0'), true);
-        await evaluate(`[...document.querySelectorAll('button')].find(button => button.textContent === 'Open').click()`);
+        await evaluate(`[...document.querySelectorAll('button')].find(button => button.textContent === 'Details').click()`);
         await waitFor(`document.querySelector('.bedrock-readme strong')`);
         assert.equal(await evaluate(`document.querySelector('.bedrock-readme h1').textContent`), 'Example documentation');
         assert.equal(await evaluate(`getComputedStyle(document.querySelector('.bedrock-readme strong')).userSelect`), 'text');
@@ -413,6 +431,32 @@ app.whenReady().then(async () => {
         await evaluate(`Bedrock.plugins.rescan()`);
         await waitFor(`!Bedrock.plugins.list().some(plugin => plugin.manifest.id === 'test.example') && fixtureMethod() === 1 && document.querySelector('[data-bedrock-plugin="test.example"]') === null`);
         assert.equal(globalThis.BedrockMain.records.has('test.example'), false);
+        await evaluate(`(() => {
+            const input = document.querySelector('input[type=search]');
+            Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, '');
+            input.dispatchEvent(new Event('input', { bubbles: true }));
+            [...document.querySelectorAll('[role=tab]')].find(button => button.textContent === 'Browse').click();
+        })()`);
+        await waitFor(`document.querySelector('.bedrock-card h3')?.textContent === 'Catalog plugin'`);
+        assert.equal(await evaluate(`document.querySelector('.bedrock-card').querySelector('.bedrock-badge') === null`), true);
+        assert.equal(await evaluate(`document.querySelector('.bedrock-badge-update')?.textContent`), 'Update available');
+        await evaluate(`document.querySelector('.bedrock-card-actions button').click()`);
+        await waitFor(`document.querySelector('.bedrock-readme h1')?.textContent === 'Remote documentation'`);
+        assert.equal(await evaluate(`document.querySelector('#bedrock-settings-tab') === null`), true);
+        await evaluate(`[...document.querySelectorAll('button')].find(button => button.textContent === 'Install').click()`);
+        await waitFor(`globalThis.fixtureDownloaded === true`);
+        await evaluate(`[...document.querySelectorAll('button')].find(button => button.textContent.includes('Back to plugins')).click()`);
+        await waitFor(`document.querySelector('.bedrock-badge')?.textContent === 'Installed'`);
+        assert.equal(await evaluate(`[...document.querySelectorAll('.bedrock-card-actions button')].find(button => button.textContent === 'Installed').disabled`), true);
+        await evaluate(`[...document.querySelectorAll('.bedrock-card-actions button')].find(button => button.textContent === 'Update').click()`);
+        await waitFor(`globalThis.Bedrock.plugins.list().find(plugin => plugin.manifest.id === 'bedrock.example')?.manifest.version === '1.1.0'`);
+        assert.equal(globalThis.fixtureUpdatedCode, undefined, 'new code waits for restart');
+        assert.equal(globalThis.BedrockMain.list().find(plugin => plugin.manifest.id === 'bedrock.example').enabled, true);
+        await waitFor(`document.querySelectorAll('.bedrock-badge-update').length === 0`);
+        window.setSize(900, 650);
+        await evaluate(`(() => { const container = document.querySelector('.bedrock-page').parentElement; container.style.height = 'auto'; container.scrollTop = 0; })()`);
+        await new Promise(resolve => setTimeout(resolve, 150));
+        fs.writeFileSync(path.join(__dirname, 'obj/collection.png'), (await window.webContents.capturePage()).toPNG());
         await evaluate(`fixtureShowThemes()`);
         await waitFor(`document.querySelector('[aria-label="Search themes"]') && document.querySelector('[aria-label="Enable Live theme"]')`);
         assert.equal(await evaluate(`document.querySelector('.bedrock-theme-website').href`), 'https://example.com/theme');
@@ -435,7 +479,7 @@ app.whenReady().then(async () => {
         assert.equal(await evaluate(`(async () => (await fetch('bedrock://themes/%2e%2e/settings.json')).status)()`), 404);
         await window.loadURL('https://unrelated.test/');
         assert.equal(await evaluate(`globalThis.Bedrock === undefined && globalThis.BedrockNative === undefined`), true, 'bridge must not appear on unrelated origins');
-        console.log('PASS: Real Electron native maximize/restore, F11 fullscreen transitions and cleanup, preload, settings, restart requests, persistence, subscriptions, synchronization, Markdown and origin checks.');
+        console.log('PASS: Real Electron native maximize/restore, F11 fullscreen transitions and cleanup, preload, settings, restart requests, persistence, subscriptions, synchronization, Markdown, collection browsing/install/update and origin checks.');
         await globalThis.BedrockMain.stopAll();
         globalThis.BedrockMain.themes.close();
         window.destroy();

@@ -8,6 +8,8 @@ const { startControl } = require('./control.cjs');
 const { createLogFeed } = require('./logs.cjs');
 const { createJsSession, rendererJsRequest } = require('./javascript.cjs');
 const { createThemeManager } = require('./themes.cjs');
+const { createCollection } = require('./collection.cjs');
+const { parseVersion, compareVersions } = require('./api-version.cjs');
 
 function install(options = {}) {
     if (globalThis.BedrockMain) return true;
@@ -86,6 +88,7 @@ function install(options = {}) {
         }
     });
     const themes = createThemeManager(root, () => { revision++; broadcast('bedrock:update', snapshot()); });
+    const collection = createCollection(root, manager, options.collection);
     app.once('will-quit', () => themes.close());
     manager.events.on('settings.changed', () => { revision++; broadcast('bedrock:update', snapshot()); });
     manager.events.on('plugin.event', value => broadcast('bedrock:event', value));
@@ -193,6 +196,14 @@ function install(options = {}) {
         if (operation === 'list') return snapshot();
         if (operation === 'enable') { await manager.setEnabled(id, key); return snapshot(); }
         if (operation === 'rescan') { await manager.refresh(); return snapshot(); }
+        if (operation === 'collection') {
+            const catalog = await collection.load(id === true);
+            return { ...catalog, plugins: catalog.plugins.map(entry => {
+                const installed = manager.records.get(entry.manifest.id);
+                return { ...entry, updateAvailable: !!installed && compareVersions(parseVersion(entry.manifest.version), parseVersion(installed.manifest.version)) > 0 };
+            }) };
+        }
+        if (operation === 'install') { await collection.install(id, key); return snapshot(); }
         if (operation === 'remove') { await manager.remove(id, key === true); return snapshot(); }
         if (operation === 'themesEnable') { themes.setEnabled(id, key); return snapshot(); }
         if (operation === 'themeWebsite') {
