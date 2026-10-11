@@ -6,6 +6,10 @@ In Discord's User Settings, **Bedrock → Plugins** provides search, enable swit
 
 Remove a plugin using the **Remove** button on its card or the **Remove** button on its details page. Removal disables the plugin and deletes its installed folder. Saved settings are kept unless you check **Also delete saved settings** in the confirmation dialog. Shift-click **Remove** to skip confirmation and keep settings.
 
+The **Browse** tab lists the official plugin collection. Open **Details** to read a plugin's README, or choose **Install** on its card. Installed plugins show an **Installed** badge; newer published versions show **Update available** and an **Update** button. Updates preserve settings and enable state, and require restarting Discord to load the new code.
+
+**Check for updates** refreshes the online catalog. Browsing downloads only the catalog; plugin packages download when you install or update them. Bedrock checks each package against its published SHA-256 checksum and validates it before installation. The catalog is cached for one hour, and the last saved catalog remains available when GitHub cannot be reached.
+
 ## Locations
 
 `BedrockData` lives beside `BedrockLauncher.exe`, independently of the working directory. Each build has its own data folder. Plugins are distributed separately from the launcher; builds do not overwrite installed plugins or their data. Keep `BedrockData` when updating or moving Bedrock, and use a writable installation folder.
