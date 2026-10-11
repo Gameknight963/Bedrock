@@ -70,7 +70,7 @@ Chromium explicitly selects this blend mode in [PrepareCanvasForRPDQ](https://gi
 
 ## Native plugin experiment
 
-The original PowerShell byte patch has been replaced by a native C plugin using MinHook under `Native/BackdropBlurFix`. Building the x64 launcher copies the DLL into the Backdrop Blur Fix plugin. See [the plugin README](../../Plugins/backdrop-blur-fix/README.md) for enabling it and its limitations.
+The original PowerShell byte patch has been replaced by a native C plugin using MinHook in the [plugin collection](https://github.com/bedrock-client/bedrock-plugins/tree/main/plugins/backdrop-blur-fix). Its collection build packages the DLL separately from the launcher. See [the plugin README](https://github.com/bedrock-client/bedrock-plugins/blob/main/plugins/backdrop-blur-fix/README.md) for its behavior and limitations.
 
 The hook clips replacement to the backdrop shape and uses Skia's arithmetic blender to preserve the original according to effect opacity. It skips Chromium's subsequent clearing operation for that layer, since the rounded clip already provides coverage. Cases with additional filters, shader masks or split draw regions retain Chromium's original behavior.
 

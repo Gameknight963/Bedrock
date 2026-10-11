@@ -6,7 +6,7 @@ In Discord's User Settings, **Bedrock → Plugins** provides search, enable swit
 
 ## Locations
 
-`BedrockData` lives beside `BedrockLauncher.exe`, independently of the working directory. Each build has its own data folder. Builds update bundled plugin files without replacing settings, themes, or other installed plugins. Keep `BedrockData` when updating or moving Bedrock, and use a writable installation folder.
+`BedrockData` lives beside `BedrockLauncher.exe`, independently of the working directory. Each build has its own data folder. Plugins are distributed separately from the launcher; builds do not overwrite installed plugins or their data. Keep `BedrockData` when updating or moving Bedrock, and use a writable installation folder.
 
 ```text
 BedrockData\
@@ -238,3 +238,5 @@ Use `ctx.reportStatus("Preparing resources")` during startup to describe the cur
 ## C# renderer plugins
 
 Renderer entry points can use `runtime: "dotnet"` with a managed DLL path. The assembly declares its entry type and API requirement through an assembly-level `BedrockPlugin` attribute. See [the managed API](../Managed/README.md) and [the C# example](../Examples/dotnet/ExamplePlugin.cs).
+
+The Electron smoke fixture also exercises Window Customization and Selectable Settings from the separate plugin collection. Build that collection first. It defaults to a sibling `bedrock-plugins` checkout; set `BEDROCK_PLUGINS_ROOT` to use another location.

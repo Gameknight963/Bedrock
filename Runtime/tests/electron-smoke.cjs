@@ -1,3 +1,4 @@
+const pluginCollection = require('node:path').resolve(process.env.BEDROCK_PLUGINS_ROOT || require('node:path').join(__dirname, '../../../bedrock-plugins'));
 const fs = require('node:fs');
 const path = require('node:path');
 const os = require('node:os');
@@ -60,16 +61,16 @@ fs.writeFileSync(path.join(pendingDirectory, 'renderer.js'), `export async funct
 } export function stop() { globalThis.fixturePendingStopped = true; }`);
 
 const selectableDirectory = path.join(root, 'plugins', 'selectable-settings');
-fs.cpSync(path.join(__dirname, '../../Plugins/selectable-settings'), selectableDirectory, { recursive: true });
+fs.cpSync(path.join(pluginCollection, 'plugins/selectable-settings'), selectableDirectory, { recursive: true });
 
 fs.cpSync(path.join(__dirname, '../../Examples/example'), path.join(root, 'plugins', 'shipped-example'), { recursive: true });
-const customizationPackage = path.join(__dirname, '../../Launcher/bin/x64/Debug/BedrockData/plugins/window-customization');
+const customizationPackage = path.join(pluginCollection, '.artifacts/packages/window-customization');
 if (!fs.existsSync(path.join(customizationPackage, 'native/win32-x64/window.node')))
-    throw new Error('Build the x64 Debug Launcher project first to package the native window customization plugin.');
-fs.cpSync(path.join(__dirname, '../../Plugins/window-customization'), path.join(root, 'plugins', 'window-customization'), { recursive: true });
+    throw new Error('Build the plugin collection first to package window customization.');
+fs.cpSync(path.join(pluginCollection, 'plugins/window-customization'), path.join(root, 'plugins', 'window-customization'), { recursive: true });
 const fixtureNative = path.join(root, 'plugins/window-customization/native/win32-x64/window.node');
 fs.mkdirSync(path.dirname(fixtureNative), { recursive: true });
-fs.copyFileSync(path.join(__dirname, '../../Native/WindowCustomization/bin/x64/Debug/window.node'), fixtureNative);
+fs.copyFileSync(path.join(customizationPackage, 'native/win32-x64/window.node'), fixtureNative);
 const nativeWindows = require(fixtureNative);
 
 require('../bootstrap.cjs').install({ root, allowURL: url => url.origin === 'https://bedrock.test', restart: () => { globalThis.fixtureRestartRequested = true; return true; } });
@@ -178,14 +179,14 @@ app.whenReady().then(async () => {
         const caption = 0x00c00000, thickFrame = 0x00040000, systemMenu = 0x00080000;
         assert.throws(() => nativeWindows.customize(123, {}), /Buffer/);
         assert.throws(() => nativeWindows.getStyle(Buffer.alloc(1)), /size/);
-        assert.throws(() => nativeWindows.getStyle(Buffer.alloc(handle.length)), /Win32 error/);
+        assert.throws(() => nativeWindows.getStyle(Buffer.alloc(handle.length)), /Windows error 1400/);
         const customization = nativeWindows.customize(handle, { nativeTitlebar: true, resizableFrame: true });
         assert.equal(nativeWindows.getStyle(handle) & (caption | thickFrame | systemMenu), caption | thickFrame | systemMenu);
         customization.update({ nativeTitlebar: false, resizableFrame: false });
         assert.equal(nativeWindows.getStyle(handle), originalStyle);
         customization.dispose();
         customization.dispose();
-        assert.throws(() => customization.update({ nativeTitlebar: true, resizableFrame: true }), /Win32 error/);
+        assert.throws(() => customization.update({ nativeTitlebar: true, resizableFrame: true }), /Windows error 1400/);
         await nativeProbe.loadURL('https://discord.com/native-fixture');
         assert.equal(nativeWindows.getStyle(handle) & thickFrame, thickFrame, 'main plugin restores resizing on a real Discord-origin window');
         globalThis.BedrockMain.settings('bedrock.window-customization').set('nativeTitlebar', true);
@@ -402,7 +403,7 @@ app.whenReady().then(async () => {
         assert.equal(await evaluate(`(() => {
             const grid = document.querySelector('.bedrock-grid');
             const card = grid.querySelector('.bedrock-card');
-            return Math.abs(card.getBoundingClientRect().width * 2 + 14 - grid.getBoundingClientRect().width) < 1;
+            return Math.abs(card.getBoundingClientRect().width * 2 + Number.parseFloat(getComputedStyle(grid).columnGap) - grid.getBoundingClientRect().width) < 1;
         })()`), true, 'a single card keeps the width of one column');
         window.setSize(580, 600);
         await waitFor(`getComputedStyle(document.querySelector('.bedrock-grid')).gridTemplateColumns.split(' ').length === 1`);

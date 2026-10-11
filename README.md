@@ -35,12 +35,12 @@ installing Bedrock before Discord's entry point executes. It then schedules Node
 checks that the local debugger port refuses new connections. The installed bootstrap 
 hosts plugins after that port closes.
 
-The project build copies the runtime and bundled plugins beside the executable.
+The project build copies the runtime beside the executable. Plugins are packaged separately in [bedrock-plugins](https://github.com/bedrock-client/bedrock-plugins); a fresh build does not include plugins.
 Keep `Runtime` and `BedrockData` with the launcher when moving it. Plugins live in
 `BedrockData\plugins`. Persisted data is stored in the sibling `data`
 folder. In Discord settings, **Bedrock → Plugins** provides live enable switches,
-search and README details. See [the API documentation](../Runtime/README.md) and
-[the example package](../Examples/example/plugin.json).
+search and README details. See [the API documentation](Runtime/README.md) and
+[the example package](Examples/example/plugin.json).
 
 ### What file does what
 

@@ -7,17 +7,15 @@ Bedrock's own code is licensed under the [MIT license](LICENSE). The dependencie
 | .NET browser WASM runtime | MIT and included dependency notices | Shared renderer runtime for C# plugins |
 | jsmn | MIT | Launcher and native plugin IPC JSON parsing |
 | Google Test v1.18.0 | BSD-3-Clause | Native tests only; not linked into the launcher |
-| Node.js v24.0.0 Node-API headers | MIT | Native window customization module |
-| Titlebar For Everyone | MIT | Reference for Chromium native frame message handling |
+| Node.js v24.0.0 Node-API headers | MIT | SDK headers and native test fixtures |
 | SkiaSharp 4.153.1 | MIT | Backdrop blur experiment only; restored through NuGet |
-| Skia | BSD-3-Clause | SkiaSharp experiment and backdrop blur function signatures |
-| Chromium | BSD-3-Clause | Backdrop blur function signatures |
+| Skia | BSD-3-Clause | SkiaSharp experiment |
 | Simple Manual Map Injector | MIT | Native plugin controller |
-| MinHook v1.3.4 | BSD-2-Clause | Backdrop blur hook and native symbol decoder |
+| MinHook v1.3.4 | BSD-2-Clause | Native symbol decoder and SDK dependency |
 
 The backdrop blur experiment uses [SkiaSharp](https://github.com/mono/SkiaSharp/blob/main/LICENSE.txt) and its native [Skia](https://github.com/google/skia/blob/main/LICENSE) dependency. SkiaSharp and its native library are not included in Bedrock's launcher or plugins. Their licenses and additional native dependency notices must accompany any separately distributed experiment binaries.
 
-The native backdrop blur plugin contains function signatures derived from Electron 42.11.8's Chromium/Skia implementation. Its native folder includes [Chromium's license](Native/BackdropBlurFix/Chromium-LICENSE.txt) and [Skia's license](Native/BackdropBlurFix/Skia-LICENSE.txt), alongside MinHook's notice. Keep these files with distributed plugin binaries.
+Separately distributed plugins maintain their dependency notices in the [plugin collection](https://github.com/bedrock-client/bedrock-plugins/blob/main/THIRD_PARTY_NOTICES.md).
 
 ## Simple Manual Map Injector
 
@@ -32,7 +30,7 @@ The native backdrop blur plugin contains function signatures derived from Electr
 - Source: [TsudaKageyu/minhook](https://github.com/TsudaKageyu/minhook/tree/c3fcafdc10146beb5919319d0683e44e3c30d537)
 - Vendored files: `lib/minhook`
 - Commit: `c3fcafdc10146beb5919319d0683e44e3c30d537`
-- License and included disassembler notices: [lib/minhook/LICENSE.txt](lib/minhook/LICENSE.txt). This file must accompany distributed backdrop blur binaries and the native host, which uses MinHook?s HDE64 instruction decoder.
+- License and included disassembler notices: [lib/minhook/LICENSE.txt](lib/minhook/LICENSE.txt). This file must accompany the native host, which uses MinHook?s HDE64 instruction decoder.
 
 ## jsmn
 
@@ -154,34 +152,6 @@ IN THE SOFTWARE.
 
 The Node.js license applies to all parts of Node.js that are not externally
 maintained libraries.
-```
-
-## Titlebar For Everyone
-
-Author: Ingan121. Source: [titlebar-for-everyone.wh.cpp](https://github.com/ramensoftware/windhawk-mods/blob/main/mods/titlebar-for-everyone.wh.cpp). The native window module uses its approach of letting Windows handle non-client frame messages for Chromium windows.
-
-```text
-MIT License
-
-Copyright Ingan121
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice and this permission notice shall be included in all
-copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
 ```
 
 The managed runtime is built from the .NET SDK browser runtime pack. Distributions include its LICENSE.TXT and THIRD-PARTY-NOTICES.TXT under Runtime/dotnet/licenses.
