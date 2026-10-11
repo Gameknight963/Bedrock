@@ -21,6 +21,73 @@ function plugin(root, id, source, overrides = {}, folder = id) {
 }
 const quiet = { log() {} };
 
+test('unload runs once on removal, after stopping, including an already disabled plugin', async t => {
+    const root = fixture(t);
+    globalThis.bedrockUnloadEvents = [];
+    t.after(() => { delete globalThis.bedrockUnloadEvents; });
+    const directory = plugin(root, 'test.unload', `export function start() { globalThis.bedrockUnloadEvents.push('start'); }
+        export function stop() { globalThis.bedrockUnloadEvents.push('stop'); }
+        export async function unload() { await Promise.resolve(); globalThis.bedrockUnloadEvents.push('unload'); }`);
+    const manager = createPluginManager(root, quiet);
+    manager.scan();
+    await manager.setEnabled('test.unload', false);
+    assert.deepEqual(globalThis.bedrockUnloadEvents, ['start', 'stop']);
+    await manager.remove('test.unload');
+    assert.deepEqual(globalThis.bedrockUnloadEvents, ['start', 'stop', 'unload']);
+    assert.equal(fs.existsSync(directory), false);
+});
+
+test('restart-required unloading preserves files until startup, without needing the plugin to run again', async t => {
+    const root = fixture(t);
+    const directory = plugin(root, 'test.restart-unload', `export function start(ctx) { ctx.settings.set('saved', 42); }
+        export function unload() { return {requiresRestart: true, reason: 'Native finalizers remain registered'}; }`);
+    const manager = createPluginManager(root, quiet);
+    manager.scan();
+    await manager.remove('test.restart-unload');
+    assert.equal(fs.existsSync(directory), true);
+    assert.deepEqual(manager.list(), []);
+    assert.equal(manager.pendingChanges()[0].reason, 'Native finalizers remain registered');
+    await manager.refresh();
+    assert.deepEqual(manager.list(), []);
+    const reopened = createPluginManager(root, quiet);
+    assert.equal(fs.existsSync(directory), false);
+    assert.equal(reopened.settings('test.restart-unload').get('saved'), 42);
+});
+
+test('failed unloading and failed stopping defer removal; unsafe unload is not called after a stop failure', async t => {
+    const root = fixture(t);
+    globalThis.bedrockUnsafeUnload = false;
+    t.after(() => { delete globalThis.bedrockUnsafeUnload; });
+    const first = plugin(root, 'test.unload-failure', `export function start() {} export function unload() { throw new Error('dispose failed'); }`);
+    const second = plugin(root, 'test.stop-failure', `export function start() {} export function stop() { throw new Error('work is still running'); }
+        export function unload() { globalThis.bedrockUnsafeUnload = true; }`);
+    const manager = createPluginManager(root, quiet);
+    manager.scan();
+    await manager.remove('test.unload-failure');
+    await manager.remove('test.stop-failure');
+    assert.equal(fs.existsSync(first), true);
+    assert.equal(fs.existsSync(second), true);
+    assert.equal(globalThis.bedrockUnsafeUnload, false);
+    assert.equal(manager.pendingChanges().length, 2);
+});
+
+test('renderer unloading can defer package removal and updating', async t => {
+    const root = fixture(t);
+    const directory = plugin(root, 'test.renderer-unload', `export function start() {}`);
+    const calls = [];
+    const manager = createPluginManager(root, { ...quiet, unloadRenderer(id) { calls.push(id); return { requiresRestart: true, reason: 'Renderer needs restart' }; } });
+    manager.scan();
+    const staged = path.join(root, 'staged');
+    fs.mkdirSync(staged);
+    writeJson(path.join(staged, 'plugin.json'), { ...manager.list()[0].manifest, version: '1.1.0' });
+    fs.writeFileSync(path.join(staged, 'main.js'), 'export function start() {}');
+    await manager.installPackage(staged, 'test.renderer-unload');
+    assert.equal(fs.existsSync(directory), true);
+    assert.equal(manager.pendingChanges()[0].action, 'update');
+    assert.equal(manager.pendingChanges()[0].reason, 'Renderer needs restart');
+    assert.deepEqual(calls, ['test.renderer-unload']);
+});
+
 test('removing a plugin stops it, deletes its actual folder and retains settings by default', async t => {
     const root = fixture(t);
     const directory = plugin(root, 'test.uninstall', `export function start(ctx) {
@@ -157,7 +224,7 @@ test('incompatible manifests are rejected before executing either entry point', 
     const root = fixture(t);
     const marker = path.join(root, 'executed');
     const source = `require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'yes');`;
-    plugin(root, 'test.newer', source, { entrypoints: { main: { runtime: 'javascript', path: 'main.js', requiresApi: '1.0.1' } } });
+    plugin(root, 'test.newer', source, { entrypoints: { main: { runtime: 'javascript', path: 'main.js', requiresApi: '1.1.1' } } });
     plugin(root, 'test.major', source, { entrypoints: { main: { runtime: 'javascript', path: 'main.js', requiresApi: '2.0.0' } } });
     plugin(root, 'test.short', source, { entrypoints: { main: 'main.js' } });
     plugin(root, 'test.missing', source, { entrypoints: { main: { runtime: 'javascript', path: 'main.js' } } });
@@ -165,7 +232,7 @@ test('incompatible manifests are rejected before executing either entry point', 
     plugin(root, 'test.toplevel', source, { apiVersion: 1 });
     plugin(root, 'test.renderer', source, { entrypoints: {
         main: { runtime: 'javascript', path: 'main.js', requiresApi: '1.0.0' },
-        renderer: { runtime: 'javascript', path: 'main.js', requiresApi: '1.1.0' }
+        renderer: { runtime: 'javascript', path: 'main.js', requiresApi: '1.2.0' }
     } });
     const manager = createPluginManager(root, quiet);
     manager.scan();

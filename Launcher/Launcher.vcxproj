@@ -53,6 +53,7 @@
     <None Include="..\THIRD_PARTY_NOTICES.md" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\Native\Addons\Addons.vcxproj"><LinkLibraryDependencies>false</LinkLibraryDependencies></ProjectReference>
     <ProjectReference Include="..\Native\PluginHost\NativeController.vcxproj" Condition="'$(Platform)'=='x64'">
       <Project>{A2FF9A45-7F03-4FF1-9EC6-4D0EC3B384B5}</Project><LinkLibraryDependencies>false</LinkLibraryDependencies>
     </ProjectReference>
@@ -64,6 +65,9 @@
     <Copy SourceFiles="@(ManagedRuntimeFile)" DestinationFiles="@(ManagedRuntimeFile->'$(OutDir)Runtime\dotnet\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
   </Target>
   <Target Name="CopyBedrockRuntime" AfterTargets="Build">
+    <PropertyGroup><AddonArchitecture Condition="'$(Platform)'=='x64'">x64</AddonArchitecture><AddonArchitecture Condition="'$(Platform)'=='Win32'">ia32</AddonArchitecture></PropertyGroup>
+    <Copy SourceFiles="$(ProjectDir)..\Native\Addons\bin\$(Platform)\$(Configuration)\addons.node" DestinationFolder="$(OutDir)Runtime\native\win32-$(AddonArchitecture)" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="$(ProjectDir)..\lib\node-api\LICENSE" DestinationFolder="$(OutDir)Runtime\native\win32-$(AddonArchitecture)" SkipUnchangedFiles="true" />
     <ItemGroup><PublicHeader Include="$(ProjectDir)..\include\bedrock\*.h" /></ItemGroup>
     <ItemGroup><RuntimeFile Include="$(ProjectDir)..\Runtime\*.cjs;$(ProjectDir)..\Runtime\*.mjs" /></ItemGroup>
     <Copy SourceFiles="@(PublicHeader)" DestinationFolder="$(OutDir)include\bedrock" SkipUnchangedFiles="true" />

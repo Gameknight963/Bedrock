@@ -134,3 +134,84 @@ test('failed replacement restores the previous files and enable state', async t 
     assert.equal(fs.existsSync(path.join(data.root, 'plugins', data.manifest.id, 'main.js')), true);
     await manager.stopAll();
 });
+
+
+test('locked plugin removal leaves its package intact and finishes before the next scan', async t => {
+    const data = fixture(t);
+    const manager = createPluginManager(data.root, { log() {} });
+    manager.scan();
+    await createCollection(data.root, manager, { fetch: data.fetch }).install(data.manifest.id);
+    const directory = path.join(data.root, 'plugins', data.manifest.id);
+    const rename = fs.renameSync;
+    const lock = t.mock.method(fs, 'renameSync', (source, target) => {
+        if (source === directory) throw Object.assign(new Error('Loaded DLL'), { code: 'EPERM' });
+        return rename(source, target);
+    });
+    await manager.remove(data.manifest.id);
+    assert.deepEqual(manager.list(), []);
+    assert.equal(fs.existsSync(path.join(directory, 'main.js')), true);
+    assert.equal(manager.pendingChanges()[0].action, 'remove');
+    await manager.refresh();
+    assert.deepEqual(manager.list(), []);
+    lock.mock.restore();
+    const reopened = createPluginManager(data.root, { log() {} });
+    reopened.scan();
+    assert.equal(fs.existsSync(directory), false);
+    assert.deepEqual(reopened.pendingChanges(), []);
+    assert.equal(reopened.settings(data.manifest.id).get('ran'), true);
+});
+
+test('locked update stages its replacement for startup and preserves enable state and settings', async t => {
+    const data = fixture(t);
+    const manager = createPluginManager(data.root, { log() {} });
+    manager.scan();
+    await createCollection(data.root, manager, { fetch: data.fetch }).install(data.manifest.id);
+    manager.settings(data.manifest.id).set('saved', 42);
+    const directory = path.join(data.root, 'plugins', data.manifest.id), staged = path.join(data.root, 'staged');
+    fs.mkdirSync(staged);
+    writeJson(path.join(staged, 'plugin.json'), { ...data.manifest, version: '1.1.0' });
+    fs.writeFileSync(path.join(staged, 'main.js'), 'export function start() {}');
+    fs.writeFileSync(path.join(staged, 'README.md'), '# New');
+    const rename = fs.renameSync;
+    const lock = t.mock.method(fs, 'renameSync', (source, target) => {
+        if (source === directory) throw Object.assign(new Error('Loaded DLL'), { code: 'EPERM' });
+        return rename(source, target);
+    });
+    await manager.installPackage(staged, data.manifest.id);
+    assert.equal(manager.list()[0].manifest.version, '1.0.0');
+    assert.equal(manager.list()[0].enabled, true);
+    assert.equal(manager.list()[0].updatePending, true);
+    assert.equal(manager.pendingChanges()[0].action, 'update');
+    await manager.setEnabled(data.manifest.id, false);
+    lock.mock.restore();
+    const reopened = createPluginManager(data.root, { log() {} });
+    reopened.scan();
+    assert.equal(reopened.list()[0].manifest.version, '1.1.0');
+    assert.equal(reopened.list()[0].enabled, false);
+    assert.equal(reopened.settings(data.manifest.id).get('saved'), 42);
+    assert.deepEqual(reopened.pendingChanges(), []);
+    await reopened.stopAll();
+});
+
+
+test('removed packages outside the plugins folder are cleaned on startup when native files unlock', async t => {
+    const data = fixture(t);
+    const manager = createPluginManager(data.root, { log() {} });
+    manager.scan();
+    await createCollection(data.root, manager, { fetch: data.fetch }).install(data.manifest.id);
+    const remove = fs.rmSync;
+    const lock = t.mock.method(fs, 'rmSync', (target, options) => {
+        if (path.basename(target).startsWith('removed-plugin-')) throw Object.assign(new Error('Loaded DLL'), { code: 'EPERM' });
+        return remove(target, options);
+    });
+    await manager.remove(data.manifest.id);
+    assert.deepEqual(manager.list(), []);
+    assert.equal(fs.existsSync(path.join(data.root, 'plugins', data.manifest.id)), false);
+    const actions = JSON.parse(fs.readFileSync(path.join(data.root, 'cache/plugin-actions.json'), 'utf8'));
+    assert.equal(actions[0].action, 'cleanup');
+    lock.mock.restore();
+    const reopened = createPluginManager(data.root, { log() {} });
+    reopened.scan();
+    assert.equal(fs.existsSync(path.join(data.root, 'cache', actions[0].folder)), false);
+    assert.deepEqual(reopened.list(), []);
+});

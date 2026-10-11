@@ -5,6 +5,8 @@ const { discover, readJson, writeJson } = require('./storage.cjs');
 const { createNativeEntryPoints } = require('./native.cjs');
 const { createContext, createPatcher } = require('./context.cjs');
 const { parseVersion, compareVersions } = require('./api-version.cjs');
+const { createPackageActions, locked } = require('./package-actions.cjs');
+const { unloadPlugin } = require('./lifecycle.mjs');
 const { definePluginSettings, OptionType, normalizeDefinitions, validateSetting, bindPluginSettings } = require('./settings.mjs');
 
 function createPluginManager(root, options = {}) {
@@ -17,6 +19,8 @@ function createPluginManager(root, options = {}) {
     events.setMaxListeners(0);
     const patch = createPatcher();
     const log = options.log || ((level, id, args) => console[level](`[Bedrock:${id}]`, ...args));
+    const packageActions = createPackageActions(root, configuration, log);
+    packageActions.apply();
     let discoveryErrors = [];
     const settingsStores = new Map();
     const definitions = new Map();
@@ -105,6 +109,8 @@ function createPluginManager(root, options = {}) {
         record.status = 'starting';
         record.statusMessage = null;
         record.error = null;
+        record.stopFailed = false;
+        record.unloadPromise = null;
         let owned;
         try {
             if (!record.module) {
@@ -135,6 +141,9 @@ function createPluginManager(root, options = {}) {
                         async stop() {
                             const results = await Promise.allSettled([native.stop(), Promise.resolve().then(() => javascript?.stop?.())]);
                             for (const result of results) if (result.status === 'rejected') throw result.reason;
+                        },
+                        unload() {
+                            return javascript?.unload?.();
                         }
                     };
                 }
@@ -197,15 +206,26 @@ function createPluginManager(root, options = {}) {
                     timer = setTimeout(() => reject(new Error('stop() did not finish within 10 seconds')), 10000);
                 })]);
             } finally { clearTimeout(timer); }
-        } catch (error) { record.error = error.message; log('error', record.manifest.id, [error]); }
+        } catch (error) { record.stopFailed = true; record.error = error.message; log('error', record.manifest.id, [error]); }
         finally { instance.dispose(); record.instance = null; record.startPromise = null; record.status = 'stopped'; }
+    }
+
+    function unload(record) {
+        return record.unloadPromise ||= (async () => {
+            const renderer = await unloadPlugin(() => options.unloadRenderer?.(record.manifest.id));
+            const main = record.stopFailed ? { requiresRestart: true, reason: `Plugin cleanup failed: ${record.error}` }
+                : await unloadPlugin(() => record.module?.unload?.());
+            if (main.error) log('error', record.manifest.id, [main.reason]);
+            if (renderer.error) log('error', record.manifest.id, [renderer.reason]);
+            return main.requiresRestart ? main : renderer;
+        })();
     }
 
     function scan(discovered = discover(root)) {
         discoveryErrors = discovered.errors;
         for (const error of discoveryErrors) log('error', 'loader', [`${error.folder}: ${error.error}`]);
         for (const [id, plugin] of discovered.plugins) {
-            if (records.has(id)) continue;
+            if (records.has(id) || packageActions.has(id)) continue;
             const record = { ...plugin, status: plugin.entries.main || Object.values(plugin.manifest.entrypoints).some(entry => entry.runtime === 'native') ? 'stopped' : 'renderer-only' };
             try { settings(id); } catch (error) { discoveryErrors.push({ folder: id, error: error.message }); continue; }
             records.set(id, record);
@@ -225,6 +245,7 @@ function createPluginManager(root, options = {}) {
                 if (discovered.plugins.has(id)) continue;
                 const removal = (transitions.get(id) || Promise.resolve()).catch(() => {}).then(async () => {
                     await stop(record);
+                    await unload(record);
                     record.nativeOwner?.close();
                     records.delete(id);
                     definitions.delete(id);
@@ -242,6 +263,7 @@ function createPluginManager(root, options = {}) {
             const record = records.get(id);
             if (!record) throw new Error(`Unknown plugin: ${id}`);
             configuration.plugins[id] = { ...(configuration.plugins[id] || {}), enabled: !!value };
+            packageActions.setEnabled(id, !!value);
             writeJson(configurationPath, configuration);
             if (value) start(record); else await stop(record);
             notify();
@@ -252,6 +274,7 @@ function createPluginManager(root, options = {}) {
     }
     function installPackage(folder, id, restoreEnabled) {
         refreshWork = refreshWork.catch(() => {}).then(async () => {
+            if (packageActions.has(id)) throw new Error('Restart Discord to finish the pending change for this plugin.');
             const previous = records.get(id);
             const manifest = readJson(path.join(folder, 'plugin.json'), null);
             if (previous && compareVersions(parseVersion(manifest.version), parseVersion(previous.manifest.version)) <= 0)
@@ -261,13 +284,25 @@ function createPluginManager(root, options = {}) {
             if (!previous && fs.existsSync(target)) throw new Error('A folder already exists at this plugin location. Refresh the installed list first.');
             const wasEnabled = typeof restoreEnabled === 'boolean' ? restoreEnabled : previous ? enabled(id) : true;
             const needsRestart = loadedPackages.has(id);
+            if (previous) {
+                await setEnabled(id, false);
+                const result = await unload(previous);
+                if (result.requiresRestart) {
+                    packageActions.update(id, path.basename(target), folder, wasEnabled, result.reason);
+                    previous.pendingUpdate = true;
+                    previous.restartReason = result.reason;
+                    configuration.plugins[id].enabled = wasEnabled;
+                    writeJson(configurationPath, configuration);
+                    notify();
+                    return list();
+                }
+            }
             const cache = path.join(root, 'cache');
             fs.mkdirSync(cache, { recursive: true });
             const backup = fs.mkdtempSync(path.join(cache, 'previous-plugin-'));
             let moved = false;
             try {
                 if (previous) {
-                    await setEnabled(id, false);
                     fs.renameSync(target, path.join(backup, 'plugin'));
                     moved = true;
                 }
@@ -277,6 +312,15 @@ function createPluginManager(root, options = {}) {
                     throw error;
                 }
             } catch (error) {
+                if (previous && !moved && locked(error)) {
+                    packageActions.update(id, path.basename(target), folder, wasEnabled);
+                    previous.pendingUpdate = true;
+                    previous.restartReason = 'Restart Discord to finish updating this plugin.';
+                    configuration.plugins[id].enabled = wasEnabled;
+                    writeJson(configurationPath, configuration);
+                    notify();
+                    return list();
+                }
                 if (previous && !moved) await setEnabled(id, wasEnabled);
                 throw new Error(`Could not install ${id}: ${error.message}${moved ? `. Previous files are preserved in ${backup}` : ''}`);
             } finally {
@@ -298,7 +342,7 @@ function createPluginManager(root, options = {}) {
             }
             if (moved) {
                 try { fs.rmSync(backup, { recursive: true, force: true }); }
-                catch (error) { log('warn', id, [`Updated plugin; previous files remain at ${backup}: ${error.message}`]); }
+                catch (error) { packageActions.cleanup(id, path.basename(backup)); log('info', id, ['Previous native files will be deleted next time Discord starts.']); }
             }
             notify();
             return list();
@@ -312,8 +356,26 @@ function createPluginManager(root, options = {}) {
             const directory = path.resolve(root, 'plugins');
             const folder = path.resolve(record.folder);
             if (path.dirname(folder) !== directory) throw new Error('Plugin folder must be directly inside the plugins directory');
+            const result = await unload(record);
+            const cache = path.join(root, 'cache');
+            fs.mkdirSync(cache, { recursive: true });
+            const discarded = fs.mkdtempSync(path.join(cache, 'removed-plugin-'));
+            let moved = false;
+            try {
+                if (result.requiresRestart) packageActions.remove(id, path.basename(folder), deleteSettings, result.reason);
+                else { fs.renameSync(folder, path.join(discarded, 'plugin')); moved = true; }
+            }
+            catch (error) {
+                if (!locked(error)) throw new Error(`Could not remove ${record.manifest.name}: ${error.message}`);
+                packageActions.remove(id, path.basename(folder), deleteSettings);
+            } finally {
+                if (!moved) fs.rmSync(discarded, { recursive: true, force: true });
+            }
             record.nativeOwner?.close();
-            fs.rmSync(folder, { recursive: true });
+            if (moved) {
+                try { fs.rmSync(discarded, { recursive: true, force: true }); }
+                catch (error) { packageActions.cleanup(id, path.basename(discarded)); log('info', id, ['Loaded native files will be deleted next time Discord starts.']); }
+            }
             records.delete(id);
             definitions.delete(id);
             for (const key of restartBaselines.keys()) if (key.startsWith(`${id}/`)) restartBaselines.delete(key);
@@ -328,7 +390,7 @@ function createPluginManager(root, options = {}) {
         });
         return refreshWork;
     }
-    return { root, records, events, settings, list, scan, refresh, setEnabled, remove, installPackage, registerSettings, definePluginSettings, OptionType, errors: () => discoveryErrors,
+    return { root, records, events, settings, list, scan, refresh, setEnabled, remove, installPackage, registerSettings, definePluginSettings, OptionType, pendingChanges: packageActions.list, errors: () => discoveryErrors,
         stopAll: () => Promise.all([...records.values()].map(stop)) };
 }
 

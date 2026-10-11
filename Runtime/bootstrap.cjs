@@ -35,7 +35,7 @@ function install(options = {}) {
         } catch { return false; }
     };
     let revision = 0;
-    const snapshot = () => ({ revision, plugins: manager.list(), errors: manager.errors(), themes: themes.list(), themeErrors: themes.errors() });
+    const snapshot = () => ({ revision, plugins: manager.list(), pendingPluginChanges: manager.pendingChanges(), errors: manager.errors(), themes: themes.list(), themeErrors: themes.errors() });
     function broadcast(channel, value) {
         for (const window of windows) {
             const contents = window.webContents;
@@ -44,6 +44,12 @@ function install(options = {}) {
     }
     const logs = createLogFeed(root);
     const manager = createPluginManager(root, {
+        async unloadRenderer(id) {
+            const results = await Promise.all([...windows].filter(window => !window.isDestroyed() &&
+                !window.webContents.isDestroyed() && allowed(window.webContents.getURL())).map(window =>
+                window.webContents.executeJavaScript(`globalThis.Bedrock?.plugins?.unload?.(${JSON.stringify(id)})`)));
+            return results.find(result => result?.requiresRestart);
+        },
         nativeJavaScript(target, identity, op, message) {
             const window = [...windows].find(window => !window.isDestroyed() &&
                 !window.webContents.isDestroyed() && allowed(window.webContents.getURL()) &&
@@ -109,7 +115,7 @@ function install(options = {}) {
         ses.protocol.handle('bedrock', request => {
             try {
                 const url = new URL(request.url);
-                if (request.method === 'GET' && url.hostname === 'api' && ['/settings.mjs', '/dotnet.mjs'].includes(url.pathname))
+                if (request.method === 'GET' && url.hostname === 'api' && ['/settings.mjs', '/dotnet.mjs', '/lifecycle.mjs'].includes(url.pathname))
                     return new Response(fs.readFileSync(path.join(__dirname, url.pathname.slice(1))), { headers: {
                         'Content-Type': 'text/javascript', 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-store'
                     } });
@@ -250,7 +256,9 @@ function install(options = {}) {
     });
     globalThis.BedrockMain = manager;
     manager.themes = themes;
-    globalThis.Bedrock = { definePluginSettings: manager.definePluginSettings, OptionType: manager.OptionType };
+    const { createAddonLoader } = require('./addons.cjs');
+    const addons = createAddonLoader({ directory: options.addonDirectory });
+    globalThis.Bedrock = { definePluginSettings: manager.definePluginSettings, OptionType: manager.OptionType, ...addons };
     themes.scan();
     manager.scan();
     startControl(app);

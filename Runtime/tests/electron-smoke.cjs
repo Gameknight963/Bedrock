@@ -24,6 +24,7 @@ fs.writeFileSync(path.join(directory, 'main.js'), `
             isValid: value => value.length > 0 || 'Title cannot be empty.' }
     });
     export function start(ctx) { ctx.windows.beforeCreate(options => { options.width = 580; }); ctx.events.on('hello', event => ctx.settings.set('event', event.value)); }
+    export function unload() { globalThis.fixtureMainUnloaded = true; }
 `);
 fs.writeFileSync(path.join(directory, 'helper.js'), `export const color = '#00ff00';`);
 fs.writeFileSync(path.join(directory, 'renderer.js'), `
@@ -49,6 +50,7 @@ fs.writeFileSync(path.join(directory, 'renderer.js'), `
         await ctx.events.emit('hello', 'cross-process');
     }
     export function stop() { globalThis.fixtureStops = (globalThis.fixtureStops || 0) + 1; }
+    export function unload() { globalThis.fixtureRendererUnloaded = true; }
 `);
 fs.writeFileSync(path.join(directory, 'README.md'), '# Example documentation\n\n**Bold** and `code`.\n\n- First\n- Second\n\n<script>globalThis.badReadme = true</script>\n\n[Bad link](javascript:alert(1))\n');
 const pendingDirectory = path.join(root, 'plugins', 'pending');
@@ -61,6 +63,14 @@ fs.writeFileSync(path.join(pendingDirectory, 'renderer.js'), `export async funct
 } export function stop() { globalThis.fixturePendingStopped = true; }`);
 
 const selectableDirectory = path.join(root, 'plugins', 'selectable-settings');
+const restartDirectory = path.join(root, 'plugins', 'restart-unload');
+fs.mkdirSync(restartDirectory);
+writeJson(path.join(restartDirectory, 'plugin.json'), { manifestVersion: 2,
+    id: 'test.restart-unload', name: 'Restart unload', version: '1.0.0',
+    entrypoints: { renderer: { runtime: 'javascript', path: 'renderer.js', requiresApi: '1.1.0' } } });
+fs.writeFileSync(path.join(restartDirectory, 'renderer.js'), `export function start() {} export function unload() {
+    return { requiresRestart: true, reason: 'Fixture callbacks remain registered' };
+}`);
 fs.cpSync(path.join(pluginCollection, 'plugins/selectable-settings'), selectableDirectory, { recursive: true });
 
 fs.cpSync(path.join(__dirname, '../../Examples/example'), path.join(root, 'plugins', 'shipped-example'), { recursive: true });
@@ -71,7 +81,7 @@ fs.cpSync(path.join(pluginCollection, 'plugins/window-customization'), path.join
 const fixtureNative = path.join(root, 'plugins/window-customization/native/win32-x64/window.node');
 fs.mkdirSync(path.dirname(fixtureNative), { recursive: true });
 fs.copyFileSync(path.join(customizationPackage, 'native/win32-x64/window.node'), fixtureNative);
-const nativeWindows = require(fixtureNative);
+let nativeWindows;
 
 const { archive } = require('./collection-fixture.cjs');
 const crypto = require('node:crypto');
@@ -91,7 +101,17 @@ const collectionFetch = async url => {
     if (url.endsWith('/latest')) return Response.json({ assets: [{ name: 'catalog.json', browser_download_url: 'https://github.com/bedrock-client/bedrock-plugins/releases/download/collection-2026-10-10-1/catalog.json' }] });
     return url.endsWith('/catalog.json') ? Response.json({ catalogVersion: 1, plugins: [remoteEntry, updateEntry] }) : new Response(url.endsWith('/bedrock.example-1.1.0.zip') ? updateArchive : remoteArchive);
 };
-require('../bootstrap.cjs').install({ root, collection: { fetch: collectionFetch }, allowURL: url => url.origin === 'https://bedrock.test', restart: () => { globalThis.fixtureRestartRequested = true; return true; } });
+require('../bootstrap.cjs').install({ root, addonDirectory: path.join(__dirname, '../../Native/Addons/bin/x64/Debug'), collection: { fetch: collectionFetch }, allowURL: url => url.origin === 'https://bedrock.test', restart: () => { globalThis.fixtureRestartRequested = true; return true; } });
+nativeWindows = Bedrock.require(fixtureNative);
+const lockedPackage = path.join(root, 'plugins', 'locked-addon');
+fs.mkdirSync(lockedPackage, { recursive: true });
+writeJson(path.join(lockedPackage, 'plugin.json'), { manifestVersion: 2, id: 'test.locked-addon', name: 'Locked addon', version: '1.0.0',
+    entrypoints: { main: { runtime: 'javascript', path: 'main.js', requiresApi: '1.0.0' } } });
+fs.copyFileSync(path.join(pluginCollection, '.artifacts/packages/console/native/win32-x64/console.node'), path.join(lockedPackage, 'console.node'));
+fs.writeFileSync(path.join(lockedPackage, 'main.js'), "exports.start = () => require('./console.node');");
+const managedConsole = path.join(root, 'plugins', 'console');
+fs.cpSync(path.join(pluginCollection, '.artifacts/packages/console'), managedConsole, { recursive: true });
+globalThis.BedrockMain.settings('bedrock.console').set('visible', false);
 globalThis.BedrockMain.scan();
 const themesDirectory = globalThis.BedrockMain.themes.directory;
 fs.mkdirSync(path.join(themesDirectory, 'assets'));
@@ -431,6 +451,8 @@ app.whenReady().then(async () => {
         await evaluate(`Bedrock.plugins.rescan()`);
         await waitFor(`!Bedrock.plugins.list().some(plugin => plugin.manifest.id === 'test.example') && fixtureMethod() === 1 && document.querySelector('[data-bedrock-plugin="test.example"]') === null`);
         assert.equal(globalThis.BedrockMain.records.has('test.example'), false);
+        assert.equal(globalThis.fixtureMainUnloaded, true);
+        assert.equal(await evaluate('globalThis.fixtureRendererUnloaded'), true);
         await evaluate(`(() => {
             const input = document.querySelector('input[type=search]');
             Object.getOwnPropertyDescriptor(HTMLInputElement.prototype, 'value').set.call(input, '');
@@ -457,6 +479,22 @@ app.whenReady().then(async () => {
         await evaluate(`(() => { const container = document.querySelector('.bedrock-page').parentElement; container.style.height = 'auto'; container.scrollTop = 0; })()`);
         await new Promise(resolve => setTimeout(resolve, 150));
         fs.writeFileSync(path.join(__dirname, 'obj/collection.png'), (await window.webContents.capturePage()).toPNG());
+        await globalThis.BedrockMain.setEnabled('bedrock.console', false);
+        assert.throws(() => fs.unlinkSync(path.join(managedConsole, 'native/win32-x64/console.node')), { code: 'EPERM' });
+        await globalThis.BedrockMain.remove('bedrock.console');
+        assert.equal(fs.existsSync(managedConsole), false, 'managed Console removal unloads its addon and deletes the package');
+        assert.equal(globalThis.BedrockMain.pendingChanges().some(change => change.id === 'bedrock.console'), false);
+        await globalThis.BedrockMain.remove('test.locked-addon');
+        await globalThis.BedrockMain.remove('test.restart-unload');
+        assert.equal(fs.existsSync(restartDirectory), true, 'renderer restart requests leave the package intact');
+        assert.equal(globalThis.BedrockMain.list().some(plugin => plugin.manifest.id === 'test.restart-unload'), false);
+        assert.equal(globalThis.BedrockMain.pendingChanges().some(change => change.id === 'test.restart-unload'
+            && change.reason === 'Fixture callbacks remain registered'), true);
+        assert.equal(globalThis.BedrockMain.records.has('test.locked-addon'), false);
+        const pendingActions = JSON.parse(fs.readFileSync(path.join(root, 'cache/plugin-actions.json'), 'utf8'));
+        assert.equal(pendingActions.some(action => action.id === 'test.locked-addon' && ['cleanup', 'remove'].includes(action.action)), true, 'loaded addon files are deleted at next launch');
+        await globalThis.BedrockMain.refresh();
+        assert.equal(globalThis.BedrockMain.records.has('test.locked-addon'), false, 'refresh must not reload a plugin pending removal');
         await evaluate(`fixtureShowThemes()`);
         await waitFor(`document.querySelector('[aria-label="Search themes"]') && document.querySelector('[aria-label="Enable Live theme"]')`);
         assert.equal(await evaluate(`document.querySelector('.bedrock-theme-website').href`), 'https://example.com/theme');

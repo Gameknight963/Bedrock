@@ -4,7 +4,7 @@ Build and run the Launcher project after quitting Discord. Its build copies the 
 
 In Discord's User Settings, **Bedrock → Plugins** provides search, enable switches, and a detail page with **Details** and **Settings** tabs. **Open plugins folder** opens your installed packages; **Refresh** discovers new ones and unloads removed or invalid packages.
 
-Remove a plugin using the **Remove** button on its card or the **Remove** button on its details page. Removal disables the plugin and deletes its installed folder. Saved settings are kept unless you check **Also delete saved settings** in the confirmation dialog. Shift-click **Remove** to skip confirmation and keep settings.
+Remove a plugin using the **Remove** button on its card or the **Remove** button on its details page. Removal disables the plugin, calls its unload callbacks, and deletes its installed folder. Saved settings are kept unless you check **Also delete saved settings** in the confirmation dialog. Shift-click **Remove** to skip confirmation and keep settings. If cleanup needs a restart or Windows keeps files locked, Bedrock queues the remaining operation for the next launch and the page asks you to restart.
 
 The **Browse** tab lists the official plugin collection. Open **Details** to read a plugin's README, or choose **Install** on its card. Installed plugins show an **Installed** badge; newer published versions show **Update available** and an **Update** button. Updates preserve settings and enable state, and require restarting Discord to load the new code.
 
@@ -53,7 +53,7 @@ The loader inspects only immediate plugin folders containing `plugin.json`. Ever
 
 Required: `manifestVersion`, `id`, `name`, `version`, `entrypoints`. IDs use lowercase letters, digits, dots, underscores or hyphens and must be unique. `description`, `readme`, and `icon` are optional. Main, renderer and GPU entry points are independently optional, but at least one is required. `.js` and `.mjs` entry points are supported. Prefer `main.js` and `renderer.js`, or `main/index.js` and `renderer/index.js`.
 
-Each JavaScript entry point must be an object declaring `runtime`, `path` and `requiresApi`. The current JavaScript API version is `1.0.0`. JavaScript entry points run in main or renderer environments.
+Each JavaScript entry point must be an object declaring `runtime`, `path` and `requiresApi`. The current JavaScript API version is `1.1.0`. JavaScript entry points run in main or renderer environments.
 
 `requiresApi` is a semantic version, not a version range. Bedrock accepts requirements with the same major version that are no newer than its API, comparing minor and patch versions in order. For example, API `1.3.2` accepts `1.2.0` and `1.3.2`, but rejects `1.3.3` and `2.0.0`. Prerelease versions follow semantic-version precedence; build metadata does not affect compatibility. Requirements are checked before executing any plugin code.
 
@@ -125,6 +125,43 @@ export function start(ctx) {
 - `stop()` has a ten-second limit. A failure does not skip cleanup.
 - Respect `ctx.signal` to avoid late work after disabling. JavaScript already executing cannot be forcibly unloaded.
 - Re-enabling calls `start()` with a fresh context and reuses the imported module. Reset mutable module state in your lifecycle methods.
+
+### Removing and replacing
+
+Export an optional `unload()` to release resources kept across activations. Bedrock calls it after stopping the plugin when removing or replacing its package, including when the plugin is already disabled. The activation context has stopped by this point.
+
+- `unload()` can be synchronous or async, with a ten-second limit.
+- Return nothing when cleanup is complete, or `{requiresRestart: true, reason: 'Native callbacks are still registered'}` when unloading safely requires exiting Discord.
+- A restart request, exception, or timeout queues the file operation for the next launch. Bedrock owns deleting and replacing package files; plugins only release their resources.
+
+### Loading native addons
+
+Main plugins can use `Bedrock.require(request, import.meta.url)` to load modules relative to their entry point. For `.node` files, Bedrock tracks each acquisition. Use API requirement `1.1.0` for these methods and `unload()`.
+
+```js
+let addon;
+
+export function start(ctx) {
+    addon ||= Bedrock.require('./native/addon.node', import.meta.url);
+}
+
+export function stop() {
+    // Stop the feature here; keep the addon available for re-enabling.
+}
+
+export function unload() {
+    if (!addon) return;
+    Bedrock.unrequire(addon);
+    addon = undefined;
+}
+```
+
+- Balance each `.node` acquisition with one `Bedrock.unrequire(exports)` call. Cached acquisitions share the exports object; only the final release unloads the DLL.
+- Before the final release, Bedrock calls the addon's optional synchronous `dispose()` export. The addon must remove native callbacks, finalizers and shutdown hooks, and release its resources before returning. A disposal error leaves it loaded.
+- Do not mix ordinary `require()` with managed loading of the same addon, or use its exports after releasing them. Bedrock rejects addons already present in Node's ordinary cache, but cannot track later ordinary callers.
+- JavaScript modules and built-ins use normal Node loading. Addons loaded indirectly by those modules are not tracked. Node retains internal addon bookkeeping until process exit, so unloading is not a way to reclaim every allocation made by Node.
+
+If an addon cannot remove its registered callbacks safely, leave it loaded and return a restart requirement from `unload()` instead.
 
 ## Plugin settings
 
@@ -222,7 +259,7 @@ export function start(ctx) {
 
 `ctx.windows.beforeCreate(callback)` supplies mutable Electron BrowserWindow options before construction. `onCreated(callback)` receives newly created windows. Both return owned disposers. `all()` returns currently tracked windows. Window construction changes are applied to future windows. Enabling these hooks while windows exist, or removing an applied hook, displays a restart notice. Existing-window WinAPI changes, native titlebar handling, and a transparency plugin remain separate follow-up work. CSS comes from user plugins.
 
-Main plugins run inside Discord's Node process and can import Node built-ins or use `createRequire(import.meta.url)` to load a compatible `.node` addon. Plugins are trusted code, not sandboxed packages; there is no host-imposed catalogue or compilation requirement. Addons must match Electron's architecture and ABI.
+Main plugins run inside Discord's Node process and can import Node built-ins or use `Bedrock.require(request, import.meta.url)` to load a compatible `.node` addon. Plugins are trusted code, not sandboxed packages; there is no host-imposed catalogue or compilation requirement. Addons must match Electron's architecture and ABI.
 
 ## Verification
 
@@ -233,6 +270,7 @@ npm install --prefix Runtime/tests/obj electron@42.7.1 react@18.3.1 react-dom@18
 node Runtime/tests/obj/node_modules/electron/install.js
 .\Runtime\tests\electron-smoke.ps1
 .\Runtime\tests\electron-smoke.ps1 -ThroughInspector
+.\Runtime\tests\addons-smoke.ps1
 ```
 
 The Electron fixture checks the real sandboxed preload/context bridge, preserved existing preload, settings layout injection, rendered React switches, plugin cleanup and re-enable, relative imports, cross-process settings/events, Markdown, and origin restriction. Dependencies are test-only; the runtime uses Discord's Electron and React. Tests use isolated temporary data and do not launch or alter Discord.

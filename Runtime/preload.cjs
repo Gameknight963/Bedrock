@@ -180,7 +180,7 @@ function installRenderer(configuration) {
         } };
     }
     async function reconcile(record) {
-        if (record.info.enabled && record.info.renderer && !record.instance) {
+        if (record.info.enabled && record.info.renderer && !record.instance && !record.unloading) {
             record.status = 'starting'; record.statusMessage = null; record.error = null; notify();
             let instance;
             try {
@@ -192,6 +192,7 @@ function installRenderer(configuration) {
                 if (record.module.settings) update(await native.request('settingsDefine', record.info.manifest.id, record.module.settings.definitions));
                 if (!record.info.enabled) { record.status = 'stopped'; notify(); return; }
                 instance = contextFor(record);
+                record.stopFailed = false;
                 record.instance = instance;
                 if (record.module.settings) {
                     const binding = settingsAPI.bindPluginSettings(record.module.settings, {
@@ -219,9 +220,29 @@ function installRenderer(configuration) {
             try { await Promise.race([Promise.resolve(record.module.stop?.()), new Promise((_, reject) => {
                 timer = setTimeout(() => reject(new Error('stop() did not finish within 10 seconds')), 10000);
             })]); }
-            catch (error) { record.error = error.message; log(record.info.manifest.id, error); }
+            catch (error) { record.stopFailed = true; record.error = error.message; log(record.info.manifest.id, error); }
             finally { clearTimeout(timer); record.instance = null; record.status = 'stopped'; notify(); }
         }
+    }
+    async function unload(id) {
+        const record = records.get(id);
+        if (!record) return;
+        if (!record.unloadPromise) {
+            record.unloading = true;
+            record.info = { ...record.info, enabled: false };
+            record.instance?.dispose();
+            record.unloadPromise = (async () => {
+                await record.pending;
+                await reconcile(record);
+                if (record.stopFailed) return { requiresRestart: true, reason: `Renderer cleanup failed: ${record.error}` };
+                const { unloadPlugin } = await import('bedrock://api/lifecycle.mjs');
+                const result = await unloadPlugin(() => record.module?.unload?.());
+                if (result.requiresRestart) record.restartReason = result.reason;
+                if (result.error) log(id, result.reason);
+                return result;
+            })();
+        }
+        return record.unloadPromise;
     }
     function update(next) {
         if (next.revision < snapshot.revision) return;
@@ -240,6 +261,9 @@ function installRenderer(configuration) {
             const previousSettings = record.info.settings;
             const changed = record.info.enabled !== info.enabled;
             record.info = info;
+            if (info.enabled && info.renderer && record.unloading) {
+                record.unloading = false; record.unloadPromise = null; record.stopFailed = false;
+            }
             record.settingsBinding?.refresh();
             if (!info.enabled) record.instance?.dispose();
             if (JSON.stringify(previousSettings) !== JSON.stringify(info.settings)) emitLocal('settings.changed', { id: info.manifest.id, settings: info.settings });
@@ -565,9 +589,11 @@ function installRenderer(configuration) {
             } }, 'Remove');
         const removalDialog = removing && h(RemovePluginDialog, { key: removing.manifest.id, plugin: removing, busy: !!busy, error,
             cancel: () => { setRemoving(null); setError(''); }, confirm: deleteSettings => remove(removing, deleteSettings) });
-        const restartNeeded = plugins.some(plugin => plugin.restartReason || plugin.restartSettings?.length);
+        const restartNeeded = snapshot.pendingPluginChanges?.length || plugins.some(plugin => plugin.restartReason || plugin.restartSettings?.length);
+        const pendingReasons = [...new Set((snapshot.pendingPluginChanges || []).map(change => change.reason || change.error).filter(Boolean))];
         const restartBanner = restartNeeded && h('div', { className: 'bedrock-restart-banner' },
-            h('span', { className: 'bedrock-restart' }, 'Some changes require a restart.'),
+            h('div', null, h('span', { className: 'bedrock-restart' }, 'Some changes require a restart.'),
+                ...pendingReasons.map(reason => h('div', { key: reason, className: 'bedrock-description' }, reason))),
             h('button', { className: 'bedrock-button', disabled: !!busy, onClick: () => run('restart', () => native.request('restart')) }, 'Restart Discord'));
         const installedDetail = plugins.find(plugin => plugin.manifest.id === selected);
         const catalogDetail = catalog?.plugins.find(entry => entry.manifest.id === selected);
@@ -579,6 +605,8 @@ function installRenderer(configuration) {
         const collectionAction = entry => {
             const installed = plugins.find(plugin => plugin.manifest.id === entry.manifest.id);
             const available = entry.updateAvailable && installed?.manifest.version !== entry.manifest.version;
+            const pending = snapshot.pendingPluginChanges?.find(action => action.id === entry.manifest.id);
+            if (pending) return h('button', { className: 'bedrock-button', disabled: true }, pending.action === 'remove' ? 'Restart to remove' : 'Restart to update');
             const working = busy === `install-${entry.manifest.id}`;
             return h('button', { className: 'bedrock-button', disabled: !!busy || !!installed && !available,
                 onClick: () => run(`install-${entry.manifest.id}`, async () => {
@@ -590,6 +618,8 @@ function installRenderer(configuration) {
         };
         const collectionBadge = entry => {
             const installed = plugins.find(plugin => plugin.manifest.id === entry.manifest.id);
+            const pending = snapshot.pendingPluginChanges?.find(action => action.id === entry.manifest.id);
+            if (pending) return h('span', { className: 'bedrock-badge bedrock-badge-update' }, pending.action === 'remove' ? 'Removal pending' : 'Update pending');
             if (!installed) return null;
             const available = entry.updateAvailable && installed.manifest.version !== entry.manifest.version;
             return h('span', { className: `bedrock-badge${available ? ' bedrock-badge-update' : ''}` }, available ? 'Update available' : 'Installed');
@@ -802,7 +832,7 @@ function installRenderer(configuration) {
         } });
         return chunks;
     }
-    globalThis.Bedrock = { plugins: { list, setEnabled, async rescan() { update(await native.request('rescan')); return list(); } },
+    globalThis.Bedrock = { plugins: { list, setEnabled, unload, async rescan() { update(await native.request('rescan')); return list(); } },
         webpack: { find: findModule },
         debug: { status() {
             inspectModules();
