@@ -350,3 +350,30 @@ test('live updates preserve restart requests from the previous version', async t
     assert.equal(manager.restartRequests()[0].reason, 'Process option changed');
     await manager.stopAll();
 });
+
+
+test('enabling during removal waits until removal finishes without restarting the plugin', async t => {
+    const root = fixture(t);
+    let enterUnload;
+    const entered = new Promise(resolve => { enterUnload = resolve; });
+    let finishUnload;
+    const gate = new Promise(resolve => { finishUnload = resolve; });
+    const events = [];
+    plugin(root, 'test.removal-race', `export function start(ctx) { ctx.testEvents.push('start'); }
+        export function stop() {}
+        export async function unload() { await globalThis.bedrockRemovalGate(); }`);
+    globalThis.bedrockRemovalGate = () => { enterUnload(); return gate; };
+    t.after(() => { delete globalThis.bedrockRemovalGate; });
+    const manager = createPluginManager(root, { ...quiet, context: () => ({ testEvents: events }) });
+    t.after(() => manager.close());
+    manager.scan();
+    const removal = manager.remove('test.removal-race');
+    await entered;
+    const enabling = manager.setEnabled('test.removal-race', true);
+    const rejected = assert.rejects(enabling, /Unknown plugin/);
+    finishUnload();
+    await removal;
+    await rejected;
+    assert.deepEqual(events, ['start']);
+    assert.equal(manager.list().length, 0);
+});

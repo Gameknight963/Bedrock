@@ -289,7 +289,7 @@ function createPluginManager(root, options = {}) {
         });
         return refreshWork;
     }
-    function setEnabled(id, value) {
+    function changeEnabled(id, value) {
         const work = (transitions.get(id) || Promise.resolve()).catch(() => {}).then(async () => {
             const record = records.get(id);
             if (!record) throw new Error(`Unknown plugin: ${id}`);
@@ -303,6 +303,10 @@ function createPluginManager(root, options = {}) {
         transitions.set(id, work);
         return work;
     }
+    function setEnabled(id, value) {
+        refreshWork = refreshWork.catch(() => {}).then(() => changeEnabled(id, value));
+        return refreshWork;
+    }
     function installPackage(folder, id, restoreEnabled) {
         refreshWork = refreshWork.catch(() => {}).then(async () => {
             if (packageActions.has(id) || unloadBlocked.has(id)) throw new Error('Restart Discord to finish the pending change for this plugin.');
@@ -315,7 +319,7 @@ function createPluginManager(root, options = {}) {
             if (!previous && fs.existsSync(target)) throw new Error('A folder already exists at this plugin location. Refresh the installed list first.');
             const wasEnabled = typeof restoreEnabled === 'boolean' ? restoreEnabled : previous ? enabled(id) : true;
             if (previous) {
-                await setEnabled(id, false);
+                await changeEnabled(id, false);
                 const result = await unload(previous);
                 if (result.requiresRestart) {
                     packageActions.update(id, path.basename(target), folder, wasEnabled, result.reason);
@@ -351,7 +355,7 @@ function createPluginManager(root, options = {}) {
                     notify();
                     return list();
                 }
-                if (previous && !moved) await setEnabled(id, wasEnabled);
+                if (previous && !moved) await changeEnabled(id, wasEnabled);
                 throw new Error(`Could not install ${id}: ${error.message}${moved ? `. Previous files are preserved in ${backup}` : ''}`);
             } finally {
                 if (!moved) fs.rmSync(backup, { recursive: true, force: true });
@@ -374,7 +378,7 @@ function createPluginManager(root, options = {}) {
     }
     function remove(id, deleteSettings = false) {
         refreshWork = refreshWork.catch(() => {}).then(async () => {
-            await setEnabled(id, false);
+            await changeEnabled(id, false);
             const record = records.get(id);
             const directory = path.resolve(root, 'plugins');
             const folder = path.resolve(record.folder);
