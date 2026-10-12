@@ -3,6 +3,6 @@
     <ShouldRunNpmInstall>false</ShouldRunNpmInstall>
     <ShouldRunNpmAudit>false</ShouldRunNpmAudit>
     <ShouldRunBuildScript>false</ShouldRunBuildScript>
-    <DefaultItemExcludes>$(DefaultItemExcludes);**/obj/**;**/bin/**</DefaultItemExcludes>
+    <DefaultItemExcludes>$(DefaultItemExcludes);**/obj/**;**/bin/**;**/node_modules/**</DefaultItemExcludes>
   </PropertyGroup>
 </Project>

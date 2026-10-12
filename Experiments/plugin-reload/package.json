@@ -1,0 +1,5 @@
+{
+  "name": "bedrock-plugin-reload-experiment",
+  "private": true,
+  "dependencies": { "esbuild": "0.25.11" }
+}

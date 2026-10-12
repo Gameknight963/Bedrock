@@ -87,7 +87,7 @@ test('catalog rejects mismatched package URLs and duplicate IDs', t => {
     assert.throws(() => validateCatalog(data.catalog), /Invalid/);
 });
 
-test('updating preserves settings and enable state but waits for restart before executing new code', async t => {
+test('updating loads new code immediately and preserves settings and enable state', async t => {
     const data = fixture(t);
     const manager = createPluginManager(data.root, { log() {} });
     manager.scan();
@@ -102,11 +102,11 @@ test('updating preserves settings and enable state but waits for restart before 
     await manager.installPackage(staged, data.manifest.id);
     assert.equal(manager.list()[0].manifest.version, '1.1.0');
     assert.equal(manager.list()[0].enabled, true);
-    assert.match(manager.list()[0].restartReason, /Restart/);
+    assert.equal(manager.list()[0].restartReason, null);
     assert.equal(manager.settings(data.manifest.id).get('saved'), 42);
-    assert.equal(manager.settings(data.manifest.id).get('newCode'), undefined);
+    assert.equal(manager.settings(data.manifest.id).get('newCode'), true);
     await manager.setEnabled(data.manifest.id, true);
-    assert.equal(manager.settings(data.manifest.id).get('newCode'), undefined);
+    assert.equal(manager.settings(data.manifest.id).get('newCode'), true);
     const script = `const { createPluginManager } = require(${JSON.stringify(require.resolve('../plugins.cjs'))});
         const manager = createPluginManager(process.argv[1], { log() {} }); manager.scan();
         console.log(JSON.stringify({ ran: manager.settings('test.download').get('newCode'), saved: manager.settings('test.download').get('saved'), restart: manager.list()[0].restartReason }));`;

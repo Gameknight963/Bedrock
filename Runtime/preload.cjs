@@ -12,8 +12,24 @@ function installRenderer(configuration) {
         settingsAPI = api;
         Object.assign(globalThis.Bedrock, { definePluginSettings: api.definePluginSettings, OptionType: api.OptionType });
         notify();
+        return api;
     });
     settingsReady.catch(error => log('settings', error));
+    const modulesReady = settingsReady.then(async api => {
+        await new Promise((resolve, reject) => {
+            const script = document.createElement('script');
+            script.src = 'bedrock://api/system.js';
+            script.onload = () => { script.remove(); resolve(); };
+            script.onerror = () => { script.remove(); reject(new Error('Could not load Bedrock\'s module loader')); };
+            const append = () => document.documentElement.append(script);
+            if (document.documentElement) append();
+            else document.addEventListener('DOMContentLoaded', append, { once: true });
+        });
+        const loader = new globalThis.System.constructor();
+        loader.set('bedrock://api/settings.mjs', api);
+        return loader;
+    });
+    modulesReady.catch(error => log('loader', error));
     let snapshot = configuration;
     let webpackRequire;
     const loadedModules = new Set();
@@ -187,7 +203,7 @@ function installRenderer(configuration) {
                 await settingsReady;
                 record.module ||= record.info.manifest.entrypoints.renderer.runtime === 'dotnet'
                     ? await (await import('bedrock://api/dotnet.mjs')).loadPlugin(record.info)
-                    : await import(record.info.renderer);
+                    : await (await modulesReady).import(record.info.renderer);
                 if (typeof record.module.start !== 'function') throw new Error('Renderer entry point must export start(context)');
                 if (record.module.settings) update(await native.request('settingsDefine', record.info.manifest.id, record.module.settings.definitions));
                 if (!record.info.enabled) { record.status = 'stopped'; notify(); return; }
@@ -238,6 +254,15 @@ function installRenderer(configuration) {
                 const { unloadPlugin } = await import('bedrock://api/lifecycle.mjs');
                 const result = await unloadPlugin(() => record.module?.unload?.());
                 if (result.requiresRestart) record.restartReason = result.reason;
+                else {
+                    if (record.info.manifest.entrypoints.renderer?.runtime === 'javascript') {
+                        const loader = await modulesReady;
+                        const prefix = `bedrock://plugins/${record.info.manifest.id}/`;
+                        for (const [url] of loader.entries()) if (url.startsWith(prefix)) loader.delete(url);
+                    }
+                    record.module = null;
+                    record.status = 'stopped';
+                }
                 if (result.error) log(id, result.reason);
                 return result;
             })();

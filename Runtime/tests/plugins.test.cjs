@@ -21,6 +21,42 @@ function plugin(root, id, source, overrides = {}, folder = id) {
 }
 const quiet = { log() {} };
 
+test('replacement and reinstall reload main helpers, dynamic imports and module state', async t => {
+    const root = fixture(t);
+    const source = `import { value } from './helper.js';
+        let starts = 0;
+        export async function start(ctx) {
+            const lazy = await import('./lazy.js');
+            ctx.settings.set('loaded', { value, lazy: lazy.value, starts: ++starts, url: import.meta.url });
+        }`;
+    const folder = plugin(root, 'test.reload', source);
+    fs.writeFileSync(path.join(folder, 'helper.js'), 'export const value = 1;');
+    fs.writeFileSync(path.join(folder, 'lazy.js'), 'export const value = 1;');
+    const manifest = JSON.parse(fs.readFileSync(path.join(folder, 'plugin.json'), 'utf8'));
+    const manager = createPluginManager(root, quiet);
+    t.after(() => manager.close());
+    manager.scan();
+    await manager.records.get(manifest.id).startPromise;
+    for (let version = 2; version <= 4; version++) {
+        if (version === 4) await manager.remove(manifest.id);
+        const staged = path.join(root, 'staged');
+        fs.mkdirSync(staged);
+        writeJson(path.join(staged, 'plugin.json'), { ...manifest, version: `${version}.0.0` });
+        fs.writeFileSync(path.join(staged, 'main.js'), source);
+        fs.writeFileSync(path.join(staged, 'helper.js'), `export const value = ${version};`);
+        fs.writeFileSync(path.join(staged, 'lazy.js'), `export const value = ${version};`);
+        await manager.installPackage(staged, manifest.id);
+        await manager.records.get(manifest.id).startPromise;
+        const result = manager.settings(manifest.id).get('loaded');
+        assert.equal(result.value, version);
+        assert.equal(result.lazy, version);
+        assert.equal(result.starts, 1);
+        assert.equal(result.url, require('node:url').pathToFileURL(path.join(folder, 'main.js')).href);
+        assert.equal(manager.list()[0].restartReason, null);
+    }
+    await manager.stopAll();
+});
+
 test('unload runs once on removal, after stopping, including an already disabled plugin', async t => {
     const root = fixture(t);
     globalThis.bedrockUnloadEvents = [];
@@ -224,7 +260,7 @@ test('incompatible manifests are rejected before executing either entry point', 
     const root = fixture(t);
     const marker = path.join(root, 'executed');
     const source = `require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'yes');`;
-    plugin(root, 'test.newer', source, { entrypoints: { main: { runtime: 'javascript', path: 'main.js', requiresApi: '1.1.1' } } });
+    plugin(root, 'test.newer', source, { entrypoints: { main: { runtime: 'javascript', path: 'main.js', requiresApi: '1.2.1' } } });
     plugin(root, 'test.major', source, { entrypoints: { main: { runtime: 'javascript', path: 'main.js', requiresApi: '2.0.0' } } });
     plugin(root, 'test.short', source, { entrypoints: { main: 'main.js' } });
     plugin(root, 'test.missing', source, { entrypoints: { main: { runtime: 'javascript', path: 'main.js' } } });
@@ -232,7 +268,7 @@ test('incompatible manifests are rejected before executing either entry point', 
     plugin(root, 'test.toplevel', source, { apiVersion: 1 });
     plugin(root, 'test.renderer', source, { entrypoints: {
         main: { runtime: 'javascript', path: 'main.js', requiresApi: '1.0.0' },
-        renderer: { runtime: 'javascript', path: 'main.js', requiresApi: '1.2.0' }
+        renderer: { runtime: 'javascript', path: 'main.js', requiresApi: '1.3.0' }
     } });
     const manager = createPluginManager(root, quiet);
     manager.scan();

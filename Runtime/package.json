@@ -1,0 +1,12 @@
+{
+  "name": "bedrock-runtime",
+  "private": true,
+  "scripts": { "build": "node build-modules.cjs" },
+  "devDependencies": {
+    "@babel/core": "7.29.7",
+    "@babel/plugin-transform-dynamic-import": "7.29.7",
+    "@babel/plugin-transform-modules-systemjs": "7.29.8",
+    "esbuild": "0.25.11",
+    "systemjs": "6.15.1"
+  }
+}

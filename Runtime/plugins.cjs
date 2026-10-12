@@ -3,6 +3,7 @@ const fs = require('node:fs');
 const { EventEmitter } = require('node:events');
 const { discover, readJson, writeJson } = require('./storage.cjs');
 const { createNativeEntryPoints } = require('./native.cjs');
+const { createModuleLoader } = require('./modules.cjs');
 const { createContext, createPatcher } = require('./context.cjs');
 const { parseVersion, compareVersions } = require('./api-version.cjs');
 const { createPackageActions, locked } = require('./package-actions.cjs');
@@ -25,7 +26,7 @@ function createPluginManager(root, options = {}) {
     const settingsStores = new Map();
     const definitions = new Map();
     const restartBaselines = new Map();
-    const loadedPackages = new Set();
+    const modules = createModuleLoader(path.join(root, 'plugins'));
 
     function registerSettings(id, schema) {
         if (!records.has(id)) throw new Error('Unknown plugin');
@@ -114,7 +115,7 @@ function createPluginManager(root, options = {}) {
         let owned;
         try {
             if (!record.module) {
-                const javascript = record.manifest.entrypoints.main?.runtime === 'javascript' ? require(record.entries.main) : null;
+                const javascript = record.manifest.entrypoints.main?.runtime === 'javascript' ? modules.load(record.entries.main) : null;
                 if (javascript && typeof javascript.start !== 'function') throw new Error('Main entry point must export start(context)');
                 if (!hasNative) record.module = javascript;
                 else {
@@ -217,7 +218,12 @@ function createPluginManager(root, options = {}) {
                 : await unloadPlugin(() => record.module?.unload?.());
             if (main.error) log('error', record.manifest.id, [main.reason]);
             if (renderer.error) log('error', record.manifest.id, [renderer.reason]);
-            return main.requiresRestart ? main : renderer;
+            const result = main.requiresRestart ? main : renderer;
+            if (!result.requiresRestart) {
+                modules.invalidate(record.folder);
+                record.module = null;
+            }
+            return result;
         })();
     }
 
@@ -229,7 +235,6 @@ function createPluginManager(root, options = {}) {
             const record = { ...plugin, status: plugin.entries.main || Object.values(plugin.manifest.entrypoints).some(entry => entry.runtime === 'native') ? 'stopped' : 'renderer-only' };
             try { settings(id); } catch (error) { discoveryErrors.push({ folder: id, error: error.message }); continue; }
             records.set(id, record);
-            loadedPackages.add(id);
             start(record);
         }
         notify();
@@ -283,7 +288,6 @@ function createPluginManager(root, options = {}) {
             if (path.dirname(path.resolve(target)) !== path.resolve(root, 'plugins')) throw new Error('Plugin folder leaves the plugins directory.');
             if (!previous && fs.existsSync(target)) throw new Error('A folder already exists at this plugin location. Refresh the installed list first.');
             const wasEnabled = typeof restoreEnabled === 'boolean' ? restoreEnabled : previous ? enabled(id) : true;
-            const needsRestart = loadedPackages.has(id);
             if (previous) {
                 await setEnabled(id, false);
                 const result = await unload(previous);
@@ -330,16 +334,9 @@ function createPluginManager(root, options = {}) {
             records.delete(id);
             definitions.delete(id);
             for (const key of restartBaselines.keys()) if (key.startsWith(`${id}/`)) restartBaselines.delete(key);
-            configuration.plugins[id] = { ...(configuration.plugins[id] || {}), enabled: needsRestart ? false : wasEnabled };
+            configuration.plugins[id] = { ...(configuration.plugins[id] || {}), enabled: wasEnabled };
             writeJson(configurationPath, configuration);
             scan();
-            const record = records.get(id);
-            if (needsRestart && record) {
-                record.pendingUpdate = true;
-                record.restartReason = 'Restart Discord to load the installed version.';
-                configuration.plugins[id].enabled = wasEnabled;
-                writeJson(configurationPath, configuration);
-            }
             if (moved) {
                 try { fs.rmSync(backup, { recursive: true, force: true }); }
                 catch (error) { packageActions.cleanup(id, path.basename(backup)); log('info', id, ['Previous native files will be deleted next time Discord starts.']); }
@@ -391,7 +388,7 @@ function createPluginManager(root, options = {}) {
         return refreshWork;
     }
     return { root, records, events, settings, list, scan, refresh, setEnabled, remove, installPackage, registerSettings, definePluginSettings, OptionType, pendingChanges: packageActions.list, errors: () => discoveryErrors,
-        stopAll: () => Promise.all([...records.values()].map(stop)) };
+        stopAll: () => Promise.all([...records.values()].map(stop)), close: () => modules.close() };
 }
 
 module.exports = { createPluginManager };

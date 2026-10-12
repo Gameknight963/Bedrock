@@ -5,6 +5,7 @@ const os = require('node:os');
 const assert = require('node:assert/strict');
 const { execFileSync } = require('node:child_process');
 const { app } = require('electron');
+process.on('uncaughtExceptionMonitor', error => fs.writeFileSync(path.join(__dirname, 'obj/electron-failure.log'), error.stack));
 const { writeJson } = require('../storage.cjs');
 const root = globalThis.BedrockMain?.root || process.argv[2] || fs.mkdtempSync(path.join(os.tmpdir(), 'Bedrock-electron-'));
 const directory = path.join(root, 'plugins', 'example');
@@ -87,7 +88,19 @@ const { archive } = require('./collection-fixture.cjs');
 const crypto = require('node:crypto');
 const remoteManifest = { manifestVersion: 2, id: 'test.catalog', name: 'Catalog plugin', version: '1.0.0',
     description: 'Remote install fixture.', entrypoints: { renderer: { runtime: 'javascript', path: 'renderer.js', requiresApi: '1.0.0' } }, readme: 'README.md', license: 'MIT' };
-const remoteArchive = archive([['catalog/plugin.json', JSON.stringify(remoteManifest)], ['catalog/renderer.js', 'export function start() { globalThis.fixtureDownloaded = true; }'], ['catalog/README.md', '# Remote documentation'], ['catalog/LICENSE', 'MIT']]);
+const remoteRendererSource = `import { value } from './helper.mjs';
+    import { OptionType } from 'bedrock://api/settings.mjs';
+    const ready = await Promise.resolve(value);
+    export async function start() {
+        globalThis.fixtureDownloaded = true;
+        globalThis.fixtureCatalogVersion = ready;
+        globalThis.fixtureCatalogLazy = (await import('./lazy.mjs')).value;
+        globalThis.fixtureCatalogOptionType = OptionType.BOOLEAN;
+    }
+    export function unload() { globalThis.fixtureCatalogUnloads = (globalThis.fixtureCatalogUnloads || 0) + 1; }`;
+const remoteArchive = archive([['catalog/plugin.json', JSON.stringify(remoteManifest)], ['catalog/renderer.js', remoteRendererSource],
+    ['catalog/helper.mjs', 'export const value = 1;'], ['catalog/lazy.mjs', 'export const value = 1;'],
+    ['catalog/README.md', '# Remote documentation'], ['catalog/LICENSE', 'MIT']]);
 const remoteEntry = { manifest: remoteManifest, readme: '# Remote documentation', package: {
     url: 'https://github.com/bedrock-client/bedrock-plugins/releases/download/collection-2026-10-10-1/test.catalog-1.0.0.zip',
     size: remoteArchive.length, sha256: crypto.createHash('sha256').update(remoteArchive).digest('hex') } };
@@ -101,6 +114,7 @@ const collectionFetch = async url => {
     if (url.endsWith('/latest')) return Response.json({ assets: [{ name: 'catalog.json', browser_download_url: 'https://github.com/bedrock-client/bedrock-plugins/releases/download/collection-2026-10-10-1/catalog.json' }] });
     return url.endsWith('/catalog.json') ? Response.json({ catalogVersion: 1, plugins: [remoteEntry, updateEntry] }) : new Response(url.endsWith('/bedrock.example-1.1.0.zip') ? updateArchive : remoteArchive);
 };
+globalThis.fixtureCollectionFetch = collectionFetch;
 require('../bootstrap.cjs').install({ root, addonDirectory: path.join(__dirname, '../../Native/Addons/bin/x64/Debug'), collection: { fetch: collectionFetch }, allowURL: url => url.origin === 'https://bedrock.test', restart: () => { globalThis.fixtureRestartRequested = true; return true; } });
 nativeWindows = Bedrock.require(fixtureNative);
 const lockedPackage = path.join(root, 'plugins', 'locked-addon');
@@ -111,6 +125,8 @@ fs.copyFileSync(path.join(pluginCollection, '.artifacts/packages/console/native/
 fs.writeFileSync(path.join(lockedPackage, 'main.js'), "exports.start = () => require('./console.node');");
 const managedConsole = path.join(root, 'plugins', 'console');
 fs.cpSync(path.join(pluginCollection, '.artifacts/packages/console'), managedConsole, { recursive: true });
+fs.copyFileSync(path.join(pluginCollection, 'plugins/console/main.js'), path.join(managedConsole, 'main.js'));
+fs.copyFileSync(path.join(pluginCollection, 'plugins/console/plugin.json'), path.join(managedConsole, 'plugin.json'));
 globalThis.BedrockMain.settings('bedrock.console').set('visible', false);
 globalThis.BedrockMain.scan();
 const themesDirectory = globalThis.BedrockMain.themes.directory;
@@ -467,12 +483,30 @@ app.whenReady().then(async () => {
         assert.equal(await evaluate(`document.querySelector('#bedrock-settings-tab') === null`), true);
         await evaluate(`[...document.querySelectorAll('button')].find(button => button.textContent === 'Install').click()`);
         await waitFor(`globalThis.fixtureDownloaded === true`);
+        assert.equal(await evaluate('globalThis.fixtureCatalogVersion'), 1);
+        await waitFor('globalThis.fixtureCatalogLazy === 1');
+        await evaluate('globalThis.fixturePageMarker = {};');
+        for (let version = 2; version <= 3; version++) {
+            if (version === 3) await globalThis.BedrockMain.remove(remoteManifest.id);
+            const staged = path.join(root, 'staged-renderer');
+            fs.mkdirSync(staged);
+            writeJson(path.join(staged, 'plugin.json'), { ...remoteManifest, version: `${version}.0.0` });
+            fs.writeFileSync(path.join(staged, 'renderer.js'), remoteRendererSource);
+            fs.writeFileSync(path.join(staged, 'helper.mjs'), `export const value = ${version};`);
+            fs.writeFileSync(path.join(staged, 'lazy.mjs'), `export const value = ${version};`);
+            fs.writeFileSync(path.join(staged, 'README.md'), '# Remote documentation');
+            await globalThis.BedrockMain.installPackage(staged, remoteManifest.id);
+            await waitFor(`globalThis.fixtureCatalogVersion === ${version} && globalThis.fixtureCatalogLazy === ${version}`);
+            assert.equal(await evaluate('typeof globalThis.fixturePageMarker'), 'object', 'renderer document survives updating and reinstalling');
+            assert.equal(globalThis.BedrockMain.list().find(plugin => plugin.manifest.id === remoteManifest.id).restartReason, null);
+        }
+        assert.equal(await evaluate('globalThis.fixtureCatalogUnloads'), 2);
         await evaluate(`[...document.querySelectorAll('button')].find(button => button.textContent.includes('Back to plugins')).click()`);
         await waitFor(`document.querySelector('.bedrock-badge')?.textContent === 'Installed'`);
         assert.equal(await evaluate(`[...document.querySelectorAll('.bedrock-card-actions button')].find(button => button.textContent === 'Installed').disabled`), true);
         await evaluate(`[...document.querySelectorAll('.bedrock-card-actions button')].find(button => button.textContent === 'Update').click()`);
         await waitFor(`globalThis.Bedrock.plugins.list().find(plugin => plugin.manifest.id === 'bedrock.example')?.manifest.version === '1.1.0'`);
-        assert.equal(globalThis.fixtureUpdatedCode, undefined, 'new code waits for restart');
+        assert.equal(globalThis.fixtureUpdatedCode, true, 'new main code runs without restarting');
         assert.equal(globalThis.BedrockMain.list().find(plugin => plugin.manifest.id === 'bedrock.example').enabled, true);
         await waitFor(`document.querySelectorAll('.bedrock-badge-update').length === 0`);
         window.setSize(900, 650);
@@ -523,6 +557,7 @@ app.whenReady().then(async () => {
         window.destroy();
         app.exit(0);
     } catch (error) {
+        fs.writeFileSync(path.join(__dirname, 'obj/electron-failure.log'), `${error.stack}\n${failures.join('\n')}`);
         console.error(error.stack, failures.join('\n'));
         await globalThis.BedrockMain.stopAll();
         globalThis.BedrockMain.themes.close();

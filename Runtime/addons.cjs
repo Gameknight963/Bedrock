@@ -49,7 +49,8 @@ function createAddonLoader(options = {}) {
             entry.users = 0;
         } finally { entry.disposing = false; }
     }
-    return { require: load, unrequire: unload };
+    // Installed plugins may still use the previous name.
+    return { require: load, unloadAddon: unload, unrequire: unload };
 }
 
 module.exports = { createAddonLoader };

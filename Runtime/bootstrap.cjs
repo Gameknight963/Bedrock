@@ -4,6 +4,7 @@ const Module = require('node:module');
 const { spawn } = require('node:child_process');
 const { createPluginManager } = require('./plugins.cjs');
 const { packagePath } = require('./storage.cjs');
+const { compileRenderer, assets: moduleAssets } = require('./modules.cjs');
 const { startControl } = require('./control.cjs');
 const { createLogFeed } = require('./logs.cjs');
 const { createJsSession, rendererJsRequest } = require('./javascript.cjs');
@@ -95,7 +96,7 @@ function install(options = {}) {
     });
     const themes = createThemeManager(root, () => { revision++; broadcast('bedrock:update', snapshot()); });
     const collection = createCollection(root, manager, options.collection);
-    app.once('will-quit', () => themes.close());
+    app.once('will-quit', () => { themes.close(); manager.close(); });
     manager.events.on('settings.changed', () => { revision++; broadcast('bedrock:update', snapshot()); });
     manager.events.on('plugin.event', value => broadcast('bedrock:event', value));
     const bedrockScheme = { scheme: 'bedrock', privileges: {
@@ -115,6 +116,10 @@ function install(options = {}) {
         ses.protocol.handle('bedrock', request => {
             try {
                 const url = new URL(request.url);
+                if (request.method === 'GET' && url.hostname === 'api' && url.pathname === '/system.js')
+                    return new Response(fs.readFileSync(path.join(moduleAssets, 'system.js')), { headers: {
+                        'Content-Type': 'text/javascript', 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-store'
+                    } });
                 if (request.method === 'GET' && url.hostname === 'api' && ['/settings.mjs', '/dotnet.mjs', '/lifecycle.mjs'].includes(url.pathname))
                     return new Response(fs.readFileSync(path.join(__dirname, url.pathname.slice(1))), { headers: {
                         'Content-Type': 'text/javascript', 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-store'
@@ -144,7 +149,8 @@ function install(options = {}) {
                 const types = { '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css',
                     '.json': 'application/json', '.md': 'text/plain', '.png': 'image/png', '.svg': 'image/svg+xml',
                     '.jpg': 'image/jpeg', '.webp': 'image/webp', '.woff2': 'font/woff2' };
-                return new Response(fs.readFileSync(file), { headers: {
+                const source = /\.[cm]?js$/.test(file) ? compileRenderer(fs.readFileSync(file, 'utf8'), file) : fs.readFileSync(file);
+                return new Response(source, { headers: {
                     'Content-Type': types[path.extname(file)] || 'application/octet-stream',
                     'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-store'
                 } });

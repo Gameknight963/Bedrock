@@ -27,11 +27,11 @@ app.whenReady().then(async () => {
         assert.equal(first, second);
         first.show(); first.hide(); first.filter(true); first.filter(false); first.write('Addon smoke test\n');
         assert.throws(() => fs.unlinkSync(consoleFile), { code: 'EPERM' });
-        loader.unrequire(first);
+        loader.unloadAddon(first);
         second.hide();
         assert.throws(() => fs.unlinkSync(consoleFile), { code: 'EPERM' });
-        loader.unrequire(second);
-        assert.throws(() => loader.unrequire(second), /no outstanding/);
+        loader.unloadAddon(second);
+        assert.throws(() => loader.unloadAddon(second), /no outstanding/);
         first = null; second = null;
         fs.unlinkSync(consoleFile);
         await collect();
@@ -39,7 +39,7 @@ app.whenReady().then(async () => {
             copy('console', 'console', consoleFile);
             let addon = loader.require(consoleFile);
             addon.hide(); addon.filter(true); addon.filter(false);
-            loader.unrequire(addon); addon = null;
+            loader.unloadAddon(addon); addon = null;
             fs.unlinkSync(consoleFile);
         }
         const window = new BrowserWindow({ show: false, frame: false, transparent: true, webPreferences: { sandbox: true } });
@@ -52,7 +52,7 @@ app.whenReady().then(async () => {
             let customization = addon.customize(handle, { nativeTitlebar: true, resizableFrame: true });
             customization.maximize(); customization.restore();
             if (index % 2 === 0) customization.dispose();
-            loader.unrequire(addon);
+            loader.unloadAddon(addon);
             // Keep disposed JS objects alive until after native unloading to exercise finalizer removal.
             globalThis.fixtureDisposedWindow = customization;
             customization = null; addon = null;
@@ -64,7 +64,7 @@ app.whenReady().then(async () => {
             addon = loader.require(windowFile);
             const controlledStyles = 0x00C00000 | 0x00080000 | 0x00040000;
             assert.equal(addon.getStyle(handle) & controlledStyles, original & controlledStyles);
-            loader.unrequire(addon); addon = null; fs.unlinkSync(windowFile);
+            loader.unloadAddon(addon); addon = null; fs.unlinkSync(windowFile);
         }
         globalThis.fixtureDisposedWindow = null;
         await collect();

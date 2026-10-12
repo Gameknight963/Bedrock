@@ -12,7 +12,8 @@ Bedrock stores its own plugins, themes, and settings in `BedrockData` beside the
 
 ## Get started
 
-Build `Launcher.vcxproj` (C17, Visual Studio v145, .NET 10 SDK).
+Build `Launcher.vcxproj` (C17, Visual Studio v145, .NET 10 SDK, Node.js and npm).
+The build packages the JavaScript loaders and converters; users running a built launcher do not need Node.js installed.
 
 The launcher first closes processes using the selected Discord executable in your
 Windows session. Existing Bedrock instances receive a graceful quit request over

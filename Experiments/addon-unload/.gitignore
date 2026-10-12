@@ -1,0 +1,7 @@
+*.node
+*.obj
+*.lib
+*.exp
+runs/
+args.txt
+errors.txt

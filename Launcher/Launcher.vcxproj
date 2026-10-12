@@ -64,12 +64,20 @@
     <ItemGroup><ManagedRuntimeFile Include="$(IntDir)managed-publish\wwwroot\**\*" /></ItemGroup>
     <Copy SourceFiles="@(ManagedRuntimeFile)" DestinationFiles="@(ManagedRuntimeFile->'$(OutDir)Runtime\dotnet\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
   </Target>
-  <Target Name="CopyBedrockRuntime" AfterTargets="Build">
+  <Target Name="RestoreRuntimeModules" Inputs="$(ProjectDir)..\Runtime\package-lock.json" Outputs="$(ProjectDir)..\Runtime\node_modules\.package-lock.json">
+    <Exec Command="npm ci --no-audit --no-fund" WorkingDirectory="$(ProjectDir)..\Runtime" />
+  </Target>
+  <Target Name="BuildRuntimeModules" DependsOnTargets="RestoreRuntimeModules" Inputs="$(ProjectDir)..\Runtime\package-lock.json;$(ProjectDir)..\Runtime\build-modules.cjs;$(ProjectDir)..\Runtime\renderer-compiler.cjs" Outputs="$(ProjectDir)..\Runtime\obj\modules\renderer-compiler.cjs;$(ProjectDir)..\Runtime\obj\modules\system.js;$(ProjectDir)..\Runtime\obj\modules\esbuild.exe;$(ProjectDir)..\Runtime\obj\modules\THIRD_PARTY_NOTICES.txt">
+    <Exec Command="npm run build" WorkingDirectory="$(ProjectDir)..\Runtime" />
+  </Target>
+  <Target Name="CopyBedrockRuntime" AfterTargets="Build" DependsOnTargets="BuildRuntimeModules">
+    <ItemGroup><RuntimeModuleFile Include="$(ProjectDir)..\Runtime\obj\modules\**\*" Exclude="$(ProjectDir)..\Runtime\obj\modules\node_modules\**\*" /></ItemGroup>
+    <Copy SourceFiles="@(RuntimeModuleFile)" DestinationFiles="@(RuntimeModuleFile->'$(OutDir)Runtime\modules\%(RecursiveDir)%(Filename)%(Extension)')" SkipUnchangedFiles="true" />
     <PropertyGroup><AddonArchitecture Condition="'$(Platform)'=='x64'">x64</AddonArchitecture><AddonArchitecture Condition="'$(Platform)'=='Win32'">ia32</AddonArchitecture></PropertyGroup>
     <Copy SourceFiles="$(ProjectDir)..\Native\Addons\bin\$(Platform)\$(Configuration)\addons.node" DestinationFolder="$(OutDir)Runtime\native\win32-$(AddonArchitecture)" SkipUnchangedFiles="true" />
     <Copy SourceFiles="$(ProjectDir)..\lib\node-api\LICENSE" DestinationFolder="$(OutDir)Runtime\native\win32-$(AddonArchitecture)" SkipUnchangedFiles="true" />
     <ItemGroup><PublicHeader Include="$(ProjectDir)..\include\bedrock\*.h" /></ItemGroup>
-    <ItemGroup><RuntimeFile Include="$(ProjectDir)..\Runtime\*.cjs;$(ProjectDir)..\Runtime\*.mjs" /></ItemGroup>
+    <ItemGroup><RuntimeFile Include="$(ProjectDir)..\Runtime\*.cjs;$(ProjectDir)..\Runtime\*.mjs" Exclude="$(ProjectDir)..\Runtime\build-modules.cjs;$(ProjectDir)..\Runtime\renderer-compiler.cjs" /></ItemGroup>
     <Copy SourceFiles="@(PublicHeader)" DestinationFolder="$(OutDir)include\bedrock" SkipUnchangedFiles="true" />
     <Copy Condition="'$(Platform)'=='x64'" SourceFiles="$(ProjectDir)..\Native\PluginHost\bin\$(Platform)\$(Configuration)\native-controller.exe;$(ProjectDir)..\Native\PluginHost\bin\$(Platform)\$(Configuration)\native-host.dll" DestinationFolder="$(OutDir)Runtime\native\win32-x64" SkipUnchangedFiles="true" />
     <Copy Condition="'$(Platform)'=='x64'" SourceFiles="$(ProjectDir)..\lib\manual-map\LICENSE" DestinationFiles="$(OutDir)Runtime\native\win32-x64\manual-map-LICENSE.txt" SkipUnchangedFiles="true" />
