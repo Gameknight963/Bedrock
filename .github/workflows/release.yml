@@ -1,0 +1,98 @@
+name: Draft release
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Release version, for example v0.1.0
+        required: true
+        type: string
+      prerelease:
+        description: Mark as a prerelease
+        default: true
+        type: boolean
+
+permissions:
+  contents: read
+
+concurrency:
+  group: bedrock-release
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: pwsh
+
+jobs:
+  build:
+    runs-on: windows-2022
+    timeout-minutes: 30
+    env:
+      RELEASE_VERSION: ${{ inputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Validate version
+        run: |
+          if ($env:RELEASE_VERSION -cnotmatch '^v(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(-[0-9A-Za-z]+(?:[.-][0-9A-Za-z]+)*)?$') {
+            throw 'Use a version such as v0.1.0 or v0.1.0-beta.1.'
+          }
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 10.0.x
+      - name: Locate MSBuild
+        run: |
+          $vswhere = Join-Path ${env:ProgramFiles(x86)} 'Microsoft Visual Studio/Installer/vswhere.exe'
+          $msbuild = & $vswhere -latest -products '*' -requires Microsoft.Component.MSBuild -find 'MSBuild/Current/Bin/MSBuild.exe' | Select-Object -First 1
+          if (-not $msbuild) { throw 'MSBuild was not found.' }
+          "MSBUILD=$msbuild" >> $env:GITHUB_ENV
+      - name: Build Release/x64
+        run: |
+          & $env:MSBUILD Launcher/Launcher.vcxproj /m /p:Configuration=Release /p:Platform=x64 /p:PlatformToolset=v143 /v:minimal /nologo
+          if ($LASTEXITCODE -ne 0) { throw 'Launcher build failed.' }
+          & $env:MSBUILD Tests/BedrockTests.vcxproj /m /p:Configuration=Release /p:Platform=x64 /p:PlatformToolset=v143 /v:minimal /nologo
+          if ($LASTEXITCODE -ne 0) { throw 'Native test build failed.' }
+      - name: Run runtime tests
+        run: node --test Runtime/tests/*.test.cjs
+      - name: Run native tests
+        run: |
+          & ./Tests/bin/x64/Release/BedrockTests.exe
+          if ($LASTEXITCODE -ne 0) { throw 'Native tests failed.' }
+      - name: Package release
+        run: ./tools/package-release.ps1 -Version $env:RELEASE_VERSION
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-package
+          path: |
+            .artifacts/releases/*.zip
+            .artifacts/releases/*.sha256
+          if-no-files-found: error
+
+  draft:
+    needs: build
+    runs-on: windows-2022
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+      RELEASE_VERSION: ${{ inputs.version }}
+      RELEASE_COMMIT: ${{ github.sha }}
+      PRERELEASE: ${{ inputs.prerelease }}
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: release-package
+          path: release-package
+      - name: Create draft release
+        run: |
+          $assets = @(Get-ChildItem release-package -File | Select-Object -ExpandProperty FullName)
+          $arguments = @('release', 'create', $env:RELEASE_VERSION) + $assets + @('--draft', '--target', $env:RELEASE_COMMIT, '--title', "Bedrock $env:RELEASE_VERSION", '--generate-notes')
+          if ($env:PRERELEASE -eq 'true') { $arguments += '--prerelease' }
+          & gh @arguments
+          if ($LASTEXITCODE -ne 0) { throw 'Could not create the draft release. Existing releases are not overwritten.' }

@@ -4,6 +4,7 @@
 ## Get latest from `dotnet new gitignore`
 
 .dont-commit-this/
+.artifacts/
 
 # dotenv files
 .env
