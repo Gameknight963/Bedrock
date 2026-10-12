@@ -7,20 +7,24 @@ function createLogFeed(root) {
     const latest = path.join(directory, 'latest.log');
     let fileOptions = {};
     let reportedFailure = false;
+    let sessionPrepared = false;
     const originalError = console.error.bind(console);
     const configureFile = options => {
         fileOptions = options;
         if (!options.enabled) return;
         try {
             fs.mkdirSync(directory, { recursive: true });
+            if (!sessionPrepared) {
+                if (fs.existsSync(latest)) {
+                    const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+                    fs.renameSync(latest, path.join(directory, `${stamp}-${process.pid}.log`));
+                }
+                sessionPrepared = true;
+            }
             const archives = fs.readdirSync(directory).filter(name => /^\d{4}-.*\.log$/.test(name)).sort().reverse();
             for (const name of archives.slice(10)) fs.unlinkSync(path.join(directory, name));
         } catch (error) { originalError('[Bedrock:logs] Cannot prepare log files.', error); }
     };
-    try {
-        const saved = JSON.parse(fs.readFileSync(path.join(root, 'data', 'bedrock.console', 'settings.json'), 'utf8'));
-        configureFile({ enabled: saved.writeLogs === true, discord: saved.discordFileOutput === true });
-    } catch { }
 
     const listeners = new Set();
     const publish = entry => {
