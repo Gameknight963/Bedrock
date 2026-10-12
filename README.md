@@ -1,19 +1,29 @@
+> todo: logo / slop banner up here
+
 # Bedrock
 
-Bedrock uses the [MIT license](LICENSE). Dependency licenses and attributions
-are collected in [third-party notices](third_party_notices.md).
-
-VERY wip.
-
 NOTHING permanant is changed, ever. NO files in Discord's installation are modified, 
-NO environment variables are modified, NO registry settings are changed. 
+NO environment variables are modified, and NO registry settings are changed. 
 
-Bedrock stores its own plugins, themes, and settings in `BedrockData` beside the launcher.
+[Take that, Equicord.](https://github.com/Equicord/Equilotl/issues/21)
 
-## Get started
+## Install
+
+ - Get the latest release from [Releases](https://github.com/bedrock-client/Bedrock/releases).
+ - Extract the ZIP to a writable folder and run `BedrockLauncher.exe`. 
+ - Keep the adjacent `Runtime` folder with it. 
+ - Bedrock creates `BedrockData` beside the launcher, don't delete that either.
+
+## Bugs
+
+[Report an issue](https://github.com/bedrock-client/Bedrock/issues) asap, thank you!
+
+## Build
 
 Build `Launcher.vcxproj` (C17, Visual Studio v145, .NET 10 SDK, Node.js and npm).
-The build packages the JavaScript loaders and converters; users running a built launcher do not need Node.js installed.
+The build packages the JavaScript loaders and converters -  users running a built launcher do not need Node.js installed.
+
+### How it works
 
 The launcher first closes processes using the selected Discord executable in your
 Windows session. Existing Bedrock instances receive a graceful quit request over
@@ -42,16 +52,6 @@ Keep `Runtime` and `BedrockData` with the launcher when moving it. Plugins live 
 folder. In Discord settings, **Bedrock → Plugins** provides live enable switches,
 search and README details. See [the API documentation](Runtime/README.md) and
 [the example package](Examples/example/plugin.json).
-
-### What file does what
-
- - `main.c` owns process creation and the fuse patch
- - `shutdown.c` closes existing instances before launching.
- - `fuse.c` validates the Electron fuse wire and is shared with the native tests.
- - `inspector.c` owns discovery, the WebSocket connection, JSON commands/replies, and shutdown. 
- - WinHTTP handles the handshake and WebSocket framing. 
- - The MIT-licensed jsmn parser is licensed under `lib/jsmn` 
-   (at commit `25647e692c7906b96ffd2b05ca54c097948e879c`, latest commit at the time of writing)
 
 Other options:
 
@@ -87,3 +87,8 @@ It starts a separate Node fixture, loads a bootstrap before the fixture's entry
 script (including a Unicode path), verifies inspector shutdown, checks that Node stays alive, and stops only
 that fixture. It does not interact with Discord. Override `-MSBuild` or `-Port`
 when needed.
+
+### Licensing
+
+Bedrock uses the [MIT license](LICENSE). Dependency licenses and attributions
+are collected in [third-party notices](third_party_notices.md).
