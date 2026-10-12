@@ -34,9 +34,19 @@ app.whenReady().then(async()=>{
    await manager.setEnabled('test.'+type,true);
  }
  await wait(()=>['main','gpu','renderer'].every(type=>logs.filter(line=>line==='test.'+type+': Native example started.').length===2));
+ assert.equal(logs.some(line => line.endsWith('Native example unloaded.')), false);
+ for (const type of ['main','gpu','renderer']) {
+   await manager.setEnabled('test.'+type, false);
+   await manager.remove('test.'+type);
+   await wait(() => logs.includes('test.'+type+': Native example unloaded.'));
+   packageNative(type);
+ }
+ manager.scan();
+ for (const type of ['main','gpu','renderer']) await manager.setEnabled('test.'+type, true);
+ await wait(()=>['main','gpu','renderer'].every(type=>logs.filter(line=>line==='test.'+type+': Native example started.').length===3));
  const gpu = app.getAppMetrics().find(metric => metric.type === 'GPU');
  process.kill(gpu.pid);
- await wait(()=>logs.filter(line=>line==='test.gpu: Native example started.').length===3);
+ await wait(()=>logs.filter(line=>line==='test.gpu: Native example started.').length===4);
  await manager.stopAll();
  fs.appendFileSync(output,'PASS: main, sandboxed GPU and sandboxed renderer lifecycle/settings.\n');
  app.exit(0);

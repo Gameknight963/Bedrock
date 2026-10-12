@@ -8,7 +8,7 @@ Two anonymous pipes carry JSON messages. Their handles are duplicated into the t
 
 Each entry-point instance has a host worker and controller connection. Commands are serialized on that worker. Plugin log calls and setting reads/writes can originate on other threads; output and the settings snapshot have separate locks. The host frees returned string values through its own allocator.
 
-Disabling keeps the controller connection and mapped images resident. Removing a plugin closes its connection after stopping it. Disconnecting IPC also asks the host to stop before releasing its context. Images remain resident until the target process exits. If a callback hangs, the manager reports a timeout; it does not terminate the target thread or unload its code.
+Disabling keeps the controller connection and mapped images resident. Removing or replacing a plugin stops it, invokes its optional `unload` callback, and then closes its connection. Failed final cleanup requests a restart. Disconnecting IPC also asks the host to stop before releasing its context. Images remain resident until the target process exits. If a callback hangs, the manager reports a timeout; it does not terminate the target thread or unload its code.
 
 The controller and host support Windows x64. Controller mapping code is C++ because the vendored mapper uses C++; the host and controller logic are C.
 

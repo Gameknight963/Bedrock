@@ -19,7 +19,7 @@ extern "C" {
 
 typedef struct BedrockVersion { uint32_t major, minor, patch; } BedrockVersion;
 #define BEDROCK_API_MAJOR 1
-#define BEDROCK_API_MINOR 3
+#define BEDROCK_API_MINOR 4
 #define BEDROCK_API_PATCH 0
 
 typedef int32_t BedrockResult;
@@ -120,7 +120,8 @@ typedef void (BEDROCK_CALL *BedrockJsCallback)(void *user_data, BedrockResult st
     BedrockJsValue *result, const BedrockJsError *error);
 
 /* UTF-8 strings throughout. Host services may be called from plugin threads.
-   The context is valid through stop(); finish those threads before returning.
+   The context is valid through unload (or host disconnection); finish activation
+   threads before returning from stop.
    log and settings_set copy inputs. Successful settings_set means validated
    and queued, not written to disk. settings_get reads the local snapshot;
    release every successful result with value_release (also safe for scalars).
@@ -160,8 +161,12 @@ typedef struct BedrockContext {
 /* Same major, required minor/patch no newer than host. Fields are appended
    within a major version. The descriptor remains valid for the DLL's lifetime.
    start, settings_changed and stop run serially on a host worker, outside
-   DllMain. Failed start must undo partial work. stop removes hooks and waits
-   for outstanding work; the DLL remains resident. Re-enable calls start again.
+   DllMain. Failed start must undo partial work. stop ends activation and waits
+   for outstanding work. Re-enable calls start again. Optional unload runs after
+   stop when removing or replacing the package, including already disabled
+   plugins. Return BEDROCK_OK when final cleanup succeeded; failure defers file
+   removal until restart. The context remains valid through unload; JavaScript
+   execution and symbol resolution remain stopped. The DLL stays resident.
    Callback values are borrowed only until the callback returns.
    start/stop are required; settings_changed is optional. No exceptions may
    cross this interface. Use no nondefault packing or enum-size compiler flags. */
@@ -176,6 +181,8 @@ typedef struct BedrockPlugin {
     /* API 1.3.0: opt into symbol preparation with BEDROCK_PLUGIN_REQUIRES_SYMBOLS.
        API 1.1/1.2 descriptors retain their automatic symbol preparation. */
     uint32_t flags;
+    /* API 1.4.0: final package cleanup, separate from disabling. */
+    BedrockResult (BEDROCK_CALL *unload)(const BedrockContext *context);
 } BedrockPlugin;
 
 BEDROCK_EXPORT const BedrockPlugin *BEDROCK_CALL Bedrock_GetPlugin(void);

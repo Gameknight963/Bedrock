@@ -2,7 +2,7 @@
 
 Include `<bedrock/plugin.h>` and export `Bedrock_GetPlugin`. The returned descriptor declares the native API requirement, lifecycle callbacks and optional settings. No Bedrock import library is required.
 
-The current native API is **1.3.0**. The requirement must share its major version and be no newer than the host. `size` fields describe extensible structures supplied by the plugin; settings array entries are traversed using each entry's size. Small value types, including `BedrockSymbolError` and the JavaScript value/error types, have fixed layouts within API major version 1.
+The current native API is **1.4.0**. The requirement must share its major version and be no newer than the host. `size` fields describe extensible structures supplied by the plugin; settings array entries are traversed using each entry's size. Small value types, including `BedrockSymbolError` and the JavaScript value/error types, have fixed layouts within API major version 1.
 
 ## Package
 
@@ -26,11 +26,11 @@ Logging copies its input. Callback values are borrowed until the callback return
 
 ## Lifecycle
 
-Initialization occurs outside `DllMain`. `start`, `settings_changed` and `stop` run serially on the host worker thread. Rendering hooks and plugin-created threads are separate and must synchronize their own state. Host services are callable from those threads while the context remains valid.
+Initialization occurs outside `DllMain`. `start`, `settings_changed`, `stop` and `unload` run serially on the host worker thread. Rendering hooks and plugin-created threads are separate and must synchronize their own state. Host services are callable from those threads while the context remains valid.
 
-A failed `start` must undo its partial initialization before returning. `stop` must remove hooks and finish outstanding work before returning; the context is valid through that call. Never throw exceptions across the C boundary.
+A failed `start` must undo its partial initialization before returning. `stop` must disable behavior and finish outstanding activation work before returning. Optional `unload(const BedrockContext *)` runs after stopping when removing or replacing the package, even if it was already disabled. Remove retained hooks and other package resources there. Return `BEDROCK_OK` on success; a failure defers removal until restart. The context remains valid through unload, but JavaScript execution and symbol resolution are stopped. Never throw exceptions across the C boundary.
 
-Disabling stops behavior but retains the DLL and host connection. Re-enabling reuses the mapping. Updating loaded DLLs requires restarting the target process. Main-process DLLs are loaded with `LoadLibraryW`; sandboxed renderer and GPU DLLs are manually mapped. Mapped plugins must use Windows TLS slots (`TlsAlloc`/`TlsGetValue`) rather than compiler-managed `thread_local` or `__declspec(thread)` storage. The current mapper invokes TLS callbacks but does not register static TLS templates with the Windows loader. Native code continues to run with its target process's restrictions. Imports are resolved through the target's Windows loader, so sandboxed plugins should statically link non-system dependencies rather than assume their companion DLLs can be loaded. The loader method is not part of the public API.
+Disabling stops behavior but retains the DLL and host connection. Re-enabling reuses the mapping. After successful unload, another DLL can be loaded in the same session. The old image remains resident; callbacks and hooks must no longer depend on its stopped host context. Main-process DLLs are loaded with `LoadLibraryW`; sandboxed renderer and GPU DLLs are manually mapped. Mapped plugins must use Windows TLS slots (`TlsAlloc`/`TlsGetValue`) rather than compiler-managed `thread_local` or `__declspec(thread)` storage. The current mapper invokes TLS callbacks but does not register static TLS templates with the Windows loader. Native code continues to run with its target process's restrictions. Imports are resolved through the target's Windows loader, so sandboxed plugins should statically link non-system dependencies rather than assume their companion DLLs can be loaded. The loader method is not part of the public API.
 
 The manager watches target process identities, including creation time, and initializes replacements after a process restart. A failed instance is not repeatedly retried in the same process. Re-enabling can retry a failed start, but a disconnected host requires a target process restart.
 

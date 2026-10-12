@@ -143,8 +143,10 @@ function createPluginManager(root, options = {}) {
                             const results = await Promise.allSettled([native.stop(), Promise.resolve().then(() => javascript?.stop?.())]);
                             for (const result of results) if (result.status === 'rejected') throw result.reason;
                         },
-                        unload() {
-                            return javascript?.unload?.();
+                        async unload() {
+                            const result = await unloadPlugin(() => javascript?.unload?.());
+                            if (!result.requiresRestart) await native.unload();
+                            return result;
                         }
                     };
                 }

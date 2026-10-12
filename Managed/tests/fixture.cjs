@@ -8,6 +8,7 @@ const work = fs.mkdtempSync(path.join(os.tmpdir(), 'bedrock-managed-test-'));
 const runtime = path.join(work, 'Runtime');
 const data = path.join(work, 'BedrockData');
 fs.cpSync(process.env.BEDROCK_TEST_RUNTIME || path.join(root, 'Runtime'), runtime, { recursive: true, filter: file => !file.includes(`${path.sep}tests`) && !file.includes(`${path.sep}obj`) });
+fs.cpSync(require('../../Runtime/modules.cjs').assets, path.join(runtime, 'modules'), { recursive: true });
 if (!fs.existsSync(path.join(runtime, 'dotnet/_framework')))
     fs.cpSync(path.join(root, 'Managed/Host/bin/Release/net10.0/publish/wwwroot'), path.join(runtime, 'dotnet'), { recursive: true });
 fs.cpSync(path.join(root, 'Examples/dotnet/bin/Release/net10.0'), path.join(data, 'plugins/example'), { recursive: true });
@@ -21,6 +22,7 @@ fs.mkdirSync(incompatibleFolder);
 fs.copyFileSync(path.join(root, 'Managed/tests/Incompatible/bin/Release/net10.0/Incompatible.dll'), path.join(incompatibleFolder, 'Incompatible.dll'));
 fs.writeFileSync(path.join(incompatibleFolder, 'plugin.json'), JSON.stringify({ manifestVersion: 2,
     id: 'bedrock.incompatible', name: 'Incompatible', version: '1.0.0', entrypoints: { renderer: { runtime: 'dotnet', path: 'Incompatible.dll' } } }));
+const unloads = [];
 let runtimeDownloads = 0;
 const readFile = fs.readFileSync;
 fs.readFileSync = function (file, ...args) {
@@ -44,14 +46,14 @@ electron.app.whenReady().then(async () => {
     await new Promise(resolve => server.listen(0, '127.0.0.1', resolve));
     const { BrowserWindow } = require('electron');
     const window = new BrowserWindow({ show: false, webPreferences: { sandbox: true, contextIsolation: true, nodeIntegration: false } });
-    window.webContents.on('console-message', event => console.log(event.message));
+    window.webContents.on('console-message', event => { console.log(event.message); if (event.message.startsWith('Managed example unloaded: ')) unloads.push(event.message.slice('Managed example unloaded: '.length)); });
     await window.loadURL(`http://127.0.0.1:${server.address().port}`);
     const running = `const plugin = globalThis.Bedrock?.plugins.list().find(plugin => plugin.manifest.id === 'bedrock.managed-example'); if (plugin?.rendererStatus === 'failed') return plugin.error; return plugin?.rendererStatus === 'running';`;
     await wait(window, running);
     const product = await window.webContents.executeJavaScript(`(async () => { const api = await import('bedrock://api/dotnet.mjs'); const exports = await api.getPluginExports('bedrock.managed-example'); return exports.ExamplePlugin.Multiply(6, 7); })()`);
     if (product !== 42) throw new Error('Managed JSExport returned the wrong result');
     await wait(window, `const plugin = Bedrock.plugins.list().find(plugin => plugin.manifest.id === 'bedrock.managed-second'); if (plugin?.rendererStatus === 'failed') return plugin.error; return plugin?.rendererStatus === 'running';`);
-    await wait(window, `const plugin = Bedrock.plugins.list().find(plugin => plugin.manifest.id === 'bedrock.incompatible'); return plugin?.rendererStatus === 'failed' && plugin.error.includes('1.0.1');`);
+    await wait(window, `const plugin = Bedrock.plugins.list().find(plugin => plugin.manifest.id === 'bedrock.incompatible'); return plugin?.rendererStatus === 'failed' && plugin.error.includes('1.1.1');`);
     await window.webContents.executeJavaScript(`Bedrock.plugins.setEnabled('bedrock.managed-second', false)`);
     await wait(window, `return getComputedStyle(document.querySelector('.bedrock-card')).borderTopColor === 'rgb(88, 101, 242)';`);
     await window.webContents.executeJavaScript(`BedrockNative.request('settingsSet', 'bedrock.managed-example', 'accent', false)`);
@@ -62,6 +64,17 @@ electron.app.whenReady().then(async () => {
     await wait(window, running);
     await window.webContents.executeJavaScript(`BedrockNative.request('settingsSet', 'bedrock.managed-example', 'accent', true)`);
     await wait(window, `return getComputedStyle(document.querySelector('.bedrock-card')).borderTopColor === 'rgb(88, 101, 242)';`);
+    if (unloads.length !== 0) throw new Error('Disabling called managed unload');
+    await window.webContents.executeJavaScript(`Bedrock.plugins.setEnabled('bedrock.managed-second', true)`);
+    await wait(window, `return Bedrock.plugins.list().find(plugin => plugin.manifest.id === 'bedrock.managed-second')?.rendererStatus === 'running';`);
+    await window.webContents.executeJavaScript(`Bedrock.plugins.setEnabled('bedrock.managed-second', false)`);
+    await window.webContents.executeJavaScript(`BedrockNative.request('remove', 'bedrock.managed-second')`);
+    if (unloads.filter(id => id === 'bedrock.managed-second').length !== 2) throw new Error('Disabled managed instances did not receive unload: ' + JSON.stringify(unloads));
+    await window.webContents.executeJavaScript(`BedrockNative.request('remove', 'bedrock.managed-example')`);
+    if (unloads.filter(id => id === 'bedrock.managed-example').length !== 2) throw new Error('Managed unload missed an earlier activation: ' + JSON.stringify(unloads));
+    await wait(window, `return Bedrock.plugins.list().length === 1;`);
+    const removal = await window.webContents.executeJavaScript(`BedrockNative.request('list')`);
+    if (!removal.pendingPluginChanges.some(change => change.id === 'bedrock.managed-example' && change.reason.includes('managed plugin assembly'))) throw new Error('Managed assembly removal did not request restart');
     if (runtimeDownloads !== 1) throw new Error(`Expected one shared runtime download, got ${runtimeDownloads}`);
     console.log('PASS: shared runtime, API rejection, managed loader, JS interop, settings, cleanup and re-enable');
     server.close(); electron.app.exit(0);

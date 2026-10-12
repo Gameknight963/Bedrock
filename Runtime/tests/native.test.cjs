@@ -21,6 +21,8 @@ test('native startup failures include plugin diagnostics and do not reuse old lo
             child.stdout.write(JSON.stringify({ event: 'log', level: 3,
                 message: 'SkCanvas::clipRect: no matching machine-code signature.' }) + '\n');
         }
+        if (command.op === 'unload') child.stdout.write(JSON.stringify({ event: 'log', level: 3,
+            message: 'Could not remove the blur hooks: MH_ERROR_MEMORY_PROTECT.' }) + '\n');
         child.stdout.write(JSON.stringify({ event: 'reply', id: command.id, result: 1 }) + '\n');
         done();
     } });
@@ -37,6 +39,7 @@ test('native startup failures include plugin diagnostics and do not reuse old lo
         error.message.includes('ERROR_REVISION_MISMATCH (1306)') && error.message.includes('SkCanvas::clipRect'));
     await assert.rejects(host.request('start'), error =>
         error.message.includes('without logging a reason') && !error.message.includes('clipRect'));
+    await assert.rejects(host.request("unload"), error => error.message.includes("MH_ERROR_MEMORY_PROTECT"));
     host.close(); child.stdout.end(); child.stderr.end();
 });
 

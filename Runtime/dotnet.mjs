@@ -54,6 +54,10 @@ export async function loadPlugin(info) {
         },
         async stop() {
             try { await host.Stop(id); } finally { contexts.delete(id); }
+        },
+        async unload() {
+            await host.Unload(id);
+            return { requiresRestart: true, reason: "Restart Discord to unload the managed plugin assembly." };
         }
     };
 }

@@ -3,16 +3,18 @@ using System.Runtime.InteropServices.JavaScript;
 using System.Runtime.Versioning;
 
 [assembly: SupportedOSPlatform("browser")]
-[assembly: BedrockPlugin(typeof(ExamplePlugin), RequiresApi = "1.0.0")]
+[assembly: BedrockPlugin(typeof(ExamplePlugin), RequiresApi = "1.1.0")]
 public sealed partial class ExamplePlugin : Plugin
 {
     private static readonly Setting<bool> Accent = new("accent", true) { Label = "Accent", Description = "Add a blue accent to plugin cards." };
     public override IReadOnlyList<SettingDefinition> Settings => [Accent];
     private PluginContext? context;
+    private string id = "";
     private Action? removeAccent;
     public override async Task StartAsync(PluginContext context)
     {
         this.context = context;
+        id = context.Id;
         context.ReportStatus("Loading JavaScript bindings");
         using JSObject module = await context.ImportModuleAsync("managed-example", "renderer.mjs");
         context.CancellationToken.ThrowIfCancellationRequested();
@@ -28,6 +30,8 @@ public sealed partial class ExamplePlugin : Plugin
         removeAccent = context.AddStyle(context.Settings.Get(Accent) ? ".bedrock-card { border-color: #5865f2; }" : "");
     }
     public override void Stop() { context = null; removeAccent = null; }
+    public override void Unload() { Unloaded(id); }
+    [JSImport("unloaded", "managed-example")] private static partial void Unloaded(string id);
     [JSExport] public static int Multiply(int left, int right) => left * right;
     [JSImport("add", "managed-example")] private static partial int Add(int left, int right);
 }

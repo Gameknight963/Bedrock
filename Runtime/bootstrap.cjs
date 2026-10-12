@@ -149,7 +149,7 @@ function install(options = {}) {
                 const types = { '.js': 'text/javascript', '.mjs': 'text/javascript', '.css': 'text/css',
                     '.json': 'application/json', '.md': 'text/plain', '.png': 'image/png', '.svg': 'image/svg+xml',
                     '.jpg': 'image/jpeg', '.webp': 'image/webp', '.woff2': 'font/woff2' };
-                const source = /\.[cm]?js$/.test(file) ? compileRenderer(fs.readFileSync(file, 'utf8'), file) : fs.readFileSync(file);
+                const source = record.manifest.entrypoints.renderer?.runtime === 'javascript' && /\.[cm]?js$/.test(file) ? compileRenderer(fs.readFileSync(file, 'utf8'), file) : fs.readFileSync(file);
                 return new Response(source, { headers: {
                     'Content-Type': types[path.extname(file)] || 'application/octet-stream',
                     'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-store'

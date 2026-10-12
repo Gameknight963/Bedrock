@@ -17,8 +17,10 @@ public abstract class Plugin
     public virtual IReadOnlyList<SettingDefinition> Settings => [];
     public virtual void Start(PluginContext context) { }
     public virtual void Stop() { }
+    public virtual void Unload() { }
     public virtual Task StartAsync(PluginContext context) { Start(context); return Task.CompletedTask; }
     public virtual Task StopAsync() { Stop(); return Task.CompletedTask; }
+    public virtual Task UnloadAsync() { Unload(); return Task.CompletedTask; }
 }
 
 public abstract class SettingDefinition(string key, string type, object defaultValue)

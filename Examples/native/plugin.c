@@ -35,12 +35,17 @@ static void BEDROCK_CALL changed(const char *key, const BedrockValue *value)
     context->log(context->host, BEDROCK_LOG_INFO, message);
     if (!strcmp(key, "message")) context->log(context->host, BEDROCK_LOG_INFO, value->string);
 }
+static BedrockResult BEDROCK_CALL unload(const BedrockContext *ctx)
+{
+    ctx->log(ctx->host, BEDROCK_LOG_INFO, "Native example unloaded.");
+    return BEDROCK_OK;
+}
 BEDROCK_EXPORT const BedrockPlugin *BEDROCK_CALL Bedrock_GetPlugin(void)
 {
     static const BedrockPlugin plugin = {
-        .size = sizeof(BedrockPlugin), .required_api = { 1, 0, 0 },
+        .size = sizeof(BedrockPlugin), .required_api = { 1, 4, 0 },
         .settings = settings, .settings_count = sizeof(settings) / sizeof(settings[0]),
-        .start = start, .stop = stop, .settings_changed = changed
+        .start = start, .stop = stop, .settings_changed = changed, .unload = unload
     };
     return &plugin;
 }

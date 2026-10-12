@@ -13,6 +13,7 @@ public static partial class Host
     private sealed record Instance(Plugin Plugin, PluginContext Context);
     private static readonly Dictionary<string, Type> types = [];
     private static readonly Dictionary<string, Instance> instances = [];
+    private static readonly Dictionary<string, List<Plugin>> retired = [];
     public static void Main() { }
 
     [JSExport]
@@ -51,8 +52,8 @@ public static partial class Host
         string core = requirement.Split('-', '+')[0];
         bool invalidPrerelease = semantic.Success && semantic.Groups[4].Value.Split('.').Any(part =>
             part.Length > 1 && part[0] == '0' && part.All(char.IsDigit));
-        if (!semantic.Success || invalidPrerelease || !Version.TryParse(core, out Version? version) || version.Major != 1 || version > new Version(1, 0, 0))
-            throw new InvalidOperationException($"Plugin requires managed API {requirement}; Bedrock provides 1.0.0.");
+        if (!semantic.Success || invalidPrerelease || !Version.TryParse(core, out Version? version) || version.Major != 1 || version > new Version(1, 1, 0))
+            throw new InvalidOperationException($"Plugin requires managed API {requirement}; Bedrock provides 1.1.0.");
         stream.Position = 0;
         // The default load context also makes dynamically loaded JSExport methods discoverable.
         Assembly assembly = AssemblyLoadContext.Default.LoadFromStream(stream);
@@ -79,7 +80,19 @@ public static partial class Host
     public static async Task Stop(string id)
     {
         if (!instances.Remove(id, out Instance? instance)) return;
+        if (!retired.TryGetValue(id, out List<Plugin>? plugins)) retired.Add(id, plugins = []);
+        plugins.Add(instance.Plugin);
         instance.Context.Dispose();
         await instance.Plugin.StopAsync();
+    }
+    [JSExport]
+    public static async Task Unload(string id)
+    {
+        List<Exception> failures = [];
+        try { await Stop(id); } catch (Exception error) { failures.Add(error); }
+        if (retired.Remove(id, out List<Plugin>? plugins))
+            foreach (Plugin plugin in plugins)
+                try { await plugin.UnloadAsync(); } catch (Exception error) { failures.Add(error); }
+        if (failures.Count > 0) throw new AggregateException(failures);
     }
 }

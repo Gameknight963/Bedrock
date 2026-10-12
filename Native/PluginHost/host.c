@@ -38,7 +38,7 @@ typedef struct Host {
     HostOutput *outgoing, **outgoing_tail;
     size_t output_bytes;
     volatile LONG output_closed, reader_exit;
-    bool output_exit;
+    bool output_exit, unloaded;
     HANDLE output_event, writer_thread;
 } Host;
 
@@ -326,7 +326,16 @@ static void command(Host *host, const char *json, jsmntok_t *tokens, int count)
         free(op); return;
     }
     else if (!strcmp(op, "stop")) stop_plugin(host);
+    else if (!strcmp(op, "unload")) {
+        stop_plugin(host);
+        if (!host->unloaded) {
+            if (host->plugin->size >= offsetof(BedrockPlugin, unload) + sizeof(host->plugin->unload) && host->plugin->unload)
+                result = host->plugin->unload(&host->context);
+            if (result == BEDROCK_OK) host->unloaded = true;
+        }
+    }
     else if (!strcmp(op, "start")) {
+        if (host->unloaded) { reply(host, id.number, BEDROCK_STOPPED, "Plugin has been unloaded."); free(op); return; }
         if (host->active) { reply(host, id.number, BEDROCK_ERROR, "Plugin is already running."); free(op); return; }
         int values = json_member(json, tokens, count, 0, "values");
         for (uint32_t i = 0; i < host->plugin->settings_count; i++) {

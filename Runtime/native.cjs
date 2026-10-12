@@ -63,7 +63,7 @@ function connectHost(target, entry, services, options) {
                 services.reportStatus?.(String(message.message));
             } else if (message.event === 'log') {
                 if (message.level === 3) for (const request of pending.values()) {
-                    if (request.op === 'start') request.diagnostics =
+                    if (request.op === 'start' || request.op === 'unload') request.diagnostics =
                         (request.diagnostics + (request.diagnostics ? '\n' : '') + String(message.message)).slice(0, 8192);
                 }
                 services.log(levels[message.level] || 'error', [String(message.message)]);
@@ -185,6 +185,17 @@ function createNativeEntryPoints(record, services, options = {}) {
             ctx.cleanup(() => { clearInterval(timer); });
             await schedule();
             if (!ctx.signal.aborted) { timer = setInterval(() => schedule().catch(error => services.failed(error)), 1000); timer.unref(); }
+        },
+        async unload() {
+            clearInterval(timer);
+            context = null;
+            await work.catch(() => {});
+            const results = await Promise.allSettled([...instances.values()].map(async instance => {
+                if (instance.host.closed) throw new Error("Native host disconnected before package cleanup. Restart Discord to finish unloading it.");
+                await instance.host.ready;
+                await instance.host.request("unload");
+            }));
+            for (const result of results) if (result.status === "rejected") throw result.reason;
         },
         close() { for (const instance of instances.values()) instance.host.close(); },
         async stop() {
