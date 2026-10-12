@@ -101,7 +101,8 @@ function createPluginManager(root, options = {}) {
         };
     }
 
-    const enabled = id => configuration.plugins[id]?.enabled !== false;
+    const recoveryEnabled = new Map();
+    const enabled = id => options.skipPlugins ? recoveryEnabled.get(id) === true : configuration.plugins[id]?.enabled !== false;
     const notify = () => options.changed?.(list());
     function list() {
         return [...records.values()].map(record => ({
@@ -296,6 +297,7 @@ function createPluginManager(root, options = {}) {
             configuration.plugins[id] = { ...(configuration.plugins[id] || {}), enabled: !!value };
             packageActions.setEnabled(id, !!value);
             writeJson(configurationPath, configuration);
+            if (options.skipPlugins) recoveryEnabled.set(id, !!value);
             if (value) start(record); else await stop(record);
             notify();
             return list();

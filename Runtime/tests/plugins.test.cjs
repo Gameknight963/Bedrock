@@ -377,3 +377,22 @@ test('enabling during removal waits until removal finishes without restarting th
     assert.deepEqual(events, ['start']);
     assert.equal(manager.list().length, 0);
 });
+
+
+test('recovery mode skips startup and refresh without changing saved enable states', async t => {
+    const root = fixture(t);
+    plugin(root, 'test.recovery', `export function start(ctx) { ctx.settings.set('ran', true); }`);
+    const saved = { plugins: { 'test.recovery': { enabled: true } } };
+    writeJson(path.join(root, 'settings.json'), saved);
+    const manager = createPluginManager(root, { ...quiet, skipPlugins: true });
+    t.after(() => manager.close());
+    manager.scan();
+    await manager.refresh();
+    assert.equal(manager.list()[0].enabled, false);
+    assert.equal(manager.records.get('test.recovery').module, undefined);
+    assert.deepEqual(JSON.parse(fs.readFileSync(path.join(root, 'settings.json'), 'utf8')), saved);
+    await manager.setEnabled('test.recovery', true);
+    assert.equal(manager.settings('test.recovery').get('ran'), true);
+    await manager.setEnabled('test.recovery', false);
+    assert.equal(JSON.parse(fs.readFileSync(path.join(root, 'settings.json'), 'utf8')).plugins['test.recovery'].enabled, false);
+});

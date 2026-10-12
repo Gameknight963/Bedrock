@@ -728,6 +728,7 @@ function installRenderer(configuration) {
         }
         return h('div', { className: 'bedrock-page', ref: page },
             navigation,
+            snapshot.skipPlugins && h('p', { className: 'bedrock-muted', role: 'status' }, 'Automatic plugin startup was skipped. You can disable plugins here or enable them individually.'),
             removalDialog,
             restartBanner,
             h('div', { className: 'bedrock-toolbar' },

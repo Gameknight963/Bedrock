@@ -24,6 +24,7 @@ function install(options = {}) {
         throw new Error(`Cannot write Bedrock data at ${root}. Move Bedrock to a writable folder. ${error.message}`);
     }
     const devtools = options.devtools ?? process.argv.includes('--bedrock-devtools');
+    const skipPlugins = options.skipPlugins ?? process.argv.includes('--bedrock-skip-plugins');
     const sessions = new WeakSet();
     const windows = new Set();
     const beforeCreate = new Set();
@@ -36,7 +37,7 @@ function install(options = {}) {
         } catch { return false; }
     };
     let revision = 0;
-    const snapshot = () => ({ revision, plugins: manager.list(), pendingPluginChanges: manager.pendingChanges(), restartRequests: manager.restartRequests(), errors: manager.errors(), themes: themes.list(), themeErrors: themes.errors() });
+    const snapshot = () => ({ revision, skipPlugins, plugins: manager.list(), pendingPluginChanges: manager.pendingChanges(), restartRequests: manager.restartRequests(), errors: manager.errors(), themes: themes.list(), themeErrors: themes.errors() });
     function broadcast(channel, value) {
         for (const window of windows) {
             const contents = window.webContents;
@@ -45,6 +46,7 @@ function install(options = {}) {
     }
     const logs = createLogFeed(root);
     const manager = createPluginManager(root, {
+        skipPlugins,
         async unloadRenderer(id) {
             const results = await Promise.all([...windows].filter(window => !window.isDestroyed() &&
                 !window.webContents.isDestroyed() && allowed(window.webContents.getURL())).map(window =>
@@ -236,6 +238,7 @@ function install(options = {}) {
             if (!fs.existsSync(launcher)) throw new Error('Cannot find the Bedrock launcher. Restart through the launcher manually.');
             const restartArguments = ['--exe', process.execPath];
             if (devtools) restartArguments.push('--devtools');
+            if (skipPlugins) restartArguments.push('--skip-plugins');
             const inspector = process.argv.find(argument => argument.startsWith('--inspect-brk='));
             const port = inspector?.match(/:(\d+)$/)?.[1];
             if (port) restartArguments.push('--port', port);

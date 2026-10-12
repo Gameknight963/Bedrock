@@ -237,7 +237,7 @@ static int launch(int argc, wchar_t **argv, LaunchPaths *paths)
 {
     wchar_t *path = paths->path, *directory = paths->directory, *command = paths->command;
     unsigned short port = 9229;
-    int check_only = 0, devtools = 0, i, success = 0;
+    int check_only = 0, devtools = 0, skip_plugins = 0, i, success = 0;
     FuseLocation fuse = {0};
     STARTUPINFOW startup = {0};
     PROCESS_INFORMATION child = {0};
@@ -248,6 +248,7 @@ static int launch(int argc, wchar_t **argv, LaunchPaths *paths)
     for (i = 1; i < argc; ++i) {
         if (wcscmp(argv[i], L"--check") == 0) check_only = 1;
         else if (wcscmp(argv[i], L"--devtools") == 0) devtools = 1;
+        else if (wcscmp(argv[i], L"--skip-plugins") == 0) skip_plugins = 1;
         else if (wcscmp(argv[i], L"--exe") == 0 && i + 1 < argc) {
             DWORD length = GetFullPathNameW(argv[++i], PATH_CAP, path, NULL);
             if (!length) { win_error(L"Resolve executable"); return 1; }
@@ -258,7 +259,7 @@ static int launch(int argc, wchar_t **argv, LaunchPaths *paths)
             if (*end || value < 1 || value > 65535) { fwprintf(stderr, L"Invalid port.\n"); return 1; }
             port = (unsigned short)value;
         } else {
-            wprintf(L"Usage: BedrockLauncher [--check] [--devtools] [--exe <Discord.exe>] [--port <1-65535>]\n");
+            wprintf(L"Usage: BedrockLauncher [--check] [--devtools] [--skip-plugins] [--exe <Discord.exe>] [--port <1-65535>]\n");
             return wcscmp(argv[i], L"--help") == 0 ? 0 : 1;
         }
     }
@@ -289,8 +290,8 @@ static int launch(int argc, wchar_t **argv, LaunchPaths *paths)
     if (!shutdown_discord(path)) return 1;
     wcscpy_s(directory, PATH_CAP, path);
     { wchar_t *slash = wcsrchr(directory, L'\\'); if (!slash) return 1; *slash = 0; }
-    if (swprintf_s(command, PATH_CAP + 128, L"\"%ls\" --inspect-brk=127.0.0.1:%hu%ls", path, port,
-        devtools ? L" --bedrock-devtools" : L"") < 0) return 1;
+    if (swprintf_s(command, PATH_CAP + 128, L"\"%ls\" --inspect-brk=127.0.0.1:%hu%ls%ls", path, port,
+        devtools ? L" --bedrock-devtools" : L"", skip_plugins ? L" --bedrock-skip-plugins" : L"") < 0) return 1;
     startup.cb = sizeof(startup);
     if (!CreateProcessW(path, command, NULL, NULL, FALSE, CREATE_SUSPENDED, NULL, directory, &startup, &child)) {
         win_error(L"CreateProcessW"); return 1;

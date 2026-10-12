@@ -58,6 +58,8 @@ Other options:
 .\Launcher\bin\x64\Debug\BedrockLauncher.exe --exe 'C:\path\Discord.exe' --port 9230
 ```
 
+`--skip-plugins` launches Bedrock without automatically starting plugins. Open the plugin manager to disable a suspected plugin or enable plugins individually. Saved enable states are unchanged until you toggle a plugin. Launch normally to restore automatic startup.
+
 `--check` reads the executable without launching or patching anything. 
 
 ### Additional details
