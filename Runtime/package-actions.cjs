@@ -33,16 +33,28 @@ function createPackageActions(root, configuration, log) {
                     const staged = child(cache, action.staged);
                     const packageFolder = child(staged, 'plugin');
                     const backup = path.join(staged, 'previous');
-                    let moved = false;
-                    if (fs.existsSync(folder)) { fs.renameSync(folder, backup); moved = true; }
-                    try { fs.renameSync(packageFolder, folder); }
-                    catch (error) { if (moved) fs.renameSync(backup, folder); throw error; }
+                    if (fs.existsSync(packageFolder)) {
+                        if (fs.existsSync(folder)) {
+                            if (fs.existsSync(backup)) throw new Error('Both the installed folder and update backup exist before replacement.');
+                            fs.renameSync(folder, backup);
+                        }
+                        try { fs.renameSync(packageFolder, folder); }
+                        catch (error) {
+                            if (!fs.existsSync(folder) && fs.existsSync(backup)) fs.renameSync(backup, folder);
+                            throw error;
+                        }
+                    } else if (!fs.existsSync(folder)) {
+                        throw new Error('Neither the staged nor installed plugin folder exists.');
+                    }
+                    // A missing staged package with an installed folder means the swap already finished.
                     configuration.plugins[action.id] = { ...(configuration.plugins[action.id] || {}), enabled: action.enabled };
+                    writeJson(path.join(root, 'settings.json'), configuration);
                     try { fs.rmSync(staged, { recursive: true, force: true }); }
                     catch (error) { cleanup(action.id, action.staged); log('warn', action.id, [`Previous plugin files could not be deleted: ${error.message}`]); }
                 } else throw new Error('Unknown pending plugin action.');
-                actions.splice(actions.indexOf(action), 1);
                 writeJson(path.join(root, 'settings.json'), configuration);
+                actions.splice(actions.indexOf(action), 1);
+                save();
             } catch (error) {
                 action.error = `Could not finish plugin ${action.action}: ${error.message}`;
                 log('error', action.id, [action.error]);
