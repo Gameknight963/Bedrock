@@ -283,10 +283,10 @@ static int launch(int argc, wchar_t **argv, LaunchPaths *paths)
             fwprintf(stderr, L"Runtime\\bootstrap.cjs must be beside the launcher. Build the Launcher project first.\n"); return 1;
         }
     }
-    if (!shutdown_discord(path)) return 1;
     if (!port_available(port)) {
         fwprintf(stderr, L"Loopback port %hu is unavailable. Choose another with --port.\n", port); return 1;
     }
+    if (!shutdown_discord(path)) return 1;
     wcscpy_s(directory, PATH_CAP, path);
     { wchar_t *slash = wcsrchr(directory, L'\\'); if (!slash) return 1; *slash = 0; }
     if (swprintf_s(command, PATH_CAP + 128, L"\"%ls\" --inspect-brk=127.0.0.1:%hu%ls", path, port,
