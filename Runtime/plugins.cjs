@@ -124,7 +124,6 @@ function createPluginManager(root, options = {}) {
         record.status = 'starting';
         record.statusMessage = null;
         record.error = null;
-        record.stopFailed = false;
         record.unloadPromise = null;
         let owned;
         try {
@@ -223,7 +222,7 @@ function createPluginManager(root, options = {}) {
                     timer = setTimeout(() => reject(new Error('stop() did not finish within 10 seconds')), 10000);
                 })]);
             } finally { clearTimeout(timer); }
-        } catch (error) { record.stopFailed = true; record.error = error.message; log('error', record.manifest.id, [error]); }
+        } catch (error) { record.stopFailed = true; record.stopError ||= error.message; record.error = error.message; log('error', record.manifest.id, [error]); }
         finally { instance.dispose(); record.instance = null; record.startPromise = null; record.status = 'stopped'; }
     }
 
@@ -237,7 +236,7 @@ function createPluginManager(root, options = {}) {
                 if (result?.requiresRestart) context.requireRestart(result.reason);
             }, ctx);
             const main = await unloadPlugin(async context => {
-                if (record.stopFailed) throw new Error(`Plugin cleanup failed: ${record.error}`);
+                if (record.stopFailed) throw new Error(`Plugin cleanup failed: ${record.stopError}`);
                 return record.module?.unload?.(context);
             }, ctx);
             if (main.error) log('error', record.manifest.id, [main.reason]);

@@ -1,27 +1,36 @@
 param(
     [string]$Electron = (Join-Path $PSScriptRoot 'obj/node_modules/electron/dist/electron.exe'),
     [switch]$ThroughInspector,
+    [ValidateSet("Debug", "Release")]
+    [string]$Configuration = "Release",
     [int]$Port = 19330
 )
 $ErrorActionPreference = 'Stop'
 if (-not (Test-Path -LiteralPath $Electron)) {
     throw 'Install the isolated test dependencies first: npm install --prefix Runtime/tests/obj electron@42.7.1 react@18.3.1 react-dom@18.3.1'
 }
+$runtimeRoot = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot "../../Launcher/bin/x64/$Configuration/Runtime"))
+if (-not (Test-Path -LiteralPath (Join-Path $runtimeRoot 'bootstrap.cjs'))) {
+    throw "Build the Launcher project with $Configuration/x64 first."
+}
+$previousRuntimeRoot = $env:BEDROCK_RUNTIME_ROOT
+$env:BEDROCK_RUNTIME_ROOT = $runtimeRoot
 $fixtureArguments = @()
 if ($ThroughInspector) { $fixtureArguments += "--inspect-brk=127.0.0.1:$Port" }
 $fixtureArguments += ('"' + (Join-Path $PSScriptRoot 'electron-smoke.cjs') + '"')
 $fixtureRoot = Join-Path ([IO.Path]::GetTempPath()) ('Bedrock-electron-' + [guid]::NewGuid())
 $null = New-Item -ItemType Directory -Path $fixtureRoot
 $fixtureArguments += ('"' + $fixtureRoot + '"')
-$fixtureProcess = Start-Process -FilePath $Electron -ArgumentList $fixtureArguments -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $PSScriptRoot 'obj/electron-stdout.log') -RedirectStandardError (Join-Path $PSScriptRoot 'obj/electron-stderr.log')
+$fixtureProcess = $null
 $bootstrapRoot = $null
 try {
+    $fixtureProcess = Start-Process -FilePath $Electron -ArgumentList $fixtureArguments -WindowStyle Hidden -PassThru -RedirectStandardOutput (Join-Path $PSScriptRoot 'obj/electron-stdout.log') -RedirectStandardError (Join-Path $PSScriptRoot 'obj/electron-stderr.log')
     $null = $fixtureProcess.Handle
     if ($ThroughInspector) {
         $bootstrapRoot = Join-Path ([IO.Path]::GetTempPath()) ('Bedrock-electron-inspector-' + [guid]::NewGuid())
         $bootstrapPath = Join-Path $PSScriptRoot 'obj/inspector-bootstrap.cjs'
-        $runtimePath = [IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../bootstrap.cjs'))
-        $bootstrapSource = 'exports.install = () => require(' + (ConvertTo-Json -Compress $runtimePath) + ').install({addonDirectory:' + (ConvertTo-Json -Compress ([IO.Path]::GetFullPath((Join-Path $PSScriptRoot '../../Native/Addons/bin/x64/Debug')))) + ',root:' + (ConvertTo-Json -Compress $bootstrapRoot) + ',collection: {fetch: (...args) => globalThis.fixtureCollectionFetch(...args)},allowURL: url => url.origin === "https://bedrock.test",restart: () => {globalThis.fixtureRestartRequested = true; return true;}});'
+        $runtimePath = Join-Path $runtimeRoot 'bootstrap.cjs'
+        $bootstrapSource = 'exports.install = () => require(' + (ConvertTo-Json -Compress $runtimePath) + ').install({addonDirectory:' + (ConvertTo-Json -Compress (Join-Path $runtimeRoot 'native/win32-x64')) + ',root:' + (ConvertTo-Json -Compress $bootstrapRoot) + ',collection: {fetch: (...args) => globalThis.fixtureCollectionFetch(...args)},allowURL: url => url.origin === "https://bedrock.test",restart: () => {globalThis.fixtureRestartRequested = true; return true;}});'
         Set-Content -LiteralPath $bootstrapPath -Encoding UTF8 -Value $bootstrapSource
         $ready = $false
         for ($attempt = 0; $attempt -lt 30; $attempt++) {
@@ -43,7 +52,8 @@ try {
         throw "Electron test failed: $fixtureExitCode"
     }
 } finally {
-    if (-not $fixtureProcess.HasExited) { Stop-Process -Id $fixtureProcess.Id }
+    $env:BEDROCK_RUNTIME_ROOT = $previousRuntimeRoot
+    if ($fixtureProcess -and -not $fixtureProcess.HasExited) { Stop-Process -Id $fixtureProcess.Id }
     # Loaded native modules remain locked until Electron exits.
     foreach ($cleanupRoot in @($fixtureRoot, $bootstrapRoot)) {
         if (-not $cleanupRoot -or -not (Test-Path -LiteralPath $cleanupRoot)) { continue }

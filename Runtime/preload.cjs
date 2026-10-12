@@ -212,7 +212,6 @@ function installRenderer(configuration) {
                 if (record.module.settings) update(await native.request('settingsDefine', record.info.manifest.id, record.module.settings.definitions));
                 if (!record.info.enabled) { record.status = 'stopped'; notify(); return; }
                 instance = contextFor(record);
-                record.stopFailed = false;
                 record.instance = instance;
                 if (record.module.settings) {
                     const binding = settingsAPI.bindPluginSettings(record.module.settings, {
@@ -240,7 +239,7 @@ function installRenderer(configuration) {
             try { await Promise.race([Promise.resolve(record.module.stop?.()), new Promise((_, reject) => {
                 timer = setTimeout(() => reject(new Error('stop() did not finish within 10 seconds')), 10000);
             })]); }
-            catch (error) { record.stopFailed = true; record.error = error.message; log(record.info.manifest.id, error); }
+            catch (error) { record.stopFailed = true; record.stopError ||= error.message; record.error = error.message; log(record.info.manifest.id, error); }
             finally { clearTimeout(timer); record.instance = null; record.status = 'stopped'; notify(); }
         }
     }
@@ -263,7 +262,7 @@ function installRenderer(configuration) {
                         record.restartWork.catch(error => log(id, error));
                     });
                 const result = await unloadPlugin(context => {
-                    if (record.stopFailed) throw new Error(`Renderer cleanup failed: ${record.error}`);
+                    if (record.stopFailed) throw new Error(`Renderer cleanup failed: ${record.stopError}`);
                     return record.module?.unload?.(context);
                 }, ctx);
                 await record.restartWork;

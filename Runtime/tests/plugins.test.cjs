@@ -396,3 +396,22 @@ test('recovery mode skips startup and refresh without changing saved enable stat
     await manager.setEnabled('test.recovery', false);
     assert.equal(JSON.parse(fs.readFileSync(path.join(root, 'settings.json'), 'utf8')).plugins['test.recovery'].enabled, false);
 });
+
+
+test('a later successful activation cannot erase an earlier cleanup failure', async t => {
+    const root = fixture(t);
+    globalThis.bedrockStopHistory = { calls: 0, unloaded: false };
+    t.after(() => { delete globalThis.bedrockStopHistory; });
+    const directory = plugin(root, 'test.stop-history', `export function start() {}
+        export function stop() { if (++globalThis.bedrockStopHistory.calls === 1) throw new Error('original cleanup failure'); }
+        export function unload() { globalThis.bedrockStopHistory.unloaded = true; }`);
+    const manager = createPluginManager(root, quiet);
+    t.after(() => manager.close());
+    manager.scan();
+    await manager.setEnabled('test.stop-history', false);
+    await manager.setEnabled('test.stop-history', true);
+    await manager.remove('test.stop-history');
+    assert.equal(globalThis.bedrockStopHistory.unloaded, false);
+    assert.equal(fs.existsSync(directory), true);
+    assert.match(manager.pendingChanges()[0].reason, /original cleanup failure/);
+});

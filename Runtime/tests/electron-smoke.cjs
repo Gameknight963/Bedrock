@@ -114,8 +114,21 @@ const collectionFetch = async url => {
     if (url.endsWith('/latest')) return Response.json({ assets: [{ name: 'catalog.json', browser_download_url: 'https://github.com/bedrock-client/bedrock-plugins/releases/download/collection-2026-10-10-1/catalog.json' }] });
     return url.endsWith('/catalog.json') ? Response.json({ catalogVersion: 1, plugins: [remoteEntry, updateEntry] }) : new Response(url.endsWith('/bedrock.example-1.1.0.zip') ? updateArchive : remoteArchive);
 };
+const stopFailureDirectory = path.join(root, 'plugins', 'stop-failure');
+fs.mkdirSync(stopFailureDirectory, { recursive: true });
+writeJson(path.join(stopFailureDirectory, 'plugin.json'), { manifestVersion: 2, id: 'test.renderer-stop-failure', name: 'Renderer cleanup fixture', version: '1.0.0',
+    entrypoints: { renderer: { runtime: 'javascript', path: 'renderer.js', requiresApi: '1.0.0' } } });
+fs.writeFileSync(path.join(stopFailureDirectory, 'renderer.js'), `
+    export function start() { globalThis.fixtureCleanupStarts = (globalThis.fixtureCleanupStarts || 0) + 1; }
+    export function stop() {
+        globalThis.fixtureCleanupStops = (globalThis.fixtureCleanupStops || 0) + 1;
+        if (globalThis.fixtureCleanupStops === 1) throw new Error('original renderer cleanup failure');
+    }
+    export function unload() { globalThis.fixtureUnsafeUnload = true; }
+`);
+
 globalThis.fixtureCollectionFetch = collectionFetch;
-require('../bootstrap.cjs').install({ root, addonDirectory: path.join(__dirname, '../../Native/Addons/bin/x64/Debug'), collection: { fetch: collectionFetch }, allowURL: url => url.origin === 'https://bedrock.test', restart: () => { globalThis.fixtureRestartRequested = true; return true; } });
+require(path.join(process.env.BEDROCK_RUNTIME_ROOT || path.resolve(__dirname, '..'), 'bootstrap.cjs')).install({ root, addonDirectory: process.env.BEDROCK_RUNTIME_ROOT ? path.join(process.env.BEDROCK_RUNTIME_ROOT, 'native/win32-x64') : path.join(__dirname, '../../Native/Addons/bin/x64/Debug'), collection: { fetch: collectionFetch }, allowURL: url => url.origin === 'https://bedrock.test', restart: () => { globalThis.fixtureRestartRequested = true; return true; } });
 nativeWindows = Bedrock.require(fixtureNative);
 const lockedPackage = path.join(root, 'plugins', 'locked-addon');
 fs.mkdirSync(lockedPackage, { recursive: true });
@@ -127,7 +140,7 @@ const managedConsole = path.join(root, 'plugins', 'console');
 fs.cpSync(path.join(pluginCollection, '.artifacts/packages/console'), managedConsole, { recursive: true });
 fs.copyFileSync(path.join(pluginCollection, 'plugins/console/main.js'), path.join(managedConsole, 'main.js'));
 fs.copyFileSync(path.join(pluginCollection, 'plugins/console/plugin.json'), path.join(managedConsole, 'plugin.json'));
-globalThis.BedrockMain.settings('bedrock.console').set('visible', false);
+globalThis.BedrockMain.settings('gameknight963.console').set('visible', false);
 globalThis.BedrockMain.scan();
 const themesDirectory = globalThis.BedrockMain.themes.directory;
 fs.mkdirSync(path.join(themesDirectory, 'assets'));
@@ -219,11 +232,11 @@ app.whenReady().then(async () => {
         const opaque = new BrowserWindow({ show: false, backgroundColor: '#123456' });
         assert.equal(opaque.getBackgroundColor().toLowerCase(), '#123456', 'transparency defaults to off');
         opaque.destroy();
-        globalThis.BedrockMain.settings('bedrock.window-customization').set('transparency', true);
+        globalThis.BedrockMain.settings('gameknight963.window-customization').set('transparency', true);
         const transparent = new BrowserWindow({ show: false, frame: true, backgroundColor: '#123456' });
         assert.equal(transparent.getBackgroundColor(), '#000000', 'transparent background applied before window creation');
         transparent.destroy();
-        globalThis.BedrockMain.settings('bedrock.window-customization').set('transparency', false);
+        globalThis.BedrockMain.settings('gameknight963.window-customization').set('transparency', false);
         const restored = new BrowserWindow({ show: false, backgroundColor: '#123456' });
         assert.equal(restored.getBackgroundColor().toLowerCase(), '#123456', 'disable removes the creation hook');
         restored.destroy();
@@ -243,18 +256,18 @@ app.whenReady().then(async () => {
         assert.throws(() => customization.update({ nativeTitlebar: true, resizableFrame: true }), /Windows error 1400/);
         await nativeProbe.loadURL('https://discord.com/native-fixture');
         assert.equal(nativeWindows.getStyle(handle) & thickFrame, thickFrame, 'main plugin restores resizing on a real Discord-origin window');
-        globalThis.BedrockMain.settings('bedrock.window-customization').set('nativeTitlebar', true);
+        globalThis.BedrockMain.settings('gameknight963.window-customization').set('nativeTitlebar', true);
         assert.equal(nativeWindows.getStyle(handle) & caption, caption, 'native titlebar setting applies without a restart');
-        globalThis.BedrockMain.settings('bedrock.window-customization').set('nativeTitlebar', false);
+        globalThis.BedrockMain.settings('gameknight963.window-customization').set('nativeTitlebar', false);
         assert.equal(nativeWindows.getStyle(handle) & caption, originalStyle & caption);
-        await globalThis.BedrockMain.setEnabled('bedrock.window-customization', false);
+        await globalThis.BedrockMain.setEnabled('gameknight963.window-customization', false);
         assert.equal(nativeWindows.getStyle(handle), originalStyle, 'disabling restores native styles');
-        await globalThis.BedrockMain.setEnabled('bedrock.window-customization', true);
+        await globalThis.BedrockMain.setEnabled('gameknight963.window-customization', true);
         assert.equal(nativeWindows.getStyle(handle) & thickFrame, thickFrame);
         nativeProbe.destroy();
         const maximizeProbe = new BrowserWindow({ show: false, frame: false, transparent: true });
         await maximizeProbe.loadURL('https://discord.com/native-fixture');
-        globalThis.BedrockMain.settings('bedrock.window-customization').set('nativeTitlebar', true);
+        globalThis.BedrockMain.settings('gameknight963.window-customization').set('nativeTitlebar', true);
         maximizeProbe.showInactive();
         const restoreBounds = maximizeProbe.getBounds();
         maximizeProbe.maximize();
@@ -297,28 +310,28 @@ app.whenReady().then(async () => {
         assert.deepEqual(maximizeProbe.getBounds(), restoreBounds, 'JavaScript can restore after native maximize and fullscreen');
         assert.deepEqual(fullscreenEvents, ['enter', 'leave', 'enter', 'leave']);
         maximizeProbe.setFullScreen(true);
-        await globalThis.BedrockMain.setEnabled('bedrock.window-customization', false);
+        await globalThis.BedrockMain.setEnabled('gameknight963.window-customization', false);
         assert.equal(maximizeProbe.isFullScreen(), false, 'disable restores fullscreen API');
         assert.deepEqual(maximizeProbe.getBounds(), restoreBounds, 'disable leaves fullscreen and restores bounds');
-        await globalThis.BedrockMain.setEnabled('bedrock.window-customization', true);
+        await globalThis.BedrockMain.setEnabled('gameknight963.window-customization', true);
         maximizeProbe.destroy();
-        globalThis.BedrockMain.settings('bedrock.window-customization').set('nativeTitlebar', false);
+        globalThis.BedrockMain.settings('gameknight963.window-customization').set('nativeTitlebar', false);
         await window.loadURL('https://bedrock.test/');
         await waitFor(`globalThis.Bedrock?.plugins.list().find(plugin => plugin.manifest.id === 'test.example')?.rendererStatus === 'running' && document.querySelector('[role=switch][aria-label="Enable Example plugin"]')`);
         await waitFor(`document.querySelector('.bedrock-restart-banner button')?.textContent === 'Restart Discord'`);
-        assert.match(await evaluate(`Bedrock.plugins.list().find(plugin => plugin.manifest.id === 'bedrock.window-customization').restartReason`), /restore window creation options/);
+        assert.match(await evaluate(`Bedrock.plugins.list().find(plugin => plugin.manifest.id === 'gameknight963.window-customization').restartReason`), /restore window creation options/);
         assert.equal(await evaluate('globalThis.originalPreload'), true, 'existing Discord preload must be preserved');
         await waitFor(`Bedrock.plugins.list().find(plugin => plugin.manifest.id === 'bedrock.example')?.rendererStatus === 'running'`);
         assert.deepEqual(await evaluate(`Object.keys(Bedrock.plugins.list().find(plugin => plugin.manifest.id === 'bedrock.example').settingsDefinitions)`), ['accent', 'color']);
-        await waitFor(`globalThis.Bedrock.plugins.list().find(plugin => plugin.manifest.id === 'bedrock.selectable-settings')?.rendererStatus === 'running'`);
+        await waitFor(`globalThis.Bedrock.plugins.list().find(plugin => plugin.manifest.id === 'gameknight963.selectable-settings')?.rendererStatus === 'running'`);
         assert.equal(await evaluate(`getComputedStyle(document.querySelector('#settings-label')).userSelect`), 'text');
         assert.equal(await evaluate(`getComputedStyle(document.querySelector('#outside-settings')).userSelect`), 'none');
         assert.equal(await evaluate(`getComputedStyle(document.querySelector('#legacy-settings-label')).userSelect`), 'text');
         assert.equal(await evaluate(`getComputedStyle(document.querySelector('#other-dialog-label')).userSelect`), 'none');
-        await evaluate(`globalThis.Bedrock.plugins.setEnabled('bedrock.selectable-settings', false)`);
+        await evaluate(`globalThis.Bedrock.plugins.setEnabled('gameknight963.selectable-settings', false)`);
         assert.equal(await evaluate(`getComputedStyle(document.querySelector('#settings-label')).userSelect`), 'none');
         assert.equal(await evaluate(`getComputedStyle(document.querySelector('#legacy-settings-label')).userSelect`), 'none');
-        await evaluate(`globalThis.Bedrock.plugins.setEnabled('bedrock.selectable-settings', true)`);
+        await evaluate(`globalThis.Bedrock.plugins.setEnabled('gameknight963.selectable-settings', true)`);
         assert.equal(await evaluate(`getComputedStyle(document.querySelector('#settings-label')).userSelect`), 'text');
 
         assert.deepEqual(await evaluate('globalThis.fixtureLayout'), ['user_section', 'bedrock_section', 'billing_section']);
@@ -513,11 +526,11 @@ app.whenReady().then(async () => {
         await evaluate(`(() => { const container = document.querySelector('.bedrock-page').parentElement; container.style.height = 'auto'; container.scrollTop = 0; })()`);
         await new Promise(resolve => setTimeout(resolve, 150));
         fs.writeFileSync(path.join(__dirname, 'obj/collection.png'), (await window.webContents.capturePage()).toPNG());
-        await globalThis.BedrockMain.setEnabled('bedrock.console', false);
+        await globalThis.BedrockMain.setEnabled('gameknight963.console', false);
         assert.throws(() => fs.unlinkSync(path.join(managedConsole, 'native/win32-x64/console.node')), { code: 'EPERM' });
-        await globalThis.BedrockMain.remove('bedrock.console');
+        await globalThis.BedrockMain.remove('gameknight963.console');
         assert.equal(fs.existsSync(managedConsole), false, 'managed Console removal unloads its addon and deletes the package');
-        assert.equal(globalThis.BedrockMain.pendingChanges().some(change => change.id === 'bedrock.console'), false);
+        assert.equal(globalThis.BedrockMain.pendingChanges().some(change => change.id === 'gameknight963.console'), false);
         await globalThis.BedrockMain.remove('test.locked-addon');
         await globalThis.BedrockMain.remove('test.restart-unload');
         assert.equal(fs.existsSync(restartDirectory), true, 'renderer restart requests leave the package intact');
@@ -549,6 +562,17 @@ app.whenReady().then(async () => {
         fs.unlinkSync(path.join(themesDirectory, 'live.theme.css'));
         await waitFor(`document.querySelector('[aria-label="Enable Live theme"]') === null && document.querySelector('[data-bedrock-theme="live.theme.css"]') === null`);
         assert.equal(await evaluate(`(async () => (await fetch('bedrock://themes/%2e%2e/settings.json')).status)()`), 404);
+        await waitFor('globalThis.fixtureCleanupStarts >= 1');
+        await globalThis.BedrockMain.setEnabled('test.renderer-stop-failure', false);
+        await waitFor('globalThis.fixtureCleanupStops === 1');
+        const previousStarts = await evaluate('globalThis.fixtureCleanupStarts');
+        await globalThis.BedrockMain.setEnabled('test.renderer-stop-failure', true);
+        await waitFor(`globalThis.fixtureCleanupStarts === ${previousStarts + 1}`);
+        await globalThis.BedrockMain.remove('test.renderer-stop-failure');
+        assert.equal(await evaluate('globalThis.fixtureUnsafeUnload === true'), false);
+        assert.equal(fs.existsSync(stopFailureDirectory), true);
+        assert.match(globalThis.BedrockMain.pendingChanges().find(change => change.id === 'test.renderer-stop-failure').reason,
+            /original renderer cleanup failure/);
         await window.loadURL('https://unrelated.test/');
         assert.equal(await evaluate(`globalThis.Bedrock === undefined && globalThis.BedrockNative === undefined`), true, 'bridge must not appear on unrelated origins');
         console.log('PASS: Real Electron native maximize/restore, F11 fullscreen transitions and cleanup, preload, settings, restart requests, persistence, subscriptions, synchronization, Markdown, collection browsing/install/update and origin checks.');
