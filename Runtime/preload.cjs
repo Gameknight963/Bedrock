@@ -416,7 +416,7 @@ function installRenderer(configuration) {
         .bedrock-setting input:not([type=range]),.bedrock-setting textarea,.bedrock-setting select{box-sizing:border-box;width:100%;margin-top:10px;padding:7px 10px;border:1px solid var(--border-subtle,#41434a);border-radius:5px;background:var(--input-background,#1e1f22);color:inherit;font:inherit;user-select:text;-webkit-user-select:text}
         .bedrock-setting textarea{min-height:80px;resize:vertical}.bedrock-setting input[type=range]{width:100%;margin:12px 0;accent-color:var(--blurple-50,#5865f2)}
         .bedrock-setting-footer{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:8px}
-        .bedrock-restart-reason{font-size:12px;line-height:1.4;margin-top:4px}.bedrock-setting-section{font-size:18px;margin:24px 0 0}.bedrock-restart-banner{display:flex;align-items:center;justify-content:space-between;gap:16px;margin:0 0 16px;padding:12px;border:1px solid var(--text-warning,#f0b232);border-radius:6px}
+        .bedrock-restart-actions{display:flex;gap:8px;flex-shrink:0}.bedrock-restart-reason{font-size:12px;line-height:1.4;margin-top:4px}.bedrock-setting-section{font-size:18px;margin:24px 0 0}.bedrock-restart-banner{display:flex;align-items:center;justify-content:space-between;gap:16px;margin:0 0 16px;padding:12px;border:1px solid var(--text-warning,#f0b232);border-radius:6px}
         .bedrock-readme h1{font-size:26px}.bedrock-readme h2{font-size:22px}.bedrock-readme h3{font-size:18px}
         .bedrock-readme :is(h1,h2,h3,h4,h5,h6){font-weight:600;line-height:1.3;margin:24px 0 12px}
         .bedrock-readme>:first-child{margin-top:0}.bedrock-readme p,.bedrock-readme ul{margin:12px 0}
@@ -567,6 +567,7 @@ function installRenderer(configuration) {
                 h('button', { className: 'bedrock-button', disabled: busy, autoFocus: true, onClick: cancel }, 'Cancel'),
                 h('button', { className: 'bedrock-button bedrock-confirm-remove', disabled: busy, onClick: () => confirm(deleteSettings) }, busy ? 'Removing...' : 'Remove')));
     }
+    let dismissedRestartState;
     function PluginsPage() {
         React = renderingReact() || React;
         const h = React.createElement;
@@ -630,10 +631,15 @@ function installRenderer(configuration) {
             cancel: () => { setRemoving(null); setError(''); }, confirm: deleteSettings => remove(removing, deleteSettings) });
         const restartNeeded = snapshot.restartRequests?.length || snapshot.pendingPluginChanges?.length || plugins.some(plugin => plugin.restartReason || plugin.restartSettings?.length);
         const pendingReasons = [...new Set([...(snapshot.restartRequests || []).map(request => `${request.name}: ${request.reason}`), ...(snapshot.pendingPluginChanges || []).map(change => change.reason || change.error)].filter(Boolean))];
-        const restartBanner = restartNeeded && h('div', { className: 'bedrock-restart-banner' },
+        const restartState = JSON.stringify([snapshot.restartRequests, snapshot.pendingPluginChanges,
+            plugins.filter(plugin => plugin.restartReason || plugin.restartSettings?.length).map(plugin =>
+                [plugin.manifest.id, plugin.restartReason, (plugin.restartSettings || []).map(key => [key, plugin.settings[key]])])]);
+        const restartBanner = restartNeeded && dismissedRestartState !== restartState && h('div', { className: 'bedrock-restart-banner' },
             h('div', null, h('span', { className: 'bedrock-restart' }, 'Some changes require a restart.'),
                 ...pendingReasons.map(reason => h('div', { key: reason, className: 'bedrock-muted bedrock-restart-reason' }, reason))),
-            h('button', { className: 'bedrock-button', disabled: !!busy, onClick: () => run('restart', () => native.request('restart')) }, 'Restart Discord'));
+            h('div', { className: 'bedrock-restart-actions' },
+                h('button', { className: 'bedrock-button', disabled: !!busy, onClick: () => run('restart', () => native.request('restart')) }, 'Restart Discord'),
+                h('button', { className: 'bedrock-button', onClick: () => { dismissedRestartState = restartState; refresh(value => value + 1); } }, 'Dismiss')));
         const installedDetail = plugins.find(plugin => plugin.manifest.id === selected);
         const catalogDetail = catalog?.plugins.find(entry => entry.manifest.id === selected);
         const detail = installedDetail || (catalogDetail && { manifest: catalogDetail.manifest });
