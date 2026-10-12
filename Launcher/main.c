@@ -13,6 +13,10 @@
 
 #include "logging.h"
 
+#if !defined(_M_X64)
+#error Bedrock requires an x64 build.
+#endif
+
 #define PATH_CAP 32768
 #define INSPECTOR_INDEX FUSE_INSPECTOR_INDEX
 
@@ -68,15 +72,9 @@ static int locate_fuse(const wchar_t *path, FuseLocation *fuse)
     if (header.SizeOfOptionalHeader < sizeof(magic) ||
         !range_ok(section_offset, header.SizeOfOptionalHeader, size)) goto invalid;
     memcpy(&magic, data + section_offset, sizeof(magic));
-#ifdef _WIN64
     if (header.Machine != IMAGE_FILE_MACHINE_AMD64 || magic != IMAGE_NT_OPTIONAL_HDR64_MAGIC) {
-        fwprintf(stderr, L"Use a launcher matching the executable architecture (this build is x64).\n"); goto done;
+        fwprintf(stderr, L"Bedrock requires an x64 Discord executable.\n"); goto done;
     }
-#else
-    if (header.Machine != IMAGE_FILE_MACHINE_I386 || magic != IMAGE_NT_OPTIONAL_HDR32_MAGIC) {
-        fwprintf(stderr, L"Use a launcher matching the executable architecture (this build is x86).\n"); goto done;
-    }
-#endif
     section_offset += header.SizeOfOptionalHeader;
     if (!range_ok(section_offset, (size_t)header.NumberOfSections * sizeof(IMAGE_SECTION_HEADER), size)) goto invalid;
     switch (fuse_find_wire(data, size, fuse, &wire_offset)) {
@@ -177,7 +175,7 @@ static int patch_child(HANDLE process, const FuseLocation *fuse)
     if (!query) { win_error(L"Resolve NtQueryInformationProcess"); return 0; }
     status = query(process, ProcessBasicInformation, &basic, sizeof(basic), NULL);
     if (status < 0) { fwprintf(stderr, L"Cannot query the Discord process (NTSTATUS 0x%08lX).\n", (ULONG)status); return 0; }
-    /* ImageBaseAddress is at two pointer widths in the Windows x86/x64 PEB. */
+    /* ImageBaseAddress is at two pointer widths in the Windows x64 PEB. */
     if (!ReadProcessMemory(process, (BYTE *)basic.PebBaseAddress + 2 * sizeof(void *),
         &image_base, sizeof(image_base), &transferred) || transferred != sizeof(image_base)) {
         win_error(L"Read image base"); return 0;

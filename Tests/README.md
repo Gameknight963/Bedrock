@@ -18,7 +18,7 @@ After building Debug / x64:
 .\Tests\bin\x64\Debug\BedrockTests.exe
 ```
 
-Run one group with `--gtest_filter=FuseParsing.*`. Debug and Release support both x64 and Win32.
+Run one group with `--gtest_filter=FuseParsing.*`. Debug and Release support x64.
 
 ## What belongs here
 

@@ -64,12 +64,12 @@ Other options:
 
 ### Additional details
 
- - The launcher must match the target's x86/x64 architecture. 
+ - The launcher supports x64 Discord executables.
  - Unknown fuse formats are rejected. 
  - Failures terminate only the process the launcher created. 
 
 Large buffers use the heap. The manifest enables long paths when Windows policy
-also enables them. The image-base lookup uses Windows x86/x64 PEB offsets.
+also enables them. The image-base lookup uses Windows x64 PEB offsets.
 
 Native unit tests use Google Test. Build `BedrockTests` in the solution, then run
 them from **Test → Test Explorer** or with `Tests\bin\x64\Debug\BedrockTests.exe`.
