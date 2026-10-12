@@ -1,4 +1,5 @@
 const contexts = new Map();
+const unloadContexts = new Map();
 const assemblies = new Map();
 let runtimePromise;
 function context(id) {
@@ -13,9 +14,9 @@ async function sharedRuntime() {
         runtime.setModuleImports('bedrock', {
             getSetting: (id, key, fallback) => JSON.stringify(context(id).settings.get(key, JSON.parse(fallback))),
             setSetting: async (id, key, json) => { await context(id).settings.set(key, JSON.parse(json)); },
-            log: (id, level, message) => contexts.get(id)?.log[level](message),
+            log: (id, level, message) => (unloadContexts.get(id) || contexts.get(id))?.log[level](message),
             reportStatus: (id, message) => context(id).reportStatus(message),
-            requireRestart: (id, reason) => context(id).requireRestart(reason),
+            requireRestart: (id, reason) => (unloadContexts.get(id) || context(id)).requireRestart(reason),
             addStyle: (id, css) => context(id).styles.add(css),
             subscribe: (id, name, callback) => context(id).events.on(name, value => callback(JSON.stringify(value))),
             emit: async (id, name, json) => { await context(id).events.emit(name, JSON.parse(json)); },
@@ -55,9 +56,14 @@ export async function loadPlugin(info) {
         async stop() {
             try { await host.Stop(id); } finally { contexts.delete(id); }
         },
-        async unload() {
-            await host.Unload(id);
-            return { requiresRestart: true, reason: "Restart Discord to unload the managed plugin assembly." };
+        async unload(ctx) {
+            unloadContexts.set(id, ctx);
+            try {
+                await host.Unload(id);
+            } finally {
+                ctx.requireRestart("Restart Discord to unload the managed plugin assembly.");
+                unloadContexts.delete(id);
+            }
         }
     };
 }

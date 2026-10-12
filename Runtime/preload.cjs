@@ -150,7 +150,11 @@ function installRenderer(configuration) {
                 all: () => structuredClone(record.info.settings)
             },
             cleanup: own,
-            requireRestart(reason) { record.restartReason = String(reason); notify(); },
+            requireRestart(reason) {
+                record.restartReason = String(reason); notify();
+                record.restartWork = (record.restartWork || Promise.resolve()).then(() => native.request('requireRestart', id, String(reason)));
+                record.restartWork.catch(error => log(id, error));
+            },
             styles: {
                 add(css) {
                     const element = document.createElement('style');
@@ -250,9 +254,19 @@ function installRenderer(configuration) {
             record.unloadPromise = (async () => {
                 await record.pending;
                 await reconcile(record);
-                if (record.stopFailed) return { requiresRestart: true, reason: `Renderer cleanup failed: ${record.error}` };
-                const { unloadPlugin } = await import('bedrock://api/lifecycle.mjs');
-                const result = await unloadPlugin(() => record.module?.unload?.());
+                const { unloadPlugin, createUnloadContext } = await import('bedrock://api/lifecycle.mjs');
+                const ctx = createUnloadContext(record.info.manifest,
+                    Object.fromEntries(['info', 'warn', 'error'].map(level => [level, (...args) => console[level](`[Bedrock:${id}]`, ...args)])),
+                    reason => {
+                        record.restartReason = String(reason); notify();
+                        record.restartWork = (record.restartWork || Promise.resolve()).then(() => native.request('requireRestart', id, String(reason)));
+                        record.restartWork.catch(error => log(id, error));
+                    });
+                const result = await unloadPlugin(context => {
+                    if (record.stopFailed) throw new Error(`Renderer cleanup failed: ${record.error}`);
+                    return record.module?.unload?.(context);
+                }, ctx);
+                await record.restartWork;
                 if (result.requiresRestart) record.restartReason = result.reason;
                 else {
                     if (record.info.manifest.entrypoints.renderer?.runtime === 'javascript') {
@@ -402,7 +416,7 @@ function installRenderer(configuration) {
         .bedrock-setting input:not([type=range]),.bedrock-setting textarea,.bedrock-setting select{box-sizing:border-box;width:100%;margin-top:10px;padding:7px 10px;border:1px solid var(--border-subtle,#41434a);border-radius:5px;background:var(--input-background,#1e1f22);color:inherit;font:inherit;user-select:text;-webkit-user-select:text}
         .bedrock-setting textarea{min-height:80px;resize:vertical}.bedrock-setting input[type=range]{width:100%;margin:12px 0;accent-color:var(--blurple-50,#5865f2)}
         .bedrock-setting-footer{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-top:8px}
-        .bedrock-setting-section{font-size:18px;margin:24px 0 0}.bedrock-restart-banner{display:flex;align-items:center;justify-content:space-between;gap:16px;margin:0 0 16px;padding:12px;border:1px solid var(--text-warning,#f0b232);border-radius:6px}
+        .bedrock-restart-reason{font-size:12px;line-height:1.4;margin-top:4px}.bedrock-setting-section{font-size:18px;margin:24px 0 0}.bedrock-restart-banner{display:flex;align-items:center;justify-content:space-between;gap:16px;margin:0 0 16px;padding:12px;border:1px solid var(--text-warning,#f0b232);border-radius:6px}
         .bedrock-readme h1{font-size:26px}.bedrock-readme h2{font-size:22px}.bedrock-readme h3{font-size:18px}
         .bedrock-readme :is(h1,h2,h3,h4,h5,h6){font-weight:600;line-height:1.3;margin:24px 0 12px}
         .bedrock-readme>:first-child{margin-top:0}.bedrock-readme p,.bedrock-readme ul{margin:12px 0}
@@ -614,11 +628,11 @@ function installRenderer(configuration) {
             } }, 'Remove');
         const removalDialog = removing && h(RemovePluginDialog, { key: removing.manifest.id, plugin: removing, busy: !!busy, error,
             cancel: () => { setRemoving(null); setError(''); }, confirm: deleteSettings => remove(removing, deleteSettings) });
-        const restartNeeded = snapshot.pendingPluginChanges?.length || plugins.some(plugin => plugin.restartReason || plugin.restartSettings?.length);
-        const pendingReasons = [...new Set((snapshot.pendingPluginChanges || []).map(change => change.reason || change.error).filter(Boolean))];
+        const restartNeeded = snapshot.restartRequests?.length || snapshot.pendingPluginChanges?.length || plugins.some(plugin => plugin.restartReason || plugin.restartSettings?.length);
+        const pendingReasons = [...new Set([...(snapshot.restartRequests || []).map(request => `${request.name}: ${request.reason}`), ...(snapshot.pendingPluginChanges || []).map(change => change.reason || change.error)].filter(Boolean))];
         const restartBanner = restartNeeded && h('div', { className: 'bedrock-restart-banner' },
             h('div', null, h('span', { className: 'bedrock-restart' }, 'Some changes require a restart.'),
-                ...pendingReasons.map(reason => h('div', { key: reason, className: 'bedrock-description' }, reason))),
+                ...pendingReasons.map(reason => h('div', { key: reason, className: 'bedrock-muted bedrock-restart-reason' }, reason))),
             h('button', { className: 'bedrock-button', disabled: !!busy, onClick: () => run('restart', () => native.request('restart')) }, 'Restart Discord'));
         const installedDetail = plugins.find(plugin => plugin.manifest.id === selected);
         const catalogDetail = catalog?.plugins.find(entry => entry.manifest.id === selected);

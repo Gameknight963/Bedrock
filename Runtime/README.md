@@ -53,7 +53,7 @@ The loader inspects only immediate plugin folders containing `plugin.json`. Ever
 
 Required: `manifestVersion`, `id`, `name`, `version`, `entrypoints`. IDs use lowercase letters, digits, dots, underscores or hyphens and must be unique. `description`, `readme`, and `icon` are optional. Main, renderer and GPU entry points are independently optional, but at least one is required. `.js` and `.mjs` entry points are supported. Prefer `main.js` and `renderer.js`, or `main/index.js` and `renderer/index.js`.
 
-Each JavaScript entry point must be an object declaring `runtime`, `path` and `requiresApi`. The current JavaScript API version is `1.2.0`. JavaScript entry points run in main or renderer environments.
+Each JavaScript entry point must be an object declaring `runtime`, `path` and `requiresApi`. The current JavaScript API version is `1.3.0`. JavaScript entry points run in main or renderer environments.
 
 `requiresApi` is a semantic version, not a version range. Bedrock accepts requirements with the same major version that are no newer than its API, comparing minor and patch versions in order. For example, API `1.3.2` accepts `1.2.0` and `1.3.2`, but rejects `1.3.3` and `2.0.0`. Prerelease versions follow semantic-version precedence; build metadata does not affect compatibility. Requirements are checked before executing any plugin code.
 
@@ -130,10 +130,12 @@ export function start(ctx) {
 
 ### Removing and replacing
 
-Export an optional `unload()` to release resources kept across activations. Bedrock calls it after stopping the plugin when removing or replacing its package, including when the plugin is already disabled. The activation context has stopped by this point.
+Export an optional `unload(ctx)` to release resources kept across activations. Bedrock calls it after stopping the plugin when removing or replacing its package, including when the plugin is already disabled. The activation context has stopped by this point.
 
-- `unload()` can be synchronous or async, with a ten-second limit.
-- Return nothing when cleanup is complete, or `{requiresRestart: true, reason: 'Native callbacks are still registered'}` when unloading safely requires exiting Discord.
+- `unload(ctx)` can be synchronous or async, with a ten-second limit.
+- Return nothing. Call `ctx.requireRestart(reason)` if final cleanup requires exiting Discord.
+- The unload context provides `id`, `manifest`, `log` and `requireRestart`; activation resources and settings are unavailable. It requires JavaScript API `1.3.0`.
+- Restart requests remain visible after removal or replacement and clear when Discord restarts.
 - A restart request, exception, or timeout queues the file operation for the next launch. Bedrock owns deleting and replacing package files; plugins only release their resources.
 
 ### Loading native addons
@@ -163,7 +165,7 @@ export function unload() {
 - Do not mix ordinary `require()` with managed loading of the same addon, or use its exports after releasing them. Bedrock rejects addons already present in Node's ordinary cache, but cannot track later ordinary callers.
 - JavaScript modules and built-ins use normal Node loading. Addons loaded indirectly by those modules are not tracked. Node retains internal addon bookkeeping until process exit, so unloading is not a way to reclaim every allocation made by Node.
 
-If an addon cannot remove its registered callbacks safely, leave it loaded and return a restart requirement from `unload()` instead.
+If an addon cannot remove its registered callbacks safely, leave it loaded and call `ctx.requireRestart(reason)` from `unload(ctx)` instead.
 
 ## Plugin settings
 

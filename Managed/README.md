@@ -24,7 +24,7 @@ Declare the entry type in the assembly:
 [assembly: BedrockPlugin(typeof(ExamplePlugin), RequiresApi = "1.0.0")]
 ```
 
-Bedrock reads the attribute from assembly metadata before loading the assembly or constructing the plugin. The required API must have the same major version and cannot be newer than the host API, currently `1.1.0`.
+Bedrock reads the attribute from assembly metadata before loading the assembly or constructing the plugin. The required API must have the same major version and cannot be newer than the host API, currently `1.2.0`.
 
 ## Project
 
@@ -44,7 +44,7 @@ Derive the entry type from `Bedrock.Plugin`. Override `Start(PluginContext)` and
 
 Assemblies stay loaded until the renderer exits. Disabling stops a plugin; it does not unload its assembly or reset static fields. Updating an assembly requires restarting Discord. All managed plugins share one runtime and assembly namespace. The current loader supports the framework libraries included by the host and a plugin's own DLL; additional managed dependency DLLs are not loaded automatically.
 
-`Unload()` (or `UnloadAsync()`) runs when the package is removed or replaced, after `StopAsync()`. Each instance created during this session receives the callback, including instances that were already disabled. Use it for final package cleanup. Assemblies remain loaded until the renderer exits, so removal or replacement still requires a restart.
+`Unload(PluginUnloadContext)` (or `UnloadAsync(PluginUnloadContext)`) runs when the package is removed or replaced, after `StopAsync()`. Each instance created during this session receives the callback, including instances that were already disabled. Use it for final package cleanup. Its context provides `Id`, `Log` and `RequireRestart(reason)` without activation resources. Assemblies remain loaded until the renderer exits, so removal or replacement still requires a restart.
 
 ## Settings and status
 

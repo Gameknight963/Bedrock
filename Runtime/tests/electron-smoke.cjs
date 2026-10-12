@@ -69,8 +69,8 @@ fs.mkdirSync(restartDirectory);
 writeJson(path.join(restartDirectory, 'plugin.json'), { manifestVersion: 2,
     id: 'test.restart-unload', name: 'Restart unload', version: '1.0.0',
     entrypoints: { renderer: { runtime: 'javascript', path: 'renderer.js', requiresApi: '1.1.0' } } });
-fs.writeFileSync(path.join(restartDirectory, 'renderer.js'), `export function start() {} export function unload() {
-    return { requiresRestart: true, reason: 'Fixture callbacks remain registered' };
+fs.writeFileSync(path.join(restartDirectory, 'renderer.js'), `export function start() {} export function unload(ctx) {
+    ctx.requireRestart('Fixture callbacks remain registered');
 }`);
 fs.cpSync(path.join(pluginCollection, 'plugins/selectable-settings'), selectableDirectory, { recursive: true });
 

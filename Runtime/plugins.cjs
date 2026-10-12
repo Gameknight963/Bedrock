@@ -7,7 +7,7 @@ const { createModuleLoader } = require('./modules.cjs');
 const { createContext, createPatcher } = require('./context.cjs');
 const { parseVersion, compareVersions } = require('./api-version.cjs');
 const { createPackageActions, locked } = require('./package-actions.cjs');
-const { unloadPlugin } = require('./lifecycle.mjs');
+const { unloadPlugin, createUnloadContext } = require('./lifecycle.mjs');
 const { definePluginSettings, OptionType, normalizeDefinitions, validateSetting, bindPluginSettings } = require('./settings.mjs');
 
 function createPluginManager(root, options = {}) {
@@ -16,6 +16,9 @@ function createPluginManager(root, options = {}) {
     if (!configuration.plugins || typeof configuration.plugins !== 'object' || Array.isArray(configuration.plugins))
         throw new Error('Bedrock settings.json: plugins must be an object');
     const records = new Map();
+    const restartRequests = new Map();
+    const pluginNames = new Map();
+    const unloadBlocked = new Set();
     const events = new EventEmitter();
     events.setMaxListeners(0);
     const patch = createPatcher();
@@ -27,6 +30,16 @@ function createPluginManager(root, options = {}) {
     const definitions = new Map();
     const restartBaselines = new Map();
     const modules = createModuleLoader(path.join(root, 'plugins'));
+
+    function requireRestart(id, reason) {
+        if (typeof reason !== "string" || !reason.trim()) throw new Error("A restart request needs a reason.");
+        const record = records.get(id);
+        const name = record?.manifest.name || pluginNames.get(id);
+        if (!name) throw new Error("Unknown plugin");
+        restartRequests.set(JSON.stringify([id, reason]), { id, name, reason });
+        if (record) record.restartReason = reason;
+        notify();
+    }
 
     function registerSettings(id, schema) {
         if (!records.has(id)) throw new Error('Unknown plugin');
@@ -130,6 +143,7 @@ function createPluginManager(root, options = {}) {
                             return () => events.off('settings.changed', listener);
                         },
                         reportStatus(message) { if (record.instance && !record.instance.context.signal.aborted) { record.statusMessage = message == null ? null : String(message); notify(); } },
+                        requireRestart: reason => requireRestart(record.manifest.id, reason),
                         failed(error) { record.error = error.message; log('error', record.manifest.id, [error]); notify(); }
                     }, { symbolCacheDirectory: path.join(root, 'cache', 'symbols'), ...options });
                     record.nativeOwner = native;
@@ -143,10 +157,9 @@ function createPluginManager(root, options = {}) {
                             const results = await Promise.allSettled([native.stop(), Promise.resolve().then(() => javascript?.stop?.())]);
                             for (const result of results) if (result.status === 'rejected') throw result.reason;
                         },
-                        async unload() {
-                            const result = await unloadPlugin(() => javascript?.unload?.());
-                            if (!result.requiresRestart) await native.unload();
-                            return result;
+                        async unload(ctx) {
+                            if (await javascript?.unload?.(ctx) !== undefined) throw new Error("unload(ctx) must return nothing; use ctx.requireRestart(reason).");
+                            await native.unload(ctx);
                         }
                     };
                 }
@@ -163,7 +176,7 @@ function createPluginManager(root, options = {}) {
                     events.on('plugin.event', listener); return () => events.off('plugin.event', listener);
                 },
                 emit(name, value) { events.emit('plugin.event', { id: record.manifest.id, name, value }); },
-                requireRestart(reason) { record.restartReason = reason; notify(); }
+                requireRestart(reason) { requireRestart(record.manifest.id, reason); }
             };
             owned = createContext(record.manifest, services);
             services.extra = options.context?.(record, owned.own) || {};
@@ -215,12 +228,21 @@ function createPluginManager(root, options = {}) {
 
     function unload(record) {
         return record.unloadPromise ||= (async () => {
-            const renderer = await unloadPlugin(() => options.unloadRenderer?.(record.manifest.id));
-            const main = record.stopFailed ? { requiresRestart: true, reason: `Plugin cleanup failed: ${record.error}` }
-                : await unloadPlugin(() => record.module?.unload?.());
+            const ctx = createUnloadContext(record.manifest,
+                Object.fromEntries(['info', 'warn', 'error'].map(level => [level, (...args) => log(level, record.manifest.id, args)])),
+                reason => requireRestart(record.manifest.id, reason));
+            const renderer = await unloadPlugin(async context => {
+                const result = await options.unloadRenderer?.(record.manifest.id);
+                if (result?.requiresRestart) context.requireRestart(result.reason);
+            }, ctx);
+            const main = await unloadPlugin(async context => {
+                if (record.stopFailed) throw new Error(`Plugin cleanup failed: ${record.error}`);
+                return record.module?.unload?.(context);
+            }, ctx);
             if (main.error) log('error', record.manifest.id, [main.reason]);
             if (renderer.error) log('error', record.manifest.id, [renderer.reason]);
             const result = main.requiresRestart ? main : renderer;
+            if (result.requiresRestart) unloadBlocked.add(record.manifest.id);
             if (!result.requiresRestart) {
                 modules.invalidate(record.folder);
                 record.module = null;
@@ -234,9 +256,11 @@ function createPluginManager(root, options = {}) {
         for (const error of discoveryErrors) log('error', 'loader', [`${error.folder}: ${error.error}`]);
         for (const [id, plugin] of discovered.plugins) {
             if (records.has(id) || packageActions.has(id)) continue;
+            if (unloadBlocked.has(id)) { discoveryErrors.push({ folder: id, error: "Restart Discord to finish unloading this plugin." }); continue; }
             const record = { ...plugin, status: plugin.entries.main || Object.values(plugin.manifest.entrypoints).some(entry => entry.runtime === 'native') ? 'stopped' : 'renderer-only' };
             try { settings(id); } catch (error) { discoveryErrors.push({ folder: id, error: error.message }); continue; }
             records.set(id, record);
+            pluginNames.set(id, record.manifest.name);
             start(record);
         }
         notify();
@@ -281,7 +305,7 @@ function createPluginManager(root, options = {}) {
     }
     function installPackage(folder, id, restoreEnabled) {
         refreshWork = refreshWork.catch(() => {}).then(async () => {
-            if (packageActions.has(id)) throw new Error('Restart Discord to finish the pending change for this plugin.');
+            if (packageActions.has(id) || unloadBlocked.has(id)) throw new Error('Restart Discord to finish the pending change for this plugin.');
             const previous = records.get(id);
             const manifest = readJson(path.join(folder, 'plugin.json'), null);
             if (previous && compareVersions(parseVersion(manifest.version), parseVersion(previous.manifest.version)) <= 0)
@@ -389,7 +413,7 @@ function createPluginManager(root, options = {}) {
         });
         return refreshWork;
     }
-    return { root, records, events, settings, list, scan, refresh, setEnabled, remove, installPackage, registerSettings, definePluginSettings, OptionType, pendingChanges: packageActions.list, errors: () => discoveryErrors,
+    return { root, records, events, settings, list, scan, refresh, setEnabled, remove, installPackage, registerSettings, definePluginSettings, OptionType, pendingChanges: packageActions.list, requireRestart, restartRequests: () => [...restartRequests.values()], errors: () => discoveryErrors,
         stopAll: () => Promise.all([...records.values()].map(stop)), close: () => modules.close() };
 }
 

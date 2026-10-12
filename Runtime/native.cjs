@@ -16,6 +16,7 @@ function connectHost(target, entry, services, options) {
     child.stdin.unref?.(); child.stdout.unref?.(); child.stderr.unref?.();
     const pending = new Map();
     let javascript;
+    let unloadRestartReason;
     let sequence = 0, closed = false, stderr = '', definitions = {}, requiresSymbols = false, readyResolve, readyReject;
     const ready = new Promise((resolve, reject) => { readyResolve = resolve; readyReject = reject; });
     const fail = error => {
@@ -59,6 +60,9 @@ function connectHost(target, entry, services, options) {
                 javascript?.release(message.handle);
             } else if (message.event === 'js.reset') {
                 javascript?.close(); javascript = undefined;
+            } else if (message.event === 'restart') {
+                services.requireRestart(String(message.message));
+                if (pending.size && [...pending.values()].some(request => request.op === 'unload')) unloadRestartReason = String(message.message);
             } else if (message.event === 'status') {
                 services.reportStatus?.(String(message.message));
             } else if (message.event === 'log') {
@@ -89,6 +93,7 @@ function connectHost(target, entry, services, options) {
     });
     return {
         target, ready,
+        get unloadRestartReason() { return unloadRestartReason; },
         get definitions() { return definitions; },
         get requiresSymbols() { return requiresSymbols; },
         get closed() { return closed; },
@@ -186,7 +191,7 @@ function createNativeEntryPoints(record, services, options = {}) {
             await schedule();
             if (!ctx.signal.aborted) { timer = setInterval(() => schedule().catch(error => services.failed(error)), 1000); timer.unref(); }
         },
-        async unload() {
+        async unload(ctx) {
             clearInterval(timer);
             context = null;
             await work.catch(() => {});
@@ -194,6 +199,7 @@ function createNativeEntryPoints(record, services, options = {}) {
                 if (instance.host.closed) throw new Error("Native host disconnected before package cleanup. Restart Discord to finish unloading it.");
                 await instance.host.ready;
                 await instance.host.request("unload");
+                if (instance.host.unloadRestartReason) ctx.requireRestart(instance.host.unloadRestartReason);
             }));
             for (const result of results) if (result.status === "rejected") throw result.reason;
         },

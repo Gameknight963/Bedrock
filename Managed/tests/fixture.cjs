@@ -53,7 +53,7 @@ electron.app.whenReady().then(async () => {
     const product = await window.webContents.executeJavaScript(`(async () => { const api = await import('bedrock://api/dotnet.mjs'); const exports = await api.getPluginExports('bedrock.managed-example'); return exports.ExamplePlugin.Multiply(6, 7); })()`);
     if (product !== 42) throw new Error('Managed JSExport returned the wrong result');
     await wait(window, `const plugin = Bedrock.plugins.list().find(plugin => plugin.manifest.id === 'bedrock.managed-second'); if (plugin?.rendererStatus === 'failed') return plugin.error; return plugin?.rendererStatus === 'running';`);
-    await wait(window, `const plugin = Bedrock.plugins.list().find(plugin => plugin.manifest.id === 'bedrock.incompatible'); return plugin?.rendererStatus === 'failed' && plugin.error.includes('1.1.1');`);
+    await wait(window, `const plugin = Bedrock.plugins.list().find(plugin => plugin.manifest.id === 'bedrock.incompatible'); return plugin?.rendererStatus === 'failed' && plugin.error.includes('1.2.1');`);
     await window.webContents.executeJavaScript(`Bedrock.plugins.setEnabled('bedrock.managed-second', false)`);
     await wait(window, `return getComputedStyle(document.querySelector('.bedrock-card')).borderTopColor === 'rgb(88, 101, 242)';`);
     await window.webContents.executeJavaScript(`BedrockNative.request('settingsSet', 'bedrock.managed-example', 'accent', false)`);

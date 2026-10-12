@@ -19,7 +19,7 @@ extern "C" {
 
 typedef struct BedrockVersion { uint32_t major, minor, patch; } BedrockVersion;
 #define BEDROCK_API_MAJOR 1
-#define BEDROCK_API_MINOR 4
+#define BEDROCK_API_MINOR 5
 #define BEDROCK_API_PATCH 0
 
 typedef int32_t BedrockResult;
@@ -154,6 +154,8 @@ typedef struct BedrockContext {
         const BedrockJsValue *arguments, size_t argument_count,
         BedrockJsCallback callback, void *user_data);
     BedrockResult (BEDROCK_CALL *release_js_value)(void *host, BedrockJsValue *value);
+    /* API 1.5.0: copies a restart reason; valid during activation and unload. */
+    void (BEDROCK_CALL *require_restart)(void *host, const char *reason);
 } BedrockContext;
 
 #define BEDROCK_PLUGIN_REQUIRES_SYMBOLS (1u << 0)

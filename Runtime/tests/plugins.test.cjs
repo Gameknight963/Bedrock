@@ -76,7 +76,7 @@ test('unload runs once on removal, after stopping, including an already disabled
 test('restart-required unloading preserves files until startup, without needing the plugin to run again', async t => {
     const root = fixture(t);
     const directory = plugin(root, 'test.restart-unload', `export function start(ctx) { ctx.settings.set('saved', 42); }
-        export function unload() { return {requiresRestart: true, reason: 'Native finalizers remain registered'}; }`);
+        export function unload(ctx) { ctx.requireRestart('Native finalizers remain registered'); }`);
     const manager = createPluginManager(root, quiet);
     manager.scan();
     await manager.remove('test.restart-unload');
@@ -260,7 +260,7 @@ test('incompatible manifests are rejected before executing either entry point', 
     const root = fixture(t);
     const marker = path.join(root, 'executed');
     const source = `require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'yes');`;
-    plugin(root, 'test.newer', source, { entrypoints: { main: { runtime: 'javascript', path: 'main.js', requiresApi: '1.2.1' } } });
+    plugin(root, 'test.newer', source, { entrypoints: { main: { runtime: 'javascript', path: 'main.js', requiresApi: '1.3.1' } } });
     plugin(root, 'test.major', source, { entrypoints: { main: { runtime: 'javascript', path: 'main.js', requiresApi: '2.0.0' } } });
     plugin(root, 'test.short', source, { entrypoints: { main: 'main.js' } });
     plugin(root, 'test.missing', source, { entrypoints: { main: { runtime: 'javascript', path: 'main.js' } } });
@@ -268,7 +268,7 @@ test('incompatible manifests are rejected before executing either entry point', 
     plugin(root, 'test.toplevel', source, { apiVersion: 1 });
     plugin(root, 'test.renderer', source, { entrypoints: {
         main: { runtime: 'javascript', path: 'main.js', requiresApi: '1.0.0' },
-        renderer: { runtime: 'javascript', path: 'main.js', requiresApi: '1.3.0' }
+        renderer: { runtime: 'javascript', path: 'main.js', requiresApi: '1.4.0' }
     } });
     const manager = createPluginManager(root, quiet);
     manager.scan();
@@ -297,4 +297,56 @@ test('initialization status is visible while pending, clears on success, and ign
     await manager.setEnabled('test.status', false);
     globalThis.bedrockStatusContext.reportStatus('Late work');
     assert.equal(manager.list()[0].statusMessage, null);
+});
+
+
+test('activation restart requests survive removal and reinstallation until process restart', async t => {
+    const root = fixture(t);
+    const folder = plugin(root, 'test.restart-session', `export function start(ctx) {
+        ctx.cleanup(() => ctx.requireRestart('Restore window options'));
+    }`);
+    const manager = createPluginManager(root, quiet);
+    t.after(() => manager.close());
+    manager.scan();
+    await manager.remove('test.restart-session');
+    assert.deepEqual(manager.restartRequests(), [{id:'test.restart-session',name:'test.restart-session',reason:'Restore window options'}]);
+    assert.deepEqual(manager.pendingChanges(), []);
+    assert.equal(fs.existsSync(folder), false);
+    const staged = plugin(root, 'test.restart-session', 'export function start() {}', {version:'2.0.0'}, 'staged');
+    await manager.installPackage(staged, 'test.restart-session');
+    assert.equal(manager.restartRequests().length, 1);
+    await manager.stopAll();
+    manager.close();
+    const next = createPluginManager(root, quiet);
+    t.after(() => next.close());
+    assert.deepEqual(next.restartRequests(), []);
+});
+
+test('refresh preserves unload restart requests and prevents loading another copy', async t => {
+    const root = fixture(t);
+    const folder = plugin(root, 'test.refresh-restart', `export function start() {} export function unload(ctx) {
+        ctx.log.info('Final cleanup'); ctx.requireRestart('Native callbacks remain registered');
+    }`);
+    const manager = createPluginManager(root, quiet);
+    t.after(() => manager.close());
+    manager.scan();
+    fs.rmSync(folder, {recursive:true});
+    await manager.refresh();
+    assert.equal(manager.restartRequests()[0].reason, 'Native callbacks remain registered');
+    const staged = plugin(root, 'test.refresh-restart', 'export function start() {}', {version:'2.0.0'}, 'staged');
+    await assert.rejects(manager.installPackage(staged, 'test.refresh-restart'), /Restart Discord/);
+});
+
+
+test('live updates preserve restart requests from the previous version', async t => {
+    const root = fixture(t);
+    plugin(root, 'test.update-restart', `export function start(ctx) { ctx.requireRestart('Process option changed'); }`);
+    const manager = createPluginManager(root, quiet);
+    t.after(() => manager.close());
+    manager.scan();
+    const staged = plugin(root, 'test.update-restart', 'export function start() {}', {version:'2.0.0'}, 'staged');
+    await manager.installPackage(staged, 'test.update-restart');
+    assert.equal(manager.list()[0].manifest.version, '2.0.0');
+    assert.equal(manager.restartRequests()[0].reason, 'Process option changed');
+    await manager.stopAll();
 });

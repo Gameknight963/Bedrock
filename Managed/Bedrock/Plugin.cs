@@ -17,10 +17,17 @@ public abstract class Plugin
     public virtual IReadOnlyList<SettingDefinition> Settings => [];
     public virtual void Start(PluginContext context) { }
     public virtual void Stop() { }
-    public virtual void Unload() { }
+    public virtual void Unload(PluginUnloadContext context) { }
     public virtual Task StartAsync(PluginContext context) { Start(context); return Task.CompletedTask; }
     public virtual Task StopAsync() { Stop(); return Task.CompletedTask; }
-    public virtual Task UnloadAsync() { Unload(); return Task.CompletedTask; }
+    public virtual Task UnloadAsync(PluginUnloadContext context) { Unload(context); return Task.CompletedTask; }
+}
+
+public sealed class PluginUnloadContext(string id)
+{
+    public string Id { get; } = id;
+    public PluginLog Log { get; } = new(id);
+    public void RequireRestart(string reason) => Bindings.RequireRestart(Id, reason);
 }
 
 public abstract class SettingDefinition(string key, string type, object defaultValue)

@@ -52,8 +52,8 @@ public static partial class Host
         string core = requirement.Split('-', '+')[0];
         bool invalidPrerelease = semantic.Success && semantic.Groups[4].Value.Split('.').Any(part =>
             part.Length > 1 && part[0] == '0' && part.All(char.IsDigit));
-        if (!semantic.Success || invalidPrerelease || !Version.TryParse(core, out Version? version) || version.Major != 1 || version > new Version(1, 1, 0))
-            throw new InvalidOperationException($"Plugin requires managed API {requirement}; Bedrock provides 1.1.0.");
+        if (!semantic.Success || invalidPrerelease || !Version.TryParse(core, out Version? version) || version.Major != 1 || version > new Version(1, 2, 0))
+            throw new InvalidOperationException($"Plugin requires managed API {requirement}; Bedrock provides 1.2.0.");
         stream.Position = 0;
         // The default load context also makes dynamically loaded JSExport methods discoverable.
         Assembly assembly = AssemblyLoadContext.Default.LoadFromStream(stream);
@@ -92,7 +92,7 @@ public static partial class Host
         try { await Stop(id); } catch (Exception error) { failures.Add(error); }
         if (retired.Remove(id, out List<Plugin>? plugins))
             foreach (Plugin plugin in plugins)
-                try { await plugin.UnloadAsync(); } catch (Exception error) { failures.Add(error); }
+                try { await plugin.UnloadAsync(new(id)); } catch (Exception error) { failures.Add(error); }
         if (failures.Count > 0) throw new AggregateException(failures);
     }
 }

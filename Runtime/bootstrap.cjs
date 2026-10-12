@@ -36,7 +36,7 @@ function install(options = {}) {
         } catch { return false; }
     };
     let revision = 0;
-    const snapshot = () => ({ revision, plugins: manager.list(), pendingPluginChanges: manager.pendingChanges(), errors: manager.errors(), themes: themes.list(), themeErrors: themes.errors() });
+    const snapshot = () => ({ revision, plugins: manager.list(), pendingPluginChanges: manager.pendingChanges(), restartRequests: manager.restartRequests(), errors: manager.errors(), themes: themes.list(), themeErrors: themes.errors() });
     function broadcast(channel, value) {
         for (const window of windows) {
             const contents = window.webContents;
@@ -74,7 +74,7 @@ function install(options = {}) {
                 beforeCreate(callback) {
                     if (typeof callback !== 'function') throw new Error('Expected callback');
                     let applied = false;
-                    if (windows.size) record.restartReason = 'Restart Discord to apply window creation options.';
+                    if (windows.size) manager.requireRestart(record.manifest.id, 'Restart Discord to apply window creation options.');
                     const guarded = options => {
                         callback(options);
                         applied = true;
@@ -82,7 +82,7 @@ function install(options = {}) {
                     beforeCreate.add(guarded);
                     return own(() => {
                         beforeCreate.delete(guarded);
-                        if (applied && windows.size) record.restartReason = 'Restart Discord to restore window creation options.';
+                        if (applied && windows.size) manager.requireRestart(record.manifest.id, 'Restart Discord to restore window creation options.');
                     });
                 },
                 onCreated(callback) {
@@ -206,6 +206,7 @@ function install(options = {}) {
         if (!authorized(event)) throw new Error('Bedrock is only available in Discord');
         const [id, key, value] = args;
         if (operation === 'list') return snapshot();
+        if (operation === 'requireRestart') { manager.requireRestart(id, key); return snapshot(); }
         if (operation === 'enable') { await manager.setEnabled(id, key); return snapshot(); }
         if (operation === 'rescan') { await manager.refresh(); return snapshot(); }
         if (operation === 'collection') {

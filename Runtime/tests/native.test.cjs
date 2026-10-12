@@ -13,6 +13,7 @@ test('native startup failures include plugin diagnostics and do not reuse old lo
     child.unref = () => {};
     child.stdout = new PassThrough(); child.stderr = new PassThrough();
     let attempts = 0;
+    const restartReasons = [];
     child.stdin = new Writable({ write(bytes, encoding, done) {
         const command = JSON.parse(bytes.toString());
         if (attempts++ === 0) {
@@ -21,6 +22,7 @@ test('native startup failures include plugin diagnostics and do not reuse old lo
             child.stdout.write(JSON.stringify({ event: 'log', level: 3,
                 message: 'SkCanvas::clipRect: no matching machine-code signature.' }) + '\n');
         }
+        if (command.op === 'unload') child.stdout.write(JSON.stringify({ event: 'restart', message: 'Native callbacks remain registered' }) + '\n');
         if (command.op === 'unload') child.stdout.write(JSON.stringify({ event: 'log', level: 3,
             message: 'Could not remove the blur hooks: MH_ERROR_MEMORY_PROTECT.' }) + '\n');
         child.stdout.write(JSON.stringify({ event: 'reply', id: command.id, result: 1 }) + '\n');
@@ -32,7 +34,7 @@ test('native startup failures include plugin diagnostics and do not reuse old lo
     vm.runInNewContext(fs.readFileSync(path.join(__dirname, '../native.cjs'), 'utf8') +
         '\nmodule.exports = connectHost;', sandbox);
     const host = sandbox.module.exports({ pid: 123 }, { environment: 'gpu', path: 'plugin.dll' },
-        { registerSettings() {}, log() {} }, {});
+        { registerSettings() {}, log() {}, requireRestart: reason => restartReasons.push(reason) }, {});
     child.stdout.write('{"event":"ready","definitions":{}}\n');
     await host.ready;
     await assert.rejects(host.request('start'), error =>
@@ -40,6 +42,8 @@ test('native startup failures include plugin diagnostics and do not reuse old lo
     await assert.rejects(host.request('start'), error =>
         error.message.includes('without logging a reason') && !error.message.includes('clipRect'));
     await assert.rejects(host.request("unload"), error => error.message.includes("MH_ERROR_MEMORY_PROTECT"));
+    assert.deepEqual(restartReasons, ['Native callbacks remain registered']);
+    assert.equal(host.unloadRestartReason, 'Native callbacks remain registered');
     host.close(); child.stdout.end(); child.stderr.end();
 });
 

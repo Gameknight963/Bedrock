@@ -87,6 +87,12 @@ static void BEDROCK_CALL report_status(void *opaque, const char *message)
     Text text = {0}; text_add(&text, "{\"event\":\"status\",\"message\":");
     text_quote(&text, message); text_add(&text, "}"); send_message(host, &text);
 }
+static void BEDROCK_CALL require_restart(void *opaque, const char *reason)
+{
+    if (!reason || !*reason) return;
+    Text text = {0}; text_add(&text, "{\"event\":\"restart\",\"message\":");
+    text_quote(&text, reason); text_add(&text, "}"); send_message(opaque, &text);
+}
 static void BEDROCK_CALL log_message(void *opaque, BedrockLogLevel level, const char *message)
 {
     Host *host = opaque;
@@ -267,7 +273,7 @@ static bool initialize(Host *host, const HostLaunch *launch)
         host, launch->process_type, log_message, get_setting, set_setting, release_value, resolve_symbol, report_status,
         launch->process_type == BEDROCK_PROCESS_GPU ? NULL : execute_js,
         launch->process_type == BEDROCK_PROCESS_GPU ? NULL : execute_js_async,
-        launch->process_type == BEDROCK_PROCESS_GPU ? NULL : release_js_value };
+        launch->process_type == BEDROCK_PROCESS_GPU ? NULL : release_js_value, require_restart };
     return describe(host);
 }
 static void stop_plugin(Host *host)
