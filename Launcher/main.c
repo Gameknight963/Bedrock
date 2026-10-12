@@ -331,8 +331,18 @@ int wmain(int argc, wchar_t **argv)
     launcher_logging_init();
     LaunchPaths *paths = calloc(1, sizeof(*paths));
     int result;
-    if (!paths) { fwprintf(stderr, L"Cannot allocate launcher path buffers.\n"); return 1; }
-    result = launch(argc, argv, paths);
-    free(paths);
+    if (!paths) {
+        fwprintf(stderr, L"Cannot allocate launcher path buffers.\n");
+        result = 1;
+    } else {
+        result = launch(argc, argv, paths);
+        free(paths);
+    }
+    if (result) {
+        fputws(L"Press Enter to close.\n", stderr);
+        fflush(stderr);
+        int character;
+        while ((character = getchar()) != '\n' && character != EOF) { }
+    }
     return result;
 }
