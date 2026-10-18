@@ -9,14 +9,14 @@ NO environment variables are modified, and NO registry settings are changed.
 
 ## Install
 
- - Get the latest release from [Releases](https://github.com/bedrock-client/Bedrock/releases).
+ - Get the latest release from [Releases](https://github.com/Gameknight963/Bedrock/releases).
  - Extract the ZIP to a writable folder and run `BedrockLauncher.exe`. 
  - Keep the adjacent `Runtime` folder with it. 
  - Bedrock creates `BedrockData` beside the launcher, don't delete that either.
 
 ## Bugs
 
-[Report an issue](https://github.com/bedrock-client/Bedrock/issues) asap, thank you!
+[Report an issue](https://github.com/Gameknight963/Bedrock/issues) asap, thank you!
 
 ## Build
 
