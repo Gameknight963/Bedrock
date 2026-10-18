@@ -42,8 +42,8 @@ function discover(root) {
         if (!fs.existsSync(path.join(folder, 'plugin.json'))) continue;
         try {
             const manifest = readJson(path.join(folder, 'plugin.json'), null);
-            if (!manifest || manifest.manifestVersion !== 2)
-                throw new Error('manifestVersion must be 2');
+            if (!manifest || manifest.manifestVersion !== 3)
+                throw new Error('manifestVersion must be 3');
             if (Object.hasOwn(manifest, 'apiVersion'))
                 throw new Error('Declare requiresApi on each entry point instead of apiVersion');
             if (typeof manifest.id !== 'string' || !/^[a-z0-9][a-z0-9._-]*$/.test(manifest.id) || manifest.id.includes('..') || manifest.id.endsWith('.') ||
@@ -60,9 +60,10 @@ function discover(root) {
                 if (!entry || typeof entry !== 'object' || Array.isArray(entry))
                     throw new Error(`${environment} must declare runtime, path and requiresApi`);
                 const definition = entry;
-                if (!['javascript', 'native', 'dotnet'].includes(definition.runtime)) throw new Error(`Unsupported runtime for ${environment}`);
-                if (definition.runtime === 'dotnet') {
-                    if (environment !== 'renderer') throw new Error('Managed WASM plugins run in the renderer');
+                if (!['javascript', 'native', 'dotnet-wasm', 'dotnet'].includes(definition.runtime)) throw new Error(`Unsupported runtime for ${environment}`);
+                if (['dotnet-wasm', 'dotnet'].includes(definition.runtime)) {
+                    if (definition.runtime === 'dotnet-wasm' && environment !== 'renderer') throw new Error('Managed WASM plugins run in the renderer');
+                    if (definition.runtime === 'dotnet' && (environment !== 'main' || process.platform !== 'win32' || process.arch !== 'x64')) throw new Error('Desktop .NET plugins currently run in the Windows x64 main process');
                     if (typeof definition.path !== 'string' || path.extname(definition.path).toLowerCase() !== '.dll') throw new Error('Managed entry points must end in .dll');
                     if (Object.hasOwn(definition, 'requiresApi')) throw new Error('Managed API requirements belong in the assembly attribute');
                     entries[environment] = packagePath(folder, definition.path);

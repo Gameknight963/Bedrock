@@ -1,5 +1,5 @@
 {
-    "manifestVersion": 2,
+    "manifestVersion": 3,
     "id": "bedrock.example",
     "name": "Example",
     "version": "1.0.0",

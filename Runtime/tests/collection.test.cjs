@@ -13,7 +13,7 @@ const { writeJson } = require('../storage.cjs');
 function fixture(t) {
     const root = fs.mkdtempSync(path.join(os.tmpdir(), 'Bedrock-collection-'));
     t.after(() => fs.rmSync(root, { recursive: true, force: true }));
-    const manifest = { manifestVersion: 2, id: 'test.download', name: 'Downloaded', version: '1.0.0',
+    const manifest = { manifestVersion: 3, id: 'test.download', name: 'Downloaded', version: '1.0.0',
         entrypoints: { main: { runtime: 'javascript', path: 'main.js', requiresApi: '1.0.0' } }, readme: 'README.md', license: 'MIT' };
     const bytes = archive([['package/plugin.json', JSON.stringify(manifest)], ['package/main.js', 'export function start(ctx) { ctx.settings.set("ran", true); }'], ['package/README.md', '# Downloaded'], ['package/LICENSE', 'MIT']]);
     const entry = { manifest, readme: '# Downloaded', package: { url: 'https://github.com/bedrock-client/bedrock-plugins/releases/download/collection-2026-10-10-1/test.download-1.0.0.zip', size: bytes.length, sha256: crypto.createHash('sha256').update(bytes).digest('hex') } };

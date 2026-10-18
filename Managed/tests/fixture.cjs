@@ -20,8 +20,8 @@ fs.writeFileSync(secondManifest, JSON.stringify(second));
 const incompatibleFolder = path.join(data, 'plugins/incompatible');
 fs.mkdirSync(incompatibleFolder);
 fs.copyFileSync(path.join(root, 'Managed/tests/Incompatible/bin/Release/net10.0/Incompatible.dll'), path.join(incompatibleFolder, 'Incompatible.dll'));
-fs.writeFileSync(path.join(incompatibleFolder, 'plugin.json'), JSON.stringify({ manifestVersion: 2,
-    id: 'bedrock.incompatible', name: 'Incompatible', version: '1.0.0', entrypoints: { renderer: { runtime: 'dotnet', path: 'Incompatible.dll' } } }));
+fs.writeFileSync(path.join(incompatibleFolder, 'plugin.json'), JSON.stringify({ manifestVersion: 3,
+    id: 'bedrock.incompatible', name: 'Incompatible', version: '1.0.0', entrypoints: { renderer: { runtime: 'dotnet-wasm', path: 'Incompatible.dll' } } }));
 const unloads = [];
 let runtimeDownloads = 0;
 const readFile = fs.readFileSync;

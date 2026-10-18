@@ -205,7 +205,7 @@ function installRenderer(configuration) {
             let instance;
             try {
                 await settingsReady;
-                record.module ||= record.info.manifest.entrypoints.renderer.runtime === 'dotnet'
+                record.module ||= record.info.manifest.entrypoints.renderer.runtime === 'dotnet-wasm'
                     ? await (await import('bedrock://api/dotnet.mjs')).loadPlugin(record.info)
                     : await (await modulesReady).import(record.info.renderer);
                 if (typeof record.module.start !== 'function') throw new Error('Renderer entry point must export start(context)');

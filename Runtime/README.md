@@ -40,7 +40,7 @@ The loader inspects only immediate plugin folders containing `plugin.json`. Ever
 
 ```json
 {
-    "manifestVersion": 2,
+    "manifestVersion": 3,
     "id": "example.plugin",
     "name": "Example",
     "version": "1.0.0",
@@ -59,7 +59,7 @@ Each JavaScript entry point must be an object declaring `runtime`, `path` and `r
 
 `requiresApi` is a semantic version, not a version range. Bedrock accepts requirements with the same major version that are no newer than its API, comparing minor and patch versions in order. For example, API `1.3.2` accepts `1.2.0` and `1.3.2`, but rejects `1.3.3` and `2.0.0`. Prerelease versions follow semantic-version precedence; build metadata does not affect compatibility. Requirements are checked before executing any plugin code.
 
-`manifestVersion: 2` identifies this package format. The old string entry points and top-level `apiVersion` are no longer accepted.
+`manifestVersion: 3` identifies this package format. The old string entry points and top-level `apiVersion` are no longer accepted.
 
 ## Native entry points
 
@@ -287,8 +287,8 @@ The Electron fixture checks the real sandboxed preload/context bridge, preserved
 
 Use `ctx.reportStatus("Preparing resources")` during startup to describe the current task. The Plugins page shows this message while the plugin initializes. Longer tasks also appear in a compact panel when you are outside the Plugins page. Startup errors can be selected or copied from the plugin?s detail page; Retry disables and enables the plugin again.
 
-## C# renderer plugins
+## C# plugins
 
-Renderer entry points can use `runtime: "dotnet"` with a managed DLL path. The assembly declares its entry type and API requirement through an assembly-level `BedrockPlugin` attribute. See [the managed API](../Managed/README.md) and [the C# example](../Examples/dotnet/ExamplePlugin.cs).
+Main entry points use `runtime: "dotnet"` for desktop .NET; renderer entry points use `runtime: "dotnet-wasm"` for browser WebAssembly. Both declare a managed DLL path. The assembly declares its entry type and API requirement through an assembly-level `BedrockPlugin` attribute. See [the managed API](../Managed/README.md) and [the C# example](../Examples/dotnet/ExamplePlugin.cs).
 
 The Electron smoke fixture also exercises Window Customization and Selectable Settings from the separate plugin collection. Build that collection first. It defaults to a sibling `bedrock-plugins` checkout; set `BEDROCK_PLUGINS_ROOT` to use another location.

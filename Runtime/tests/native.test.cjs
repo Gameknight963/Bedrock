@@ -56,7 +56,7 @@ test('native manifests select DLL entry points and obtain API requirements from 
         const folder = path.join(root, 'plugins', id);
         fs.mkdirSync(folder, { recursive: true });
         fs.writeFileSync(path.join(folder, 'plugin.dll'), 'discovery does not execute this file');
-        fs.writeFileSync(path.join(folder, 'plugin.json'), JSON.stringify({ manifestVersion: 2,
+        fs.writeFileSync(path.join(folder, 'plugin.json'), JSON.stringify({ manifestVersion: 3,
             id, name: id, version: '1.0.0', entrypoints: { [environment]: entry } }));
     };
     add('test.gpu', { runtime: 'native', path: 'plugin.dll' });

@@ -8,7 +8,7 @@ const root = fs.mkdtempSync(path.join(os.tmpdir(), 'bedrock-restart-smoke-'));
 app.setPath('userData', path.join(root, 'profile'));
 const folder = path.join(root, 'plugins', 'restart');
 fs.mkdirSync(folder, {recursive:true});
-fs.writeFileSync(path.join(folder, 'plugin.json'), JSON.stringify({manifestVersion:2,id:'test.restart',name:'Restart fixture',version:'1.0.0',
+fs.writeFileSync(path.join(folder, 'plugin.json'), JSON.stringify({manifestVersion:3,id:'test.restart',name:'Restart fixture',version:'1.0.0',
     entrypoints:{renderer:{runtime:'javascript',path:'renderer.js',requiresApi:'1.3.0'}}}));
 fs.writeFileSync(path.join(folder, 'renderer.js'), `export function start(ctx) { ctx.requireRestart('Renderer process change'); }
     export function unload(ctx) {

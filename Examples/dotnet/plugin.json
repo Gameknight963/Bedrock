@@ -1,1 +1,1 @@
-{"manifestVersion":2,"id":"bedrock.managed-example","name":"C# example","version":"1.0.0","description":"Demonstrates managed settings, lifecycle and JavaScript interop.","readme":"README.md","entrypoints":{"renderer":{"runtime":"dotnet","path":"ManagedExample.dll"}}}
+{"manifestVersion":3,"id":"bedrock.managed-example","name":"C# example","version":"1.0.0","description":"Demonstrates managed settings, lifecycle and JavaScript interop.","readme":"README.md","entrypoints":{"renderer":{"runtime":"dotnet-wasm","path":"ManagedExample.dll"}}}

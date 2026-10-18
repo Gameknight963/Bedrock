@@ -27,7 +27,7 @@ function validateCatalog(catalog) {
     const ids = new Set();
     for (const entry of catalog.plugins) {
         const { manifest, package: archive } = entry;
-        if (manifest?.manifestVersion !== 2 || typeof manifest.id !== 'string' || !/^[a-z0-9][a-z0-9._-]*$/.test(manifest.id) ||
+        if (manifest?.manifestVersion !== 3 || typeof manifest.id !== 'string' || !/^[a-z0-9][a-z0-9._-]*$/.test(manifest.id) ||
             manifest.id.includes('..') || !parseVersion(manifest.version) || typeof manifest.name !== 'string' ||
             ids.has(manifest.id) || typeof entry.readme !== 'string' || !archive || !/^[a-f0-9]{64}$/.test(archive.sha256) ||
             !Number.isSafeInteger(archive.size) || archive.size <= 0 || archive.size > 64 * 1024 * 1024 ||

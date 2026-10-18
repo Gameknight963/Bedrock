@@ -11,7 +11,7 @@ const root = globalThis.BedrockMain?.root || process.argv[2] || fs.mkdtempSync(p
 const directory = path.join(root, 'plugins', 'example');
 fs.mkdirSync(directory, { recursive: true });
 writeJson(path.join(directory, 'plugin.json'), {
-    manifestVersion: 2, id: 'test.example', name: 'Example plugin', version: '1.0.0',
+    manifestVersion: 3, id: 'test.example', name: 'Example plugin', version: '1.0.0',
     description: 'Tests styles, patches, settings and immediate enable/disable.',
     entrypoints: { main: { runtime: 'javascript', path: 'main.js', requiresApi: '1.0.0' }, renderer: { runtime: 'javascript', path: 'renderer.js', requiresApi: '1.0.0' } }, readme: 'README.md'
 });
@@ -56,7 +56,7 @@ fs.writeFileSync(path.join(directory, 'renderer.js'), `
 fs.writeFileSync(path.join(directory, 'README.md'), '# Example documentation\n\n**Bold** and `code`.\n\n- First\n- Second\n\n<script>globalThis.badReadme = true</script>\n\n[Bad link](javascript:alert(1))\n');
 const pendingDirectory = path.join(root, 'plugins', 'pending');
 fs.mkdirSync(pendingDirectory);
-writeJson(path.join(pendingDirectory, 'plugin.json'), { manifestVersion: 2,
+writeJson(path.join(pendingDirectory, 'plugin.json'), { manifestVersion: 3,
     id: 'test.pending', name: 'Pending plugin', version: '1.0.0', entrypoints: { renderer: { runtime: 'javascript', path: 'renderer.js', requiresApi: '1.0.0' } } });
 fs.writeFileSync(path.join(pendingDirectory, 'renderer.js'), `export async function start(ctx) {
     ctx.styles.add(':root { --pending-plugin: true; }');
@@ -66,7 +66,7 @@ fs.writeFileSync(path.join(pendingDirectory, 'renderer.js'), `export async funct
 const selectableDirectory = path.join(root, 'plugins', 'selectable-settings');
 const restartDirectory = path.join(root, 'plugins', 'restart-unload');
 fs.mkdirSync(restartDirectory);
-writeJson(path.join(restartDirectory, 'plugin.json'), { manifestVersion: 2,
+writeJson(path.join(restartDirectory, 'plugin.json'), { manifestVersion: 3,
     id: 'test.restart-unload', name: 'Restart unload', version: '1.0.0',
     entrypoints: { renderer: { runtime: 'javascript', path: 'renderer.js', requiresApi: '1.1.0' } } });
 fs.writeFileSync(path.join(restartDirectory, 'renderer.js'), `export function start() {} export function unload(ctx) {
@@ -86,7 +86,7 @@ let nativeWindows;
 
 const { archive } = require('./collection-fixture.cjs');
 const crypto = require('node:crypto');
-const remoteManifest = { manifestVersion: 2, id: 'test.catalog', name: 'Catalog plugin', version: '1.0.0',
+const remoteManifest = { manifestVersion: 3, id: 'test.catalog', name: 'Catalog plugin', version: '1.0.0',
     description: 'Remote install fixture.', entrypoints: { renderer: { runtime: 'javascript', path: 'renderer.js', requiresApi: '1.0.0' } }, readme: 'README.md', license: 'MIT' };
 const remoteRendererSource = `import { value } from './helper.mjs';
     import { OptionType } from 'bedrock://api/settings.mjs';
@@ -104,7 +104,7 @@ const remoteArchive = archive([['catalog/plugin.json', JSON.stringify(remoteMani
 const remoteEntry = { manifest: remoteManifest, readme: '# Remote documentation', package: {
     url: 'https://github.com/bedrock-client/bedrock-plugins/releases/download/collection-2026-10-10-1/test.catalog-1.0.0.zip',
     size: remoteArchive.length, sha256: crypto.createHash('sha256').update(remoteArchive).digest('hex') } };
-const updateManifest = { manifestVersion: 2, id: 'bedrock.example', name: 'Example plugin', version: '1.1.0',
+const updateManifest = { manifestVersion: 3, id: 'bedrock.example', name: 'Example plugin', version: '1.1.0',
     entrypoints: { main: { runtime: 'javascript', path: 'main.js', requiresApi: '1.0.0' } }, readme: 'README.md', license: 'MIT' };
 const updateArchive = archive([['example/plugin.json', JSON.stringify(updateManifest)], ['example/main.js', 'export function start() { globalThis.fixtureUpdatedCode = true; }'], ['example/README.md', '# Updated documentation'], ['example/LICENSE', 'MIT']]);
 const updateEntry = { manifest: updateManifest, readme: '# Updated documentation', package: {
@@ -116,7 +116,7 @@ const collectionFetch = async url => {
 };
 const stopFailureDirectory = path.join(root, 'plugins', 'stop-failure');
 fs.mkdirSync(stopFailureDirectory, { recursive: true });
-writeJson(path.join(stopFailureDirectory, 'plugin.json'), { manifestVersion: 2, id: 'test.renderer-stop-failure', name: 'Renderer cleanup fixture', version: '1.0.0',
+writeJson(path.join(stopFailureDirectory, 'plugin.json'), { manifestVersion: 3, id: 'test.renderer-stop-failure', name: 'Renderer cleanup fixture', version: '1.0.0',
     entrypoints: { renderer: { runtime: 'javascript', path: 'renderer.js', requiresApi: '1.0.0' } } });
 fs.writeFileSync(path.join(stopFailureDirectory, 'renderer.js'), `
     export function start() { globalThis.fixtureCleanupStarts = (globalThis.fixtureCleanupStarts || 0) + 1; }
@@ -132,7 +132,7 @@ require(path.join(process.env.BEDROCK_RUNTIME_ROOT || path.resolve(__dirname, '.
 nativeWindows = Bedrock.require(fixtureNative);
 const lockedPackage = path.join(root, 'plugins', 'locked-addon');
 fs.mkdirSync(lockedPackage, { recursive: true });
-writeJson(path.join(lockedPackage, 'plugin.json'), { manifestVersion: 2, id: 'test.locked-addon', name: 'Locked addon', version: '1.0.0',
+writeJson(path.join(lockedPackage, 'plugin.json'), { manifestVersion: 3, id: 'test.locked-addon', name: 'Locked addon', version: '1.0.0',
     entrypoints: { main: { runtime: 'javascript', path: 'main.js', requiresApi: '1.0.0' } } });
 fs.copyFileSync(path.join(pluginCollection, '.artifacts/packages/console/native/win32-x64/console.node'), path.join(lockedPackage, 'console.node'));
 fs.writeFileSync(path.join(lockedPackage, 'main.js'), "exports.start = () => require('./console.node');");

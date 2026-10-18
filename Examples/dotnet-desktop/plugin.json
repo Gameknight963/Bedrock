@@ -1,0 +1,8 @@
+{
+  "manifestVersion": 3,
+  "id": "example.desktop",
+  "name": "Desktop .NET example",
+  "version": "1.0.0",
+  "entrypoints": { "main": { "runtime": "dotnet", "path": "DesktopExample.dll" } },
+  "readme": "README.md"
+}

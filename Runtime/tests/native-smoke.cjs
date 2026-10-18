@@ -18,7 +18,7 @@ const manager=createPluginManager(root,{
 function packageNative(environment){
  const folder=path.join(root,'plugins',environment);fs.mkdirSync(folder,{recursive:true});
  fs.copyFileSync(path.join(repo,'Examples/native/bin/x64/Release/native-example.dll'),path.join(folder,'plugin.dll'));
- fs.writeFileSync(path.join(folder,'plugin.json'),JSON.stringify({manifestVersion:2,id:'test.'+environment,name:environment,version:'1.0.0',entrypoints:{[environment]:{runtime:'native',path:'plugin.dll'}}}));
+ fs.writeFileSync(path.join(folder,'plugin.json'),JSON.stringify({manifestVersion:3,id:'test.'+environment,name:environment,version:'1.0.0',entrypoints:{[environment]:{runtime:'native',path:'plugin.dll'}}}));
 }
 const wait=async predicate=>{for(let i=0;i<150;i++){if(predicate())return;await new Promise(r=>setTimeout(r,100));}throw Error('Timed out: '+JSON.stringify(logs));};
 app.whenReady().then(async()=>{

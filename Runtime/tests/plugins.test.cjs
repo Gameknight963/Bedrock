@@ -15,7 +15,7 @@ function plugin(root, id, source, overrides = {}, folder = id) {
     const directory = path.join(root, 'plugins', folder);
     fs.mkdirSync(directory, { recursive: true });
     fs.writeFileSync(path.join(directory, 'main.js'), source);
-    writeJson(path.join(directory, 'plugin.json'), { manifestVersion: 2,
+    writeJson(path.join(directory, 'plugin.json'), { manifestVersion: 3,
         id, name: id, version: '1.0.0', entrypoints: { main: { runtime: 'javascript', path: 'main.js', requiresApi: '1.0.0' } }, ...overrides });
     return directory;
 }
@@ -236,7 +236,7 @@ test('duplicates, traversal, unsupported runtimes and invalid settings are repor
     plugin(root, 'test.duplicate', '', {}, 'copy-one');
     plugin(root, 'test.duplicate', '', {}, 'copy-two');
     plugin(root, 'test.escape', '', { entrypoints: { main: { runtime: 'javascript', path: '../../outside.js', requiresApi: '1.0.0' } } });
-    plugin(root, 'test.future', '', { entrypoints: { main: { runtime: 'dotnet', path: 'main.js' } } });
+    plugin(root, 'test.future', '', { entrypoints: { main: { runtime: 'dotnet-wasm', path: 'main.js' } } });
     const discovered = discover(root);
     assert.equal(discovered.plugins.size, 0);
     assert.equal(discovered.errors.length, 3);
@@ -264,7 +264,7 @@ test('incompatible manifests are rejected before executing either entry point', 
     plugin(root, 'test.major', source, { entrypoints: { main: { runtime: 'javascript', path: 'main.js', requiresApi: '2.0.0' } } });
     plugin(root, 'test.short', source, { entrypoints: { main: 'main.js' } });
     plugin(root, 'test.missing', source, { entrypoints: { main: { runtime: 'javascript', path: 'main.js' } } });
-    plugin(root, 'test.old', source, { manifestVersion: 1, apiVersion: 1 });
+    plugin(root, 'test.old', source, { manifestVersion: 2 });
     plugin(root, 'test.toplevel', source, { apiVersion: 1 });
     plugin(root, 'test.renderer', source, { entrypoints: {
         main: { runtime: 'javascript', path: 'main.js', requiresApi: '1.0.0' },

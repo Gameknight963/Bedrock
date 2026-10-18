@@ -53,12 +53,19 @@
     <None Include="..\THIRD_PARTY_NOTICES.md" />
   </ItemGroup>
   <ItemGroup>
+    <ProjectReference Include="..\Native\Dotnet\Dotnet.vcxproj"><LinkLibraryDependencies>false</LinkLibraryDependencies></ProjectReference>
     <ProjectReference Include="..\Native\Addons\Addons.vcxproj"><LinkLibraryDependencies>false</LinkLibraryDependencies></ProjectReference>
     <ProjectReference Include="..\Native\PluginHost\NativeController.vcxproj" Condition="'$(Platform)'=='x64'">
       <Project>{A2FF9A45-7F03-4FF1-9EC6-4D0EC3B384B5}</Project><LinkLibraryDependencies>false</LinkLibraryDependencies>
     </ProjectReference>
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
+  <Target Name="BuildDesktopManagedHost" BeforeTargets="CopyBedrockRuntime">
+    <Exec Command="dotnet build &quot;$(ProjectDir)..\Managed\DesktopHost\DesktopHost.csproj&quot; -c $(Configuration) --nologo -o &quot;$(IntDir)desktop-managed&quot;" />
+    <ItemGroup><DesktopManagedFile Include="$(IntDir)desktop-managed\*.dll;$(IntDir)desktop-managed\*.json" /></ItemGroup>
+    <Copy SourceFiles="@(DesktopManagedFile)" DestinationFolder="$(OutDir)Runtime\dotnet-desktop" SkipUnchangedFiles="true" />
+    <Copy SourceFiles="$(ProjectDir)..\Native\Dotnet\bin\$(Platform)\$(Configuration)\dotnet.node" DestinationFolder="$(OutDir)Runtime\native\win32-x64" SkipUnchangedFiles="true" />
+  </Target>
   <Target Name="PublishManagedRuntime" BeforeTargets="CopyBedrockRuntime">
     <Exec Command="dotnet publish &quot;$(ProjectDir)..\Managed\Host\Host.csproj&quot; -c $(Configuration) --nologo -o &quot;$(IntDir)managed-publish&quot;" />
     <ItemGroup><ManagedRuntimeFile Include="$(IntDir)managed-publish\wwwroot\**\*" /></ItemGroup>

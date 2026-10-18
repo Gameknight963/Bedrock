@@ -3,6 +3,7 @@ const fs = require('node:fs');
 const { EventEmitter } = require('node:events');
 const { discover, readJson, writeJson } = require('./storage.cjs');
 const { createNativeEntryPoints } = require('./native.cjs');
+const { createDesktopEntryPoint } = require('./dotnet-desktop.cjs');
 const { createModuleLoader } = require('./modules.cjs');
 const { createContext, createPatcher } = require('./context.cjs');
 const { parseVersion, compareVersions } = require('./api-version.cjs');
@@ -112,7 +113,7 @@ function createPluginManager(root, options = {}) {
             restartReason: record.restartReason || null,
             settingsDefinitions: definitions.get(record.manifest.id) || {},
             restartSettings: restartSettings(record.manifest.id),
-            renderer: !record.pendingUpdate && ['javascript', 'dotnet'].includes(record.manifest.entrypoints.renderer?.runtime) ? `bedrock://plugins/${record.manifest.id}/${record.manifest.entrypoints.renderer.path.replaceAll('\\', '/').split('/').map(encodeURIComponent).join('/')}` : null,
+            renderer: !record.pendingUpdate && ['javascript', 'dotnet-wasm'].includes(record.manifest.entrypoints.renderer?.runtime) ? `bedrock://plugins/${record.manifest.id}/${record.manifest.entrypoints.renderer.path.replaceAll('\\', '/').split('/').map(encodeURIComponent).join('/')}` : null,
             settings: settings(record.manifest.id).all()
         }));
     }
@@ -128,7 +129,9 @@ function createPluginManager(root, options = {}) {
         let owned;
         try {
             if (!record.module) {
-                const javascript = record.manifest.entrypoints.main?.runtime === 'javascript' ? modules.load(record.entries.main) : null;
+                const javascript = record.manifest.entrypoints.main?.runtime === 'dotnet'
+                    ? createDesktopEntryPoint(record, schema => registerSettings(record.manifest.id, schema))
+                    : record.manifest.entrypoints.main?.runtime === 'javascript' ? modules.load(record.entries.main) : null;
                 if (javascript && typeof javascript.start !== 'function') throw new Error('Main entry point must export start(context)');
                 if (!hasNative) record.module = javascript;
                 else {

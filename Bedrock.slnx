@@ -6,20 +6,18 @@
   <Project Path="Native/Addons/Addons.vcxproj" Id="a615fc2e-b700-4acb-b7b4-649fa46b599a" />
   <Folder Name="/include/" />
   <Folder Name="/include/bedrock/"><File Path="include/bedrock/plugin.h" /></Folder>
-  <Project Path="Native/PluginHost/NativeController.vcxproj" Id="a2ff9a45-7f03-4ff1-9ec6-4d0ec3b384b5">
-    <Platform Project="x64" />
-  </Project>
-  <Project Path="Native/PluginHost/NativeHost.vcxproj" Id="2ab38798-f37e-4676-903c-169ac0db26fe">
-    <Platform Project="x64" />
-  </Project>
-  <Project Path="Examples/native/NativeExample.vcxproj" Id="f05d4061-a47d-4f41-9c16-63903638ff48">
-    <Platform Project="x64" />
-  </Project>
+  <Project Path="Native/PluginHost/NativeController.vcxproj" Id="a2ff9a45-7f03-4ff1-9ec6-4d0ec3b384b5" />
+  <Project Path="Native/PluginHost/NativeHost.vcxproj" Id="2ab38798-f37e-4676-903c-169ac0db26fe" />
+  <Project Path="Examples/native/NativeExample.vcxproj" Id="f05d4061-a47d-4f41-9c16-63903638ff48" />
   <Project Path="Tests/BedrockTests.vcxproj" Id="4a781370-71da-4492-989d-10be3655472b" />
   <Project Path="Runtime/Runtime.esproj">
     <Platform Project="AnyCPU" />
   </Project>
+  <Project Path="Native/Dotnet/Dotnet.vcxproj" Id="c6823f2e-6bda-49d5-b4c5-f47600bafe95" />
+  <Project Path="Managed/Desktop/Bedrock.Desktop.csproj" />
+  <Project Path="Managed/DesktopHost/DesktopHost.csproj" />
   <Project Path="Managed/Bedrock/Bedrock.csproj" />
   <Project Path="Managed/Host/Host.csproj" />
   <Project Path="Examples/dotnet/ManagedExample.csproj" />
+  <Project Path="Examples/dotnet-desktop/DesktopExample.csproj" />
 </Solution>
