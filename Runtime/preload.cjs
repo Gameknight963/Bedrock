@@ -644,7 +644,7 @@ function installRenderer(configuration) {
         const detail = installedDetail || (catalogDetail && { manifest: catalogDetail.manifest });
         const source = catalogDetail?.source;
         const readmeURL = !installedDetail && source?.path && /^[a-f0-9]{40}$/.test(source.commit)
-            ? `https://github.com/bedrock-client/bedrock-plugins/blob/${source.commit}/${source.path}/${detail.manifest.readme || 'README.md'}`
+            ? `https://github.com/Gameknight963/bedrock-plugins/blob/${source.commit}/${source.path}/${detail.manifest.readme || 'README.md'}`
             : `bedrock://plugins/${selected}/${(detail?.manifest.readme || '').replaceAll('\\', '/')}`;
         const collectionAction = entry => {
             const installed = plugins.find(plugin => plugin.manifest.id === entry.manifest.id);

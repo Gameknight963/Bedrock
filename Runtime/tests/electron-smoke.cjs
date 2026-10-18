@@ -102,16 +102,16 @@ const remoteArchive = archive([['catalog/plugin.json', JSON.stringify(remoteMani
     ['catalog/helper.mjs', 'export const value = 1;'], ['catalog/lazy.mjs', 'export const value = 1;'],
     ['catalog/README.md', '# Remote documentation'], ['catalog/LICENSE', 'MIT']]);
 const remoteEntry = { manifest: remoteManifest, readme: '# Remote documentation', package: {
-    url: 'https://github.com/bedrock-client/bedrock-plugins/releases/download/collection-2026-10-10-1/test.catalog-1.0.0.zip',
+    url: 'https://github.com/Gameknight963/bedrock-plugins/releases/download/collection-2026-10-10-1/test.catalog-1.0.0.zip',
     size: remoteArchive.length, sha256: crypto.createHash('sha256').update(remoteArchive).digest('hex') } };
 const updateManifest = { manifestVersion: 3, id: 'bedrock.example', name: 'Example plugin', version: '1.1.0',
     entrypoints: { main: { runtime: 'javascript', path: 'main.js', requiresApi: '1.0.0' } }, readme: 'README.md', license: 'MIT' };
 const updateArchive = archive([['example/plugin.json', JSON.stringify(updateManifest)], ['example/main.js', 'export function start() { globalThis.fixtureUpdatedCode = true; }'], ['example/README.md', '# Updated documentation'], ['example/LICENSE', 'MIT']]);
 const updateEntry = { manifest: updateManifest, readme: '# Updated documentation', package: {
-    url: 'https://github.com/bedrock-client/bedrock-plugins/releases/download/collection-2026-10-10-1/bedrock.example-1.1.0.zip',
+    url: 'https://github.com/Gameknight963/bedrock-plugins/releases/download/collection-2026-10-10-1/bedrock.example-1.1.0.zip',
     size: updateArchive.length, sha256: crypto.createHash('sha256').update(updateArchive).digest('hex') } };
 const collectionFetch = async url => {
-    if (url.endsWith('/latest')) return Response.json({ assets: [{ name: 'catalog.json', browser_download_url: 'https://github.com/bedrock-client/bedrock-plugins/releases/download/collection-2026-10-10-1/catalog.json' }] });
+    if (url.endsWith('/latest')) return Response.json({ assets: [{ name: 'catalog.json', browser_download_url: 'https://github.com/Gameknight963/bedrock-plugins/releases/download/collection-2026-10-10-1/catalog.json' }] });
     return url.endsWith('/catalog.json') ? Response.json({ catalogVersion: 1, plugins: [remoteEntry, updateEntry] }) : new Response(url.endsWith('/bedrock.example-1.1.0.zip') ? updateArchive : remoteArchive);
 };
 const stopFailureDirectory = path.join(root, 'plugins', 'stop-failure');

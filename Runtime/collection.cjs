@@ -6,7 +6,7 @@ const { promisify, isDeepStrictEqual } = require('node:util');
 const { discover, readJson, writeJson } = require('./storage.cjs');
 const { parseVersion } = require('./api-version.cjs');
 const inflate = promisify(inflateRaw);
-const repository = 'bedrock-client/bedrock-plugins';
+const repository = 'Gameknight963/bedrock-plugins';
 const releasePrefix = `https://github.com/${repository}/releases/download/`;
 
 async function download(url, maximum, fetcher) {

@@ -18,7 +18,7 @@ Bedrock's own code is licensed under the [MIT license](LICENSE). The dependencie
 
 The backdrop blur experiment uses [SkiaSharp](https://github.com/mono/SkiaSharp/blob/main/LICENSE.txt) and its native [Skia](https://github.com/google/skia/blob/main/LICENSE) dependency. SkiaSharp and its native library are not included in Bedrock's launcher or plugins. Their licenses and additional native dependency notices must accompany any separately distributed experiment binaries.
 
-Separately distributed plugins maintain their dependency notices in the [plugin collection](https://github.com/bedrock-client/bedrock-plugins/blob/main/THIRD_PARTY_NOTICES.md).
+Separately distributed plugins maintain their dependency notices in the [plugin collection](https://github.com/Gameknight963/bedrock-plugins/blob/main/THIRD_PARTY_NOTICES.md).
 
 JavaScript dependency versions are pinned in `Runtime/package-lock.json`. Building the launcher packages the module loaders and converters under `Runtime/modules`, alongside `THIRD_PARTY_NOTICES.txt` containing their dependency licenses. Include that directory when distributing Bedrock; end users do not need npm or Node.js installed separately.
 
