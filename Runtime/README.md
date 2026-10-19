@@ -250,7 +250,26 @@ export async function start(ctx) {
 }
 ```
 
-`ctx.styles.add(css)` adds an owned style element and returns its disposer. Relative ES imports and `fetch(new URL('./style.css', import.meta.url))` work through Bedrock's package protocol. `ctx.webpack.find(predicate)` searches loaded Discord module exports. `ctx.webpack.waitFor(predicate)` resolves when a matching module loads, or rejects if the plugin stops first. This API avoids eagerly executing unrelated Discord modules. Module exports and the settings adapter depend on Discord internals and can require updates after Discord changes.
+`ctx.styles.add(css)` adds an owned style element and returns its disposer. Relative ES imports and `fetch(new URL('./style.css', import.meta.url))` work through Bedrock's package protocol.
+
+Discord modules are available through `ctx.webpack`:
+
+- `find(predicate)` searches loaded module exports.
+- `waitFor(predicate)` waits for a matching module to execute. It rejects if the plugin stops first.
+- `loadChunks({ find, match? })` requests a lazy-loaded feature, then executes its entry module. Use `find()` afterward to locate its exports. Available in JavaScript API **1.9.0**.
+
+For `loadChunks`, `find` is a distinctive source fragment or an array of fragments that must all occur in one registered module factory. Bedrock follows the first recognized chunk-loading instruction in that factory. For example:
+
+```js
+await ctx.webpack.loadChunks({ find: 'distinctive source text' });
+const feature = ctx.webpack.find(value => typeof value?.someMethod === 'function');
+```
+
+An optional `match` regular expression selects a different loading instruction. Capture the comma-separated Webpack chunk calls, such as `r.e("123"),r.e("456")`, in group 1, and the quoted or numeric entry module ID in group 2. Group 1 can be empty when the entry module is already registered.
+
+An ambiguous factory match, missing instruction, chunk-loading failure or failed entry module rejects the promise. Stopping the plugin cancels its wait and prevents later entry-module execution; downloaded chunks remain registered with Discord.
+
+Module exports and the settings adapter depend on Discord internals and can require updates after Discord changes.
 
 For manual debugging, the renderer exposes `Bedrock.plugins.list()`, `await Bedrock.plugins.setEnabled(id, enabled)`, and `await Bedrock.plugins.rescan()`.
 

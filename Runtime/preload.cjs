@@ -5,7 +5,8 @@ function installRenderer(configuration) {
     const subscribers = new Set();
     const listeners = new Map();
     const patchSlots = new WeakMap();
-    let rendererApis, rendererUi, sourcePatches;
+    let rendererApis, rendererUi, sourcePatches, chunkLoader;
+    const originalFactories = new WeakMap();
     const executedFactories = new Map();
     const pendingBootstraps = [];
     let bootstrapsReady = false;
@@ -34,8 +35,10 @@ function installRenderer(configuration) {
         return loader;
     });
     modulesReady.catch(error => log('loader', error));
-    const apiReady = Promise.all([import('bedrock://api/renderer-apis.mjs'), import('bedrock://api/source-patches.mjs'), import('bedrock://api/renderer-ui.mjs')])
-        .then(([api, source, ui]) => {
+    const apiReady = Promise.all([import('bedrock://api/renderer-apis.mjs'), import('bedrock://api/source-patches.mjs'), import('bedrock://api/renderer-ui.mjs'), import('bedrock://api/webpack-chunks.mjs')])
+        .then(([api, source, ui, chunks]) => {
+            chunkLoader = chunks.createChunkLoader({ original: factory => originalFactories.get(factory) || factory });
+            for (const runtime of webpackRuntimes) chunkLoader.register(runtime);
             rendererUi = ui.createRendererUi({ react: () => renderingReact() || React, report: log });
             rendererApis = api.createRendererApis({ react: () => renderingReact() || React, report: log });
             sourcePatches = source.createSourcePatches({
@@ -241,6 +244,7 @@ function installRenderer(configuration) {
             get react() { return uiContext.react; },
             webpack: {
                 find: findModule,
+                loadChunks: options => chunkLoader.load(options, controller.signal),
                 waitFor(filter) {
                     const found = findModule(filter);
                     if (found) return Promise.resolve(found);
@@ -947,6 +951,7 @@ function installRenderer(configuration) {
     function attachRequire(require) {
         if (!require?.m || webpackRuntimes.has(require)) return;
         webpackRuntimes.add(require);
+        chunkLoader?.register(require);
         webpackRequire ||= require;
         wrapFactories(require.m);
         inspectModules();
@@ -986,6 +991,7 @@ function installRenderer(configuration) {
                     inspectModules();
                 }
             };
+            originalFactories.set(wrapped, original);
             wrappedFactories.add(wrapped);
             factories[id] = wrapped;
         }

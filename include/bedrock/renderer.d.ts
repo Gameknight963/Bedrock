@@ -143,7 +143,11 @@ export interface RendererContext {
     readonly log: { info(...values: unknown[]): void; warn(...values: unknown[]): void; error(...values: unknown[]): void };
     readonly settings: { get<T>(key: string, fallback: T): T; set(key: string, value: unknown): Promise<void>; delete(key: string): Promise<void>; all(): Record<string, unknown> };
     readonly styles: { add(css: string): Disposer };
-    readonly webpack: { find<T = unknown>(predicate: (value: any) => boolean): T | undefined; waitFor<T = unknown>(predicate: (value: any) => boolean): Promise<T> };
+    readonly webpack: {
+        find<T = unknown>(predicate: (value: any) => boolean): T | undefined;
+        waitFor<T = unknown>(predicate: (value: any) => boolean): Promise<T>;
+        loadChunks(options: { find: string | string[]; match?: RegExp }): Promise<void>;
+    };
     readonly patches: {
         before(object: object, method: string, callback: (args: any[], receiver: any) => void): Disposer;
         after(object: object, method: string, callback: (args: any[], result: any, receiver: any) => any): Disposer;
