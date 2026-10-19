@@ -3,7 +3,7 @@ const path = require('node:path');
 const Module = require('node:module');
 const { spawn } = require('node:child_process');
 const { createPluginManager } = require('./plugins.cjs');
-const { packagePath } = require('./storage.cjs');
+const { packagePath, packageDocuments } = require('./storage.cjs');
 const { compileRenderer, assets: moduleAssets } = require('./modules.cjs');
 const { startControl } = require('./control.cjs');
 const { createLogFeed } = require('./logs.cjs');
@@ -261,6 +261,7 @@ function install(options = {}) {
         if (operation === 'settingsSet') { manager.settings(id).set(key, value); return snapshot(); }
         if (operation === 'settingsDelete') { manager.settings(id).delete(key); return snapshot(); }
         if (operation === 'readme') return record.manifest.readme ? fs.readFileSync(packagePath(record.folder, record.manifest.readme), 'utf8') : '';
+        if (operation === 'documents') return packageDocuments(record.folder);
         if (operation === 'emit') { manager.events.emit('plugin.event', { id, name: key, value }); return true; }
         throw new Error('Unknown Bedrock operation');
     });

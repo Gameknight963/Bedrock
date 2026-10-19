@@ -101,4 +101,15 @@ function discover(root) {
     return { plugins, errors };
 }
 
-module.exports = { readJson, writeJson, packagePath, discover };
+function packageDocuments(folder) {
+    const read = file => {
+        try { return fs.readFileSync(packagePath(folder, file), 'utf8'); }
+        catch (error) { if (error.code === 'ENOENT') return ''; throw error; }
+    };
+    const license = read('LICENSE') || read('LICENSE.md') || read('LICENSE.txt');
+    const notices = ['NOTICE', 'NOTICE.md', 'THIRD_PARTY_NOTICES.md']
+        .map(file => ({ file, text: read(file) })).filter(document => document.text);
+    return { license, notices: notices.map(document => notices.length > 1 ? `${document.file}\n\n${document.text}` : document.text).join('\n\n') };
+}
+
+module.exports = { readJson, writeJson, packagePath, packageDocuments, discover };

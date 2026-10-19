@@ -12,6 +12,8 @@ The **Browse** tab lists the official plugin collection. Open **Details** to rea
 
 **Check for updates** refreshes the online catalog. Browsing downloads only the catalog; plugin packages download when you install or update them. Bedrock checks each package against its published SHA-256 checksum and validates it before installation. The catalog is cached for one hour, and the last saved catalog remains available when GitHub cannot be reached.
 
+Plugin details include **License** and **Notices** tabs when the package provides those documents. Full text is selectable. Installed packages use `LICENSE` (or `LICENSE.md` / `LICENSE.txt`), with notices from `NOTICE`, `NOTICE.md`, and `THIRD_PARTY_NOTICES.md`. Collection catalogs can include the same documents so they are available before installation.
+
 ## Locations
 
 `BedrockData` lives beside `BedrockLauncher.exe`, independently of the working directory. Each build has its own data folder. Plugins are distributed separately from the launcher; builds do not overwrite installed plugins or their data. Keep `BedrockData` when updating or moving Bedrock, and use a writable installation folder.

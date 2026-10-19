@@ -575,6 +575,7 @@ function installRenderer(configuration) {
         const [selected, select] = React.useState(null);
         const [tab, setTab] = React.useState('details');
         const [readme, setReadme] = React.useState(null);
+        const [documents, setDocuments] = React.useState(null);
         const [removing, setRemoving] = React.useState(null);
         const [view, setView] = React.useState('installed');
         const [catalog, setCatalog] = React.useState(null);
@@ -595,13 +596,19 @@ function installRenderer(configuration) {
         const [busy, setBusy] = React.useState(null);
         const [error, setError] = React.useState('');
         React.useEffect(() => subscribe(() => refresh(value => value + 1)), []);
+        const selectedInstalled = list().find(plugin => plugin.manifest.id === selected);
         React.useEffect(() => {
             let current = true;
             setReadme(null);
-            if (selected && !list().some(plugin => plugin.manifest.id === selected)) { setReadme(catalog?.plugins.find(entry => entry.manifest.id === selected)?.readme || ''); }
-            else if (selected) native.request('readme', selected).then(text => { if (current) setReadme(text); }).catch(error => { if (current) setError(error.message); });
+            setDocuments(null);
+            if (selected && !selectedInstalled) {
+                const entry = catalog?.plugins.find(entry => entry.manifest.id === selected);
+                setReadme(entry?.readme || ''); setDocuments(entry?.documents || null);
+            } else if (selected) Promise.all([native.request('readme', selected), native.request('documents', selected)])
+                .then(([text, files]) => { if (current) { setReadme(text); setDocuments(files); } })
+                .catch(error => { if (current) setError(error.message); });
             return () => { current = false; };
-        }, [selected, catalog]);
+        }, [selected, catalog, selectedInstalled?.manifest.version]);
         const loadCollection = async (force = false) => {
             setCatalogLoading(true); setCatalogError('');
             try { setCatalog(await native.request('collection', force)); }
@@ -640,6 +647,9 @@ function installRenderer(configuration) {
                 h('button', { className: 'bedrock-button', disabled: !!busy, onClick: () => run('restart', () => native.request('restart')) }, 'Restart Discord'),
                 h('button', { className: 'bedrock-button', onClick: () => { dismissedRestartState = restartState; refresh(value => value + 1); } }, 'Dismiss')));
         const installedDetail = plugins.find(plugin => plugin.manifest.id === selected);
+        const informationTabs = ['details', ...(installedDetail ? ['settings'] : []),
+            ...(documents?.license ? ['license'] : []), ...(documents?.notices ? ['notices'] : [])];
+        const activeTab = informationTabs.includes(tab) ? tab : 'details';
         const catalogDetail = catalog?.plugins.find(entry => entry.manifest.id === selected);
         const detail = installedDetail || (catalogDetail && { manifest: catalogDetail.manifest });
         const source = catalogDetail?.source;
@@ -688,16 +698,21 @@ function installRenderer(configuration) {
                     h('button', { className: 'bedrock-button', onClick: () => run('copy', () => navigator.clipboard.writeText(detail.error)) }, 'Copy error'))),
             detail.restartReason && h('p', { className: 'bedrock-restart' }, `Restart needed: ${detail.restartReason}`),
             h('div', { className: 'bedrock-tabs', role: 'tablist', 'aria-label': 'Plugin information' },
-                (installedDetail ? ['details', 'settings'] : ['details']).map(name => h('button', { key: name, className: 'bedrock-tab', id: `bedrock-${name}-tab`, role: 'tab',
-                    'aria-selected': tab === name, tabIndex: tab === name ? 0 : -1, 'aria-controls': `bedrock-${name}-panel`, onClick: () => setTab(name),
+                informationTabs.map(name => h('button', { key: name, className: 'bedrock-tab', id: `bedrock-${name}-tab`, role: 'tab',
+                    'aria-selected': activeTab === name, tabIndex: activeTab === name ? 0 : -1, 'aria-controls': `bedrock-${name}-panel`, onClick: () => setTab(name),
                     onKeyDown: event => {
                         if (!['ArrowLeft', 'ArrowRight', 'Home', 'End'].includes(event.key)) return;
                         event.preventDefault();
-                        const next = event.key === 'Home' ? 'details' : event.key === 'End' ? 'settings' : tab === 'details' ? 'settings' : 'details';
+                        const index = informationTabs.indexOf(activeTab);
+                        const next = event.key === 'Home' ? informationTabs[0] : event.key === 'End' ? informationTabs.at(-1) :
+                            informationTabs[(index + (event.key === 'ArrowLeft' ? -1 : 1) + informationTabs.length) % informationTabs.length];
                         setTab(next); document.getElementById(`bedrock-${next}-tab`).focus();
-                    } }, name === 'details' ? 'Details' : 'Settings'))),
-            tab === 'settings' && installedDetail ? h('div', { id: 'bedrock-settings-panel', role: 'tabpanel', 'aria-labelledby': 'bedrock-settings-tab' },
+                    } }, { details: 'Details', settings: 'Settings', license: 'License', notices: 'Notices' }[name]))),
+            activeTab === 'settings' && installedDetail ? h('div', { id: 'bedrock-settings-panel', role: 'tabpanel', 'aria-labelledby': 'bedrock-settings-tab' },
                 h(PluginSettings, { key: selected, plugin: detail })) :
+            (tab === 'license' || tab === 'notices') && informationTabs.includes(tab) ?
+                h('div', { className: 'bedrock-readme', id: `bedrock-${tab}-panel`, role: 'tabpanel', 'aria-labelledby': `bedrock-${tab}-tab` },
+                    h('pre', null, documents[tab])) :
             h('div', { className: 'bedrock-readme', id: 'bedrock-details-panel', role: 'tabpanel', 'aria-labelledby': 'bedrock-details-tab' },
                 readme ? markdown(readme, readmeURL)
                     : h('p', { className: 'bedrock-muted' }, readme === null && detail.manifest.readme ? `Loading documentation${ellipsis}` : 'No README provided.')));

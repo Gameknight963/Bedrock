@@ -37,6 +37,9 @@ function validateCatalog(catalog) {
             decodeURIComponent(url.pathname.split('/').at(-1)) !== `${manifest.id}-${manifest.version}.zip`)
             throw new Error('Package URL does not match its plugin.');
         ids.add(manifest.id);
+        if (entry.documents !== undefined && (!entry.documents || typeof entry.documents !== 'object' ||
+            Array.isArray(entry.documents) || ['license', 'notices'].some(key => typeof entry.documents[key] !== 'string')))
+            throw new Error('Invalid plugin documents.');
     }
     return catalog;
 }

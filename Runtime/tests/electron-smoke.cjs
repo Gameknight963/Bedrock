@@ -28,6 +28,8 @@ fs.writeFileSync(path.join(directory, 'main.js'), `
     export function unload() { globalThis.fixtureMainUnloaded = true; }
 `);
 fs.writeFileSync(path.join(directory, 'helper.js'), `export const color = '#00ff00';`);
+fs.writeFileSync(path.join(directory, 'LICENSE'), 'Fixture license © Example\n');
+fs.writeFileSync(path.join(directory, 'NOTICE'), '<script>globalThis.badNotice = true</script>\nFixture authors');
 fs.writeFileSync(path.join(directory, 'renderer.js'), `
     import { color } from './helper.js';
     const { definePluginSettings, OptionType } = Bedrock;
@@ -101,7 +103,7 @@ const remoteRendererSource = `import { value } from './helper.mjs';
 const remoteArchive = archive([['catalog/plugin.json', JSON.stringify(remoteManifest)], ['catalog/renderer.js', remoteRendererSource],
     ['catalog/helper.mjs', 'export const value = 1;'], ['catalog/lazy.mjs', 'export const value = 1;'],
     ['catalog/README.md', '# Remote documentation'], ['catalog/LICENSE', 'MIT']]);
-const remoteEntry = { manifest: remoteManifest, readme: '# Remote documentation', package: {
+const remoteEntry = { manifest: remoteManifest, readme: '# Remote documentation', documents: { license: 'MIT', notices: 'Remote author credits' }, package: {
     url: 'https://github.com/Gameknight963/bedrock-plugins/releases/download/collection-2026-10-10-1/test.catalog-1.0.0.zip',
     size: remoteArchive.length, sha256: crypto.createHash('sha256').update(remoteArchive).digest('hex') } };
 const updateManifest = { manifestVersion: 3, id: 'bedrock.example', name: 'Example plugin', version: '1.1.0',
@@ -372,6 +374,15 @@ app.whenReady().then(async () => {
         assert.equal(await evaluate(`getComputedStyle(document.querySelector('.bedrock-readme strong')).userSelect`), 'text');
         assert.equal(await evaluate(`globalThis.badReadme === undefined && document.querySelector('.bedrock-readme a[href^="javascript:"]') === null`), true);
         assert.equal(await evaluate(`document.querySelector('.bedrock-grid') === null && document.querySelector('[role=tab][aria-selected=true]').textContent === 'Details'`), true);
+        await evaluate(`document.querySelector('#bedrock-license-tab').click()`);
+        await waitFor(`document.querySelector('#bedrock-license-panel pre')`);
+        assert.equal(await evaluate(`document.querySelector('#bedrock-license-panel pre').textContent`), 'Fixture license © Example\n');
+        assert.equal(await evaluate(`getComputedStyle(document.querySelector('#bedrock-license-panel pre')).userSelect`), 'text');
+        await evaluate(`document.querySelector('#bedrock-notices-tab').click()`);
+        await waitFor(`document.querySelector('#bedrock-notices-panel pre')`);
+        assert.equal(await evaluate(`document.querySelector('#bedrock-notices-panel pre').textContent.includes('<script>') && globalThis.badNotice === undefined`), true);
+        await evaluate(`document.querySelector('#bedrock-notices-tab').dispatchEvent(new KeyboardEvent('keydown', {key:'ArrowLeft',bubbles:true}))`);
+        await waitFor(`document.querySelector('#bedrock-license-tab').getAttribute('aria-selected') === 'true'`);
         await evaluate(`document.querySelector('#bedrock-settings-tab').click()`);
         await waitFor(`document.querySelectorAll('.bedrock-setting').length === 6`);
         assert.equal(await evaluate(`getComputedStyle(document.querySelector('#bedrock-settings-panel')).paddingLeft`), '0px');
@@ -494,6 +505,10 @@ app.whenReady().then(async () => {
         await evaluate(`document.querySelector('.bedrock-card-actions button').click()`);
         await waitFor(`document.querySelector('.bedrock-readme h1')?.textContent === 'Remote documentation'`);
         assert.equal(await evaluate(`document.querySelector('#bedrock-settings-tab') === null`), true);
+        await evaluate(`document.querySelector('#bedrock-license-tab').click()`);
+        await waitFor(`document.querySelector('#bedrock-license-panel pre')?.textContent === 'MIT'`);
+        await evaluate(`document.querySelector('#bedrock-notices-tab').click()`);
+        await waitFor(`document.querySelector('#bedrock-notices-panel pre')?.textContent === 'Remote author credits'`);
         await evaluate(`[...document.querySelectorAll('button')].find(button => button.textContent === 'Install').click()`);
         await waitFor(`globalThis.fixtureDownloaded === true`);
         assert.equal(await evaluate('globalThis.fixtureCatalogVersion'), 1);

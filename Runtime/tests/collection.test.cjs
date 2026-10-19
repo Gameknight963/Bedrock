@@ -83,6 +83,11 @@ test('catalog rejects mismatched package URLs and duplicate IDs', t => {
     const mismatch = structuredClone(data.catalog);
     mismatch.plugins[0].package.url = 'https://example.com/test.zip';
     assert.throws(() => validateCatalog(mismatch), /Invalid/);
+    const documents = structuredClone(data.catalog);
+    documents.plugins[0].documents = { license: 'MIT', notices: 'Original authors' };
+    assert.equal(validateCatalog(documents), documents);
+    documents.plugins[0].documents.notices = { invalid: true };
+    assert.throws(() => validateCatalog(documents), /Invalid plugin documents/);
     data.catalog.plugins.push(data.catalog.plugins[0]);
     assert.throws(() => validateCatalog(data.catalog), /Invalid/);
 });
