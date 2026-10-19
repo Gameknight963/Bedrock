@@ -110,3 +110,34 @@ test('unrelated exports and frozen data properties keep their identity', async (
     const actions = Object.freeze({ sendMessage() {}, editMessage() {} });
     assert.equal(f.api.observe(actions).sendMessage, actions.sendMessage);
 });
+
+test('explicit sending supplies Discord defaults, runs message hooks and rejects stopped contexts', async () => {
+    const { createRendererApis } = await import('../renderer-apis.mjs');
+    const controller = new AbortController();
+    const api = createRendererApis({ react: () => null });
+    const ctx = api.context('sender', callback => callback, controller.signal);
+    await assert.rejects(ctx.messages.send('channel', { content: 'text' }), /have not loaded/);
+    const sent = [];
+    api.observe({ sendMessage(...args) { sent.push(args); }, editMessage() {} });
+    ctx.messages.beforeSend(event => { event.message.content += '!'; });
+    await ctx.messages.send('channel', { content: 'text' });
+    assert.deepEqual(sent[0], ['channel', { content: 'text!', invalidEmojis: [], validNonShortcutEmojis: [], tts: false }, undefined, {}]);
+    controller.abort();
+    await assert.rejects(ctx.messages.send('channel', { content: 'text' }), /has stopped/);
+    assert.equal(sent.length, 1);
+});
+
+test('disabling an explicit sender during another plugin hook prevents the late send', async () => {
+    const { createRendererApis } = await import('../renderer-apis.mjs');
+    const api = createRendererApis({ react: () => null });
+    const sender = new AbortController();
+    const sending = api.context('sender', callback => callback, sender.signal);
+    const modifying = api.context('modifier', callback => callback, new AbortController().signal);
+    let finish, calls = 0;
+    api.observe({ sendMessage() { calls++; }, editMessage() {} });
+    modifying.messages.beforeSend(() => new Promise(resolve => { finish = resolve; }));
+    const result = sending.messages.send('channel', { content: 'text' });
+    sender.abort(); finish();
+    await assert.rejects(result, /has stopped/);
+    assert.equal(calls, 0);
+});

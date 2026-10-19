@@ -4,6 +4,7 @@ export function createRendererApis({ react, report = () => {} }) {
     const proxies = new WeakMap();
     const components = new WeakMap();
     let itemType;
+    let messageActions;
     const contextKey = '__bedrockContextMenuProps';
     const cloneChildren = (React, children) => Array.isArray(children) ? children.map(child => cloneChildren(React, child)) :
         React.isValidElement(children)
@@ -73,7 +74,7 @@ export function createRendererApis({ react, report = () => {} }) {
     function wrapRendered(node) {
         return patchTree(node, node?.props || {});
     }
-    async function invokeMessage(kind, original, receiver, args) {
+    async function invokeMessage(kind, original, receiver, args, callerSignal) {
         const index = kind === 'send' ? 1 : 2;
         if (!args[index] || typeof args[index].content !== 'string') return original.apply(receiver, args);
         let message = { ...args[index] };
@@ -98,6 +99,7 @@ export function createRendererApis({ react, report = () => {} }) {
             }
             message = draft;
         }
+        if (callerSignal?.aborted) throw new Error('Plugin context has stopped.');
         const values = [...args]; values[index] = message;
         return original.apply(receiver, values);
     }
@@ -152,6 +154,7 @@ export function createRendererApis({ react, report = () => {} }) {
             return value && typeof value === 'object' && key !== 'prototype' ? observe(value) : value;
         } });
         proxies.set(exports, proxy); proxies.set(proxy, proxy);
+        if (messages) messageActions = exports;
         return proxy;
     }
     return {
@@ -177,7 +180,16 @@ export function createRendererApis({ react, report = () => {} }) {
                         return react().createElement(itemType, props);
                     }
                 },
-                messages: { beforeSend: callback => addMessage('send', callback), beforeEdit: callback => addMessage('edit', callback) }
+                messages: {
+                    beforeSend: callback => addMessage('send', callback), beforeEdit: callback => addMessage('edit', callback),
+                    async send(channelId, message) {
+                        if (signal.aborted) throw new Error('Plugin context has stopped.');
+                        if (typeof channelId !== 'string' || !channelId || !message || typeof message.content !== 'string') throw new TypeError('Expected a channel ID and message content.');
+                        if (!messageActions) throw new Error('Discord message actions have not loaded yet.');
+                        return invokeMessage('send', messageActions.sendMessage, messageActions,
+                            [channelId, { invalidEmojis: [], validNonShortcutEmojis: [], tts: false, ...message }, undefined, {}], signal);
+                    }
+                }
             };
         }
     };

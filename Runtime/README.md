@@ -57,7 +57,7 @@ The loader inspects only immediate plugin folders containing `plugin.json`. Ever
 
 Required: `manifestVersion`, `id`, `name`, `version`, `entrypoints`. IDs use lowercase letters, digits, dots, underscores or hyphens and must be unique. `description`, `readme`, and `icon` are optional. Main, renderer and GPU entry points are independently optional, but at least one is required. `.js` and `.mjs` entry points are supported. Prefer `main.js` and `renderer.js`, or `main/index.js` and `renderer/index.js`.
 
-Each JavaScript entry point must be an object declaring `runtime`, `path` and `requiresApi`. The current JavaScript API version is `1.4.0`. JavaScript entry points run in main or renderer environments.
+Each JavaScript entry point must be an object declaring `runtime`, `path` and `requiresApi`. The current JavaScript API version is `1.5.0`. JavaScript entry points run in main or renderer environments.
 
 `requiresApi` is a semantic version, not a version range. Bedrock accepts requirements with the same major version that are no newer than its API, comparing minor and patch versions in order. For example, API `1.3.2` accepts `1.2.0` and `1.3.2`, but rejects `1.3.3` and `2.0.0`. Prerelease versions follow semantic-version precedence; build metadata does not affect compatibility. Requirements are checked before executing any plugin code.
 
@@ -296,6 +296,75 @@ export function start(ctx) {
 
 These adapters observe Discord's send/edit and context-menu action exports as modules execute. They depend on those internal action shapes. Functions captured before Bedrock observes their exports, and frozen nonwritable data properties, cannot be intercepted this way.
 
+#### Message accessories and chat buttons
+
+API **1.5.0** adds React components to the message accessories area and the chat input's button row:
+
+```js
+export function start(ctx) {
+    ctx.messages.addAccessory('message-id', props =>
+        ctx.react.createElement('small', null, props.message.id));
+
+    ctx.chatBar.addButton('channel-info', props => ctx.chatBar.button({
+        label: 'Show channel ID',
+        icon: ctx.react.createElement('svg', { viewBox: '0 0 24 24', fill: 'currentColor' },
+            ctx.react.createElement('path', { d: 'M10 3h4v2h-4zm0 6h4v12h-4z' })),
+        disabled: props.disabled,
+        onClick: () => { ctx.notifications.show({ title: 'Channel ID', body: props.channel.id }); }
+    }));
+}
+```
+
+- `messages.addAccessory(id, Component, {order?})` receives Discord's accessory props, including `message`, and the plugin's `signal`.
+- `chatBar.addButton(id, Component, {order?})` receives composer props, including `channel`, `disabled`, `isEmpty` and the plugin's `signal`. `chatBar.button({label, icon, onClick, disabled?, pressed?})` supplies a compact button with a tooltip and accessible label. Components can return their own elements instead.
+- IDs are unique within each plugin and component category. Lower `order` values appear first; the default is zero. Equal values retain registration order.
+- Both methods return disposers. Existing slots update when registrations change, without requiring you to scroll away or reopen the channel. A component's rendering error is logged and isolated from other components.
+- `ctx.react` is Discord's React instance. Read it inside your component, where React is available. Components can use its normal hooks; effect cleanup runs when they unmount. Creating another React instance can cause hook errors.
+
+Bedrock owns the source hooks that provide these slots. Removing a registration does not require a restart. The integration depends on Discord's rendering code; `Bedrock.debug.status().rendererUi` reports its patch states and registration counts.
+
+#### Local slash commands
+
+API **1.5.0** commands appear with Discord's built-in slash commands and execute locally:
+
+```js
+export function start(ctx) {
+    ctx.commands.register({
+        name: 'example',
+        description: 'Show a local notification',
+        options: [{ name: 'text', description: 'Notification text', type: 'string', required: true }],
+        async execute(values, context) {
+            ctx.notifications.show({ title: 'Example', body: values.text });
+        }
+    });
+}
+```
+
+- `commands.register(definition)` returns a disposer. Names use lowercase letters, digits, underscores or hyphens, up to 32 characters. Duplicate names are rejected, including names already used by Discord.
+- Options declare `name`, `description`, `type`, optional `required`, and optional `choices: [{name, value}]`. Required options precede optional options. Types are `string`, `integer`, `number`, `boolean`, `user`, `channel`, `role`, `mentionable` and `attachment`. String and numeric options support choices.
+- `execute(values, context)` receives values by option name, rather than an array. Strings, numbers and booleans are validated; user/channel/role/mentionable/attachment values are passed through from Discord. The context includes Discord's command context, `channelId` and the plugin's `signal`.
+- Async callbacks are awaited. Failures are logged under the plugin's ID and shown in a local notification. Return values are ignored.
+- Disabling removes the commands. A stale picker entry cannot execute a stopped plugin. Use `context.signal` to cancel work already in progress.
+
+To send a message explicitly, call `await ctx.messages.send(channelId, {content: 'Hello'})`. This uses Discord's loaded message actions and runs registered `beforeSend` hooks. It rejects if those actions are unavailable or the caller's context has stopped.
+
+#### Notifications
+
+API **1.5.0** provides notifications inside the Discord window:
+
+```js
+const notice = ctx.notifications.show({
+    title: 'Finished',
+    body: 'The export is ready.',
+    type: 'success',
+    timeout: 5000,
+    actions: [{ label: 'Open', onClick: () => openExport() }]
+});
+notice.close();
+```
+
+`title` is required. `body` is plain text; `type` is `info`, `success` or `error`. `timeout` is in milliseconds and defaults to five seconds; zero keeps the notification until dismissed. Optional `onClick` makes the title clickable. Action callbacks can be asynchronous, and errors are logged. All notifications have a dismiss button and are closed when their plugin context stops.
+
 #### Source patches
 
 Export `patches` from a JavaScript renderer entry point when an ordinary wrapper cannot reach the code you need to change. Source patches require API **1.4.0**.
@@ -354,11 +423,14 @@ node Runtime/tests/obj/node_modules/electron/install.js
 .\Runtime\tests\electron-smoke.ps1 -ThroughInspector
 .\Runtime\tests\addons-smoke.ps1
 & .\Runtime\tests\obj\node_modules\electron\dist\electron.exe .\Runtime\tests\renderer-apis-smoke.cjs
+& .\Runtime\tests\obj\node_modules\electron\dist\electron.exe .\Runtime\tests\renderer-ui-smoke.cjs
 ```
 
 The Electron fixture checks the real sandboxed preload/context bridge, preserved existing preload, settings layout injection, rendered React switches, plugin cleanup and re-enable, live package updates and reinstalls, relative imports, cross-process settings/events, Markdown, and origin restriction. The isolated Electron and React dependencies are test-only. Tests use temporary data and do not launch or alter Discord.
 
 The renderer API fixture checks early source patches with bound settings, async send/edit hooks, cancellation, React menu additions readable by Native Menus, and deferred removal of applied source patches.
+
+The renderer UI fixture checks stateful accessories, registration changes, rendering errors, composer buttons, local command execution and explicit sending, notification actions and expiry, and cleanup when disabling and re-enabling.
 
 ## Initialization status
 

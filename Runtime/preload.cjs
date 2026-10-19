@@ -5,7 +5,7 @@ function installRenderer(configuration) {
     const subscribers = new Set();
     const listeners = new Map();
     const patchSlots = new WeakMap();
-    let rendererApis, sourcePatches;
+    let rendererApis, rendererUi, sourcePatches;
     const executedFactories = new Map();
     const pendingBootstraps = [];
     let bootstrapsReady = false;
@@ -34,11 +34,17 @@ function installRenderer(configuration) {
         return loader;
     });
     modulesReady.catch(error => log('loader', error));
-    const apiReady = Promise.all([import('bedrock://api/renderer-apis.mjs'), import('bedrock://api/source-patches.mjs')])
-        .then(([api, source]) => {
+    const apiReady = Promise.all([import('bedrock://api/renderer-apis.mjs'), import('bedrock://api/source-patches.mjs'), import('bedrock://api/renderer-ui.mjs')])
+        .then(([api, source, ui]) => {
+            rendererUi = ui.createRendererUi({ react: () => renderingReact() || React, report: log });
             rendererApis = api.createRendererApis({ react: () => renderingReact() || React, report: log });
             sourcePatches = source.createSourcePatches({
                 report(id, patches) {
+                    if (id === '$bedrock.renderer-ui') {
+                        rendererUi.setPatchStatus(patches);
+                        for (const patch of patches) if (patch.error) log('ui', patch.error);
+                        return;
+                    }
                     const record = records.get(id);
                     if (!record) return;
                     record.sourcePatches = patches;
@@ -55,6 +61,7 @@ function installRenderer(configuration) {
                 }
             });
             for (const [factory, id] of executedFactories) sourcePatches.executed(id, factory);
+            sourcePatches.register('$bedrock.renderer-ui', rendererUi);
             for (const module of loadedModules) module.exports = rendererApis.observe(module.exports);
         });
     const initialRenderers = configuration.plugins.filter(info => info.enabled && info.renderer &&
@@ -188,6 +195,8 @@ function installRenderer(configuration) {
             return dispose;
         };
         const id = record.info.manifest.id;
+        const uiContext = rendererUi.context(id, own, controller.signal);
+        const rendererContext = rendererApis.context(id, own, controller.signal);
         const context = {
             reportStatus(message) { if (active) { record.statusMessage = String(message); notify(); } },
             id, signal: controller.signal, manifest: structuredClone(record.info.manifest),
@@ -224,7 +233,12 @@ function installRenderer(configuration) {
                 emit: (name, value) => native.request('emit', id, name, value)
             },
             patches: Object.fromEntries(['before', 'after', 'instead'].map(kind => [kind, (object, method, callback) => own(patch(kind, object, method, callback))])),
-            ...rendererApis.context(id, own, controller.signal),
+            ...rendererContext,
+            messages: { ...rendererContext.messages, addAccessory: uiContext.addAccessory },
+            chatBar: uiContext.chatBar,
+            commands: uiContext.commands,
+            notifications: uiContext.notifications,
+            get react() { return uiContext.react; },
             webpack: {
                 find: findModule,
                 waitFor(filter) {
@@ -1006,11 +1020,12 @@ function installRenderer(configuration) {
         return chunks;
     }
     globalThis.Bedrock = { plugins: { list, setEnabled, unload, async rescan() { update(await native.request('rescan')); return list(); } },
+        get _rendererUi() { return rendererUi; },
         _sourcePlugin: id => sourcePatches?.namespace(id),
         webpack: { find: findModule },
         debug: { status() {
             inspectModules();
-            return { ...settingsDiagnostics, react: !!React, layoutTypes: layoutTypes ?
+            return { ...settingsDiagnostics, rendererUi: rendererUi?.diagnostics(), react: !!React, layoutTypes: layoutTypes ?
                 Object.fromEntries(['SECTION', 'SIDEBAR_ITEM', 'PANEL', 'CATEGORY', 'CUSTOM'].map(key => [key, layoutTypes[key]])) : null,
                 observedModules: loadedModules.size, runtimes: webpackRuntimes.size,
                 cacheModules: [...webpackRuntimes].reduce((total, require) => total + Object.keys(require.c || {}).length, 0) };

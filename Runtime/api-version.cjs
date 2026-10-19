@@ -1,4 +1,4 @@
-const JAVASCRIPT_API_VERSION = '1.4.0';
+const JAVASCRIPT_API_VERSION = '1.5.0';
 
 function parseVersion(value) {
     if (typeof value !== 'string') return null;

@@ -23,7 +23,70 @@ export interface ContextMenus {
     patch<Props = Record<string, unknown>>(navId: string, callback: (children: MenuChild[], props: Props) => void): Disposer;
     item(props: MenuItem): MenuElement;
 }
-export interface MessageDraft { content: string }
+export interface MessageDraft { content: string; [key: string]: unknown }
+export interface ChannelInfo { readonly id: string; readonly [key: string]: unknown }
+export interface MessageInfo { readonly id: string; readonly content?: string; readonly channel_id?: string; readonly [key: string]: unknown }
+export interface MessageAccessoryProps {
+    readonly message: MessageInfo;
+    readonly channel?: ChannelInfo;
+    readonly signal: AbortSignal;
+    readonly [key: string]: unknown;
+}
+export interface ComponentOptions { order?: number }
+export interface ChatBarProps {
+    readonly channel: ChannelInfo;
+    readonly disabled?: boolean;
+    readonly isEmpty?: boolean;
+    readonly type?: Readonly<Record<string, unknown>>;
+    readonly signal: AbortSignal;
+    readonly [key: string]: unknown;
+}
+export interface ChatBar {
+    addButton(id: string, component: (props: ChatBarProps) => MenuChild | undefined, options?: ComponentOptions): Disposer;
+    button(options: { label: string; icon: MenuChild; disabled?: boolean; pressed?: boolean; onClick(event: MenuActionEvent): void | Promise<void> }): MenuElement;
+}
+export interface CommandOption {
+    name: string;
+    description: string;
+    type: 'string' | 'integer' | 'number' | 'boolean' | 'user' | 'channel' | 'role' | 'mentionable' | 'attachment';
+    required?: boolean;
+    choices?: ReadonlyArray<{ name: string; value: string | number }>;
+}
+export interface CommandContext {
+    readonly channelId?: string;
+    readonly channel?: ChannelInfo;
+    readonly signal: AbortSignal;
+    readonly [key: string]: unknown;
+}
+export interface LocalCommand {
+    name: string;
+    description: string;
+    options?: ReadonlyArray<CommandOption>;
+    execute(values: Readonly<Record<string, unknown>>, context: CommandContext): void | Promise<void>;
+}
+export interface Commands { register(command: LocalCommand): Disposer }
+export interface NotificationOptions {
+    title: string;
+    body?: string;
+    type?: 'info' | 'success' | 'error';
+    timeout?: number;
+    onClick?(): void | Promise<void>;
+    actions?: ReadonlyArray<{ label: string; onClick(): void | Promise<void> }>;
+}
+export interface Notifications { show(options: NotificationOptions): { close: Disposer } }
+export interface ReactRuntime {
+    readonly Fragment: unknown;
+    createElement(type: unknown, props?: Record<string, unknown> | null, ...children: (MenuChild | undefined)[]): MenuElement;
+    cloneElement(element: MenuElement, props?: Record<string, unknown>): MenuElement;
+    isValidElement(value: unknown): value is MenuElement;
+    useState<T>(initial: T | (() => T)): [T, (value: T | ((previous: T) => T)) => void];
+    useEffect(effect: () => void | Disposer, dependencies?: readonly unknown[]): void;
+    useLayoutEffect(effect: () => void | Disposer, dependencies?: readonly unknown[]): void;
+    useMemo<T>(factory: () => T, dependencies: readonly unknown[]): T;
+    useCallback<T extends (...args: any[]) => any>(callback: T, dependencies: readonly unknown[]): T;
+    useRef<T>(initial: T): { current: T };
+    useSyncExternalStore<T>(subscribe: (callback: () => void) => Disposer, getSnapshot: () => T): T;
+}
 export interface BeforeSendEvent {
     readonly channelId: string;
     readonly message: MessageDraft;
@@ -34,6 +97,8 @@ export interface BeforeEditEvent extends BeforeSendEvent { readonly messageId: s
 export interface Messages {
     beforeSend(callback: (event: BeforeSendEvent) => void | Promise<void>): Disposer;
     beforeEdit(callback: (event: BeforeEditEvent) => void | Promise<void>): Disposer;
+    addAccessory(id: string, component: (props: MessageAccessoryProps) => MenuChild | undefined, options?: ComponentOptions): Disposer;
+    send(channelId: string, message: MessageDraft): Promise<unknown>;
 }
 export interface SourceReplacement {
     match: string | RegExp;
@@ -58,6 +123,10 @@ export interface RendererContext {
     readonly manifest: Readonly<Record<string, unknown>>;
     readonly contextMenus: ContextMenus;
     readonly messages: Messages;
+    readonly react: ReactRuntime;
+    readonly chatBar: ChatBar;
+    readonly commands: Commands;
+    readonly notifications: Notifications;
     readonly log: { info(...values: unknown[]): void; warn(...values: unknown[]): void; error(...values: unknown[]): void };
     readonly settings: { get<T>(key: string, fallback: T): T; set(key: string, value: unknown): Promise<void>; delete(key: string): Promise<void>; all(): Record<string, unknown> };
     readonly styles: { add(css: string): Disposer };
