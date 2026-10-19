@@ -57,7 +57,7 @@ The loader inspects only immediate plugin folders containing `plugin.json`. Ever
 
 Required: `manifestVersion`, `id`, `name`, `version`, `entrypoints`. IDs use lowercase letters, digits, dots, underscores or hyphens and must be unique. `description`, `readme`, and `icon` are optional. Main, renderer and GPU entry points are independently optional, but at least one is required. `.js` and `.mjs` entry points are supported. Prefer `main.js` and `renderer.js`, or `main/index.js` and `renderer/index.js`.
 
-Each JavaScript entry point must be an object declaring `runtime`, `path` and `requiresApi`. The current JavaScript API version is `1.5.0`. JavaScript entry points run in main or renderer environments.
+Each JavaScript entry point must be an object declaring `runtime`, `path` and `requiresApi`. The current JavaScript API version is `1.5.1`. JavaScript entry points run in main or renderer environments.
 
 `requiresApi` is a semantic version, not a version range. Bedrock accepts requirements with the same major version that are no newer than its API, comparing minor and patch versions in order. For example, API `1.3.2` accepts `1.2.0` and `1.3.2`, but rejects `1.3.3` and `2.0.0`. Prerelease versions follow semantic-version precedence; build metadata does not affect compatibility. Requirements are checked before executing any plugin code.
 
@@ -272,6 +272,7 @@ export function start(ctx) {
 
 - `patch(navId, callback)` receives a mutable array of React children and the menu component's props. Menu IDs and props come from Discord; the user menu above supplies `props.user`.
 - `item({id, label, action, disabled?})` creates an ordinary command using Discord's menu item component. Call it inside a menu callback, after Bedrock has observed the component.
+- API **1.5.1** allows submenu parents with `children` instead of an action. `leadingAccessory` and `trailingIndicator` pass Discord's icon descriptors through to the item.
 - Callbacks run synchronously in registration order. A failed callback is logged and its changes are discarded. Existing sliders, submenus and other controls stay in the menu tree, including when Native Menus reads that tree.
 - Registration returns a disposer and is removed when the renderer context stops. Already open menus close through Discord's usual behavior; removing a hook affects subsequent renders.
 

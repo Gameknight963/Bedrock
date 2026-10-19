@@ -12,11 +12,13 @@ export interface MenuActionEvent {
 export interface MenuItem {
     id: string;
     label: string;
-    action(event: MenuActionEvent): void;
+    action?(event: MenuActionEvent): void;
     disabled?: boolean;
     color?: 'danger' | 'default';
     subtext?: string;
     icon?: unknown;
+    leadingAccessory?: { type: 'icon'; icon: unknown } | { type: 'image'; src: string };
+    trailingIndicator?: { type: 'icon'; icon: unknown };
     children?: MenuChild[];
 }
 export interface ContextMenus {

@@ -84,6 +84,11 @@ test('menu patches preserve original elements, user context, and item component 
     assert.equal(rendered.props.children[1].type, Item);
     assert.equal(rendered.props.children[1].props.label, 'Copy User URL');
     assert.equal(originalChildren.length, 1);
+    const child = ctx.contextMenus.item({ id: 'child', label: 'Child', action() {} });
+    const submenu = ctx.contextMenus.item({ id: 'parent', label: 'Parent', children: [child] });
+    assert.equal(submenu.type, Item); assert.equal(submenu.key, 'parent');
+    assert.equal(submenu.props.children[0], child);
+    assert.throws(() => ctx.contextMenus.item({ id: 'empty', label: 'Empty' }), /action or submenu/);
     f.dispose();
     const unchanged = actions.openContextMenu({}, () => f.React.createElement(UserMenu, {}));
     assert.equal(unchanged.type, UserMenu);

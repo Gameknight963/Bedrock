@@ -175,9 +175,10 @@ export function createRendererApis({ react, report = () => {} }) {
                         return own(() => { hooks.delete(hook); if (!hooks.size) menuHooks.delete(navId); });
                     },
                     item(props) {
-                        if (!props?.id || !props.label || typeof props.action !== 'function') throw new TypeError('Menu items need id, label and action.');
+                        if (!props?.id || !props.label || typeof props.action !== 'function' && !props.children?.length)
+                            throw new TypeError('Menu items need id, label and an action or submenu children.');
                         if (!itemType) throw new Error('Discord menu item component has not been observed.');
-                        return react().createElement(itemType, props);
+                        return react().createElement(itemType, { key: props.id, ...props });
                     }
                 },
                 messages: {
