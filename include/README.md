@@ -1,5 +1,7 @@
 # Native plugin API
 
+JavaScript renderer declarations are available in [bedrock/renderer.d.ts](bedrock/renderer.d.ts). See the [renderer API documentation](../Runtime/README.md#renderer-apis) for menu hooks, message hooks and source patches.
+
 Include `<bedrock/plugin.h>` and export `Bedrock_GetPlugin`. The returned descriptor declares the native API requirement, lifecycle callbacks and optional settings. No Bedrock import library is required.
 
 The current native API is **1.5.0**. The requirement must share its major version and be no newer than the host. `size` fields describe extensible structures supplied by the plugin; settings array entries are traversed using each entry's size. Small value types, including `BedrockSymbolError` and the JavaScript value/error types, have fixed layouts within API major version 1.

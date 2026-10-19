@@ -5,6 +5,10 @@ function installRenderer(configuration) {
     const subscribers = new Set();
     const listeners = new Map();
     const patchSlots = new WeakMap();
+    let rendererApis, sourcePatches;
+    const executedFactories = new Map();
+    const pendingBootstraps = [];
+    let bootstrapsReady = false;
     const themeLinks = new Map();
     const themeLoadErrors = new Map();
     let settingsAPI;
@@ -30,6 +34,51 @@ function installRenderer(configuration) {
         return loader;
     });
     modulesReady.catch(error => log('loader', error));
+    const apiReady = Promise.all([import('bedrock://api/renderer-apis.mjs'), import('bedrock://api/source-patches.mjs')])
+        .then(([api, source]) => {
+            rendererApis = api.createRendererApis({ react: () => renderingReact() || React, report: log });
+            sourcePatches = source.createSourcePatches({
+                report(id, patches) {
+                    const record = records.get(id);
+                    if (!record) return;
+                    record.sourcePatches = patches;
+                    record.patchError = patches.find(patch => patch.error)?.error || null;
+                    if (record.patchError) log(id, record.patchError);
+                    notify();
+                },
+                restart(id, reason) {
+                    const record = records.get(id);
+                    if (!record) return;
+                    record.restartReason = reason; notify();
+                    record.restartWork = (record.restartWork || Promise.resolve()).then(() => native.request('requireRestart', id, reason));
+                    record.restartWork.catch(error => log(id, error));
+                }
+            });
+            for (const [factory, id] of executedFactories) sourcePatches.executed(id, factory);
+            for (const module of loadedModules) module.exports = rendererApis.observe(module.exports);
+        });
+    const initialRenderers = configuration.plugins.filter(info => info.enabled && info.renderer &&
+        info.manifest.entrypoints.renderer?.runtime === 'javascript');
+    const importsReady = Promise.all([modulesReady, apiReady]).then(([loader]) => Promise.all(initialRenderers.map(async info => {
+        try {
+            const namespace = await loader.import(info.renderer);
+            const record = records.get(info.manifest.id);
+            if (!record?.info.enabled) return;
+            record.module = namespace;
+            sourcePatches.register(info.manifest.id, namespace);
+        } catch (error) { log(info.manifest.id, error); }
+    })));
+    let preparationTimer;
+    const prepared = importsReady.then(() => Promise.all(initialRenderers.map(info => records.get(info.manifest.id)?.prepared)));
+    Promise.race([prepared, new Promise((_, reject) => {
+        preparationTimer = setTimeout(() => reject(new Error('Renderer plugin preparation exceeded 10 seconds; Discord startup will continue.')), 10000);
+    })]).catch(error => log('startup', error)).finally(() => {
+        clearTimeout(preparationTimer);
+        bootstrapsReady = true;
+        for (const bootstrap of pendingBootstraps.splice(0)) {
+            try { bootstrap(); } catch (error) { log('startup', error); }
+        }
+    });
     let snapshot = configuration;
     let webpackRequire;
     const loadedModules = new Set();
@@ -175,6 +224,7 @@ function installRenderer(configuration) {
                 emit: (name, value) => native.request('emit', id, name, value)
             },
             patches: Object.fromEntries(['before', 'after', 'instead'].map(kind => [kind, (object, method, callback) => own(patch(kind, object, method, callback))])),
+            ...rendererApis.context(id, own, controller.signal),
             webpack: {
                 find: findModule,
                 waitFor(filter) {
@@ -199,20 +249,31 @@ function installRenderer(configuration) {
             for (const dispose of [...disposers].reverse()) try { dispose(); } catch (error) { log(id, error); }
         } };
     }
+    function deferSourceDisable(record) {
+        if (!sourcePatches?.holdsActivation(record.info.manifest.id)) return false;
+        sourcePatches.disable(record.info.manifest.id);
+        if (record.status !== 'restart-pending') { record.status = 'restart-pending'; notify(); }
+        return true;
+    }
     async function reconcile(record) {
+        if (record.info.enabled && record.instance && record.status === 'restart-pending') {
+            record.status = 'running'; notify();
+        }
         if (record.info.enabled && record.info.renderer && !record.instance && !record.unloading) {
             record.status = 'starting'; record.statusMessage = null; record.error = null; notify();
             let instance;
             try {
-                await settingsReady;
+                await importsReady;
                 record.module ||= record.info.manifest.entrypoints.renderer.runtime === 'dotnet-wasm'
                     ? await (await import('bedrock://api/dotnet.mjs')).loadPlugin(record.info)
                     : await (await modulesReady).import(record.info.renderer);
                 if (typeof record.module.start !== 'function') throw new Error('Renderer entry point must export start(context)');
+                sourcePatches.register(record.info.manifest.id, record.module);
                 if (record.module.settings) update(await native.request('settingsDefine', record.info.manifest.id, record.module.settings.definitions));
                 if (!record.info.enabled) { record.status = 'stopped'; notify(); return; }
                 instance = contextFor(record);
                 record.instance = instance;
+                instance.context.cleanup(() => sourcePatches.disable(record.info.manifest.id));
                 if (record.module.settings) {
                     const binding = settingsAPI.bindPluginSettings(record.module.settings, {
                         ...instance.context.settings, signal: instance.context.signal,
@@ -221,17 +282,25 @@ function installRenderer(configuration) {
                     record.settingsBinding = binding;
                     instance.context.cleanup(() => { binding.dispose(); record.settingsBinding = null; });
                 }
-                await Promise.race([Promise.resolve(record.module.start(instance.context)), new Promise(resolve =>
+                const work = record.module.start(instance.context);
+                record.prepare();
+                await Promise.race([Promise.resolve(work), new Promise(resolve =>
                     instance.context.signal.addEventListener('abort', resolve, { once: true }))]);
                 record.status = 'running'; record.statusMessage = null; record.error = null;
+                if (!record.info.enabled) deferSourceDisable(record);
             } catch (error) {
+                sourcePatches?.disable(record.info.manifest.id);
                 if (!instance?.context.signal.aborted) {
-                    instance?.dispose(); record.instance = null;
+                    if (!sourcePatches?.holdsActivation(record.info.manifest.id)) {
+                        instance?.dispose(); record.instance = null;
+                    }
                     record.status = 'failed'; record.error = error.message; log(record.info.manifest.id, error);
                 }
             }
+            record.prepare();
             notify();
         } else if (!record.info.enabled && record.instance) {
+            if (deferSourceDisable(record)) { notify(); return; }
             const instance = record.instance;
             record.status = 'stopping'; notify();
             instance.dispose();
@@ -249,10 +318,18 @@ function installRenderer(configuration) {
         if (!record.unloadPromise) {
             record.unloading = true;
             record.info = { ...record.info, enabled: false };
-            record.instance?.dispose();
+            if (!deferSourceDisable(record)) record.instance?.dispose();
             record.unloadPromise = (async () => {
+                if (deferSourceDisable(record)) {
+                    await record.restartWork;
+                    return { requiresRestart: true, reason: record.restartReason };
+                }
                 await record.pending;
                 await reconcile(record);
+                if (deferSourceDisable(record)) {
+                    await record.restartWork;
+                    return { requiresRestart: true, reason: record.restartReason };
+                }
                 const { unloadPlugin, createUnloadContext } = await import('bedrock://api/lifecycle.mjs');
                 const ctx = createUnloadContext(record.info.manifest,
                     Object.fromEntries(['info', 'warn', 'error'].map(level => [level, (...args) => console[level](`[Bedrock:${id}]`, ...args)])),
@@ -263,11 +340,13 @@ function installRenderer(configuration) {
                     });
                 const result = await unloadPlugin(context => {
                     if (record.stopFailed) throw new Error(`Renderer cleanup failed: ${record.stopError}`);
+                    if (sourcePatches?.disable(id)) context.requireRestart('Restart Discord to unload applied source patches.');
                     return record.module?.unload?.(context);
                 }, ctx);
                 await record.restartWork;
                 if (result.requiresRestart) record.restartReason = result.reason;
                 else {
+                    sourcePatches?.forget(id);
                     if (record.info.manifest.entrypoints.renderer?.runtime === 'javascript') {
                         const loader = await modulesReady;
                         const prefix = `bedrock://plugins/${record.info.manifest.id}/`;
@@ -289,13 +368,18 @@ function installRenderer(configuration) {
         const present = new Set(snapshot.plugins.map(info => info.manifest.id));
         for (const [id, record] of records) if (!present.has(id)) {
             record.info = { ...record.info, enabled: false };
+            if (deferSourceDisable(record)) continue;
             record.instance?.dispose();
             records.delete(id);
             record.pending = record.pending.catch(error => log(id, error)).then(() => reconcile(record));
         }
         for (const info of snapshot.plugins) {
             let record = records.get(info.manifest.id);
-            if (!record) records.set(info.manifest.id, record = { info, status: info.renderer ? 'stopped' : 'main-only', pending: Promise.resolve() });
+            if (!record) {
+                let prepare;
+                const prepared = new Promise(resolve => { prepare = resolve; });
+                records.set(info.manifest.id, record = { info, status: info.renderer ? 'stopped' : 'main-only', pending: Promise.resolve(), prepared, prepare });
+            }
             const previousSettings = record.info.settings;
             const changed = record.info.enabled !== info.enabled;
             record.info = info;
@@ -303,7 +387,10 @@ function installRenderer(configuration) {
                 record.unloading = false; record.unloadPromise = null; record.stopFailed = false;
             }
             record.settingsBinding?.refresh();
-            if (!info.enabled) record.instance?.dispose();
+            if (!info.enabled) {
+                if (!deferSourceDisable(record)) { record.instance?.dispose(); sourcePatches?.disable(info.manifest.id); }
+                record.prepare();
+            }
             if (JSON.stringify(previousSettings) !== JSON.stringify(info.settings)) emitLocal('settings.changed', { id: info.manifest.id, settings: info.settings });
             if (changed || (!record.instance && info.enabled && record.status === 'stopped'))
                 record.pending = record.pending.catch(error => log(info.manifest.id, error)).then(() => reconcile(record));
@@ -340,7 +427,8 @@ function installRenderer(configuration) {
     }
     function list() {
         return [...records.values()].map(record => ({ ...record.info, rendererStatus: record.status,
-            rendererMessage: record.statusMessage, error: record.error || record.info.error, restartReason: record.restartReason || record.info.restartReason }));
+            sourcePatches: record.sourcePatches || [],
+            rendererMessage: record.statusMessage, error: record.error || record.patchError || record.info.error, restartReason: record.restartReason || record.info.restartReason }));
     }
     const taskStarts = new Map();
     let taskPanel, taskTimer;
@@ -367,6 +455,7 @@ function installRenderer(configuration) {
         if (tasks.length) taskTimer = setTimeout(updateTasks, 500);
     }
     function displayStatus(plugin) {
+        if (plugin.rendererStatus === 'restart-pending') return 'Restart to disable';
         if (!plugin.enabled) return 'Disabled';
         if (plugin.updatePending) return 'Restart to load';
         const states = [plugin.mainStatus, plugin.rendererStatus];
@@ -697,6 +786,11 @@ function installRenderer(configuration) {
                     }) }, 'Retry'),
                     h('button', { className: 'bedrock-button', onClick: () => run('copy', () => navigator.clipboard.writeText(detail.error)) }, 'Copy error'))),
             detail.restartReason && h('p', { className: 'bedrock-restart' }, `Restart needed: ${detail.restartReason}`),
+            detail.sourcePatches?.length > 0 && h('details', { className: 'bedrock-readme bedrock-muted' },
+                h('summary', null, 'Source patches'),
+                h('ul', null, detail.sourcePatches.map(patch => h('li', { key: patch.id },
+                    `${patch.id}: ${{ waiting: 'Waiting for module', applied: 'Applied', failed: 'Failed', 'restart-required': 'Restart to apply' }[patch.state]}`,
+                    patch.modules.length > 0 && ` (module ${patch.modules.join(', ')})`)))),
             h('div', { className: 'bedrock-tabs', role: 'tablist', 'aria-label': 'Plugin information' },
                 informationTabs.map(name => h('button', { key: name, className: 'bedrock-tab', id: `bedrock-${name}-tab`, role: 'tab',
                     'aria-selected': activeTab === name, tabIndex: activeTab === name ? 0 : -1, 'aria-controls': `bedrock-${name}-panel`, onClick: () => setTab(name),
@@ -848,40 +942,59 @@ function installRenderer(configuration) {
         for (const id of Object.keys(factories)) {
             const original = factories[id];
             if (typeof original !== 'function' || wrappedFactories.has(original)) continue;
-            let factory = original;
-            const source = Function.prototype.toString.call(original);
-            if (source.includes('.buildLayout()')) {
-                // This call happens inside an unexported Discord component, so ordinary exported-method patches cannot reach it.
-                const modified = source.replace(/\b([A-Za-z_$][\w$]*)\.buildLayout\(\)(?=\.map\()/g, 'globalThis.Bedrock._settingsLayout($1)');
-                if (modified !== source) {
-                    try {
-                        try { factory = new Function(`return (${modified})`)(); }
-                        catch (error) {
-                            if (!(error instanceof SyntaxError)) throw error;
-                            // Method shorthand, including numeric Webpack keys, is valid only inside an object literal.
-                            factory = Object.values(new Function(`return ({${modified}})`)())[0];
-                        }
-                        settingsDiagnostics.patchedFactories++;
-                    }
-                    catch (error) { log('settings', error); }
-                }
-            }
+            let factory;
             const wrapped = function (module, exports, require, ...rest) {
                 attachRequire(require);
+                if (!factory) {
+                    factory = sourcePatches?.apply(id, original) || original;
+                    executedFactories.set(original, id);
+                    const source = Function.prototype.toString.call(factory);
+                    if (source.includes('.buildLayout()')) {
+                        const modified = source.replace(/\b([A-Za-z_$][\w$]*)\.buildLayout\(\)(?=\.map\()/g, 'globalThis.Bedrock._settingsLayout($1)');
+                        if (modified !== source) {
+                            try {
+                                try { factory = new Function(`return (${modified})`)(); }
+                                catch (error) {
+                                    if (!(error instanceof SyntaxError)) throw error;
+                                    factory = Object.values(new Function(`return ({${modified}})`)())[0];
+                                }
+                                settingsDiagnostics.patchedFactories++;
+                            } catch (error) { log('settings', error); }
+                        }
+                    }
+                }
                 try { return factory.call(this, module, exports, require, ...rest); }
-                finally { if (module) loadedModules.add(module); inspectModules(); }
+                finally {
+                    if (module) {
+                        if (rendererApis) module.exports = rendererApis.observe(module.exports);
+                        loadedModules.add(module);
+                    }
+                    inspectModules();
+                }
             };
             wrappedFactories.add(wrapped);
             factories[id] = wrapped;
         }
     }
+    const wrappedRuntimes = new WeakSet();
+    function gateRuntime(chunk) {
+        if (typeof chunk?.[2] !== 'function' || wrappedRuntimes.has(chunk[2])) return;
+        const runtime = chunk[2];
+        const wrapped = function (require, ...args) {
+            attachRequire(require);
+            if (bootstrapsReady) return runtime.call(this, require, ...args);
+            pendingBootstraps.push(() => runtime.call(this, require, ...args));
+        };
+        wrappedRuntimes.add(wrapped);
+        chunk[2] = wrapped;
+    }
     const wrappedChunks = new WeakSet();
     function interceptChunks(chunks) {
         if (!Array.isArray(chunks) || wrappedChunks.has(chunks)) return chunks;
         wrappedChunks.add(chunks);
-        for (const chunk of chunks) wrapFactories(chunk[1]);
+        for (const chunk of chunks) { wrapFactories(chunk[1]); gateRuntime(chunk); }
         const wrapPush = push => function (...items) {
-            for (const chunk of items) wrapFactories(chunk[1]);
+            for (const chunk of items) { wrapFactories(chunk[1]); gateRuntime(chunk); }
             return push.apply(this, items);
         };
         let wrappedPush = wrapPush(chunks.push);
@@ -893,6 +1006,7 @@ function installRenderer(configuration) {
         return chunks;
     }
     globalThis.Bedrock = { plugins: { list, setEnabled, unload, async rescan() { update(await native.request('rescan')); return list(); } },
+        _sourcePlugin: id => sourcePatches?.namespace(id),
         webpack: { find: findModule },
         debug: { status() {
             inspectModules();

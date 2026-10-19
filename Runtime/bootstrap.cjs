@@ -122,7 +122,7 @@ function install(options = {}) {
                     return new Response(fs.readFileSync(path.join(moduleAssets, 'system.js')), { headers: {
                         'Content-Type': 'text/javascript', 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-store'
                     } });
-                if (request.method === 'GET' && url.hostname === 'api' && ['/settings.mjs', '/dotnet.mjs', '/lifecycle.mjs'].includes(url.pathname))
+                if (request.method === 'GET' && url.hostname === 'api' && ['/settings.mjs', '/dotnet.mjs', '/lifecycle.mjs', '/renderer-apis.mjs', '/source-patches.mjs'].includes(url.pathname))
                     return new Response(fs.readFileSync(path.join(__dirname, url.pathname.slice(1))), { headers: {
                         'Content-Type': 'text/javascript', 'Access-Control-Allow-Origin': '*', 'Cache-Control': 'no-store'
                     } });

@@ -57,7 +57,7 @@ The loader inspects only immediate plugin folders containing `plugin.json`. Ever
 
 Required: `manifestVersion`, `id`, `name`, `version`, `entrypoints`. IDs use lowercase letters, digits, dots, underscores or hyphens and must be unique. `description`, `readme`, and `icon` are optional. Main, renderer and GPU entry points are independently optional, but at least one is required. `.js` and `.mjs` entry points are supported. Prefer `main.js` and `renderer.js`, or `main/index.js` and `renderer/index.js`.
 
-Each JavaScript entry point must be an object declaring `runtime`, `path` and `requiresApi`. The current JavaScript API version is `1.3.0`. JavaScript entry points run in main or renderer environments.
+Each JavaScript entry point must be an object declaring `runtime`, `path` and `requiresApi`. The current JavaScript API version is `1.4.0`. JavaScript entry points run in main or renderer environments.
 
 `requiresApi` is a semantic version, not a version range. Bedrock accepts requirements with the same major version that are no newer than its API, comparing minor and patch versions in order. For example, API `1.3.2` accepts `1.2.0` and `1.3.2`, but rejects `1.3.3` and `2.0.0`. Prerelease versions follow semantic-version precedence; build metadata does not affect compatibility. Requirements are checked before executing any plugin code.
 
@@ -254,6 +254,78 @@ export async function start(ctx) {
 
 For manual debugging, the renderer exposes `Bedrock.plugins.list()`, `await Bedrock.plugins.setEnabled(id, enabled)`, and `await Bedrock.plugins.rescan()`.
 
+#### Context menus
+
+JavaScript API **1.4.0** adds menu and message hooks. Renderer types are provided in [renderer.d.ts](../include/bedrock/renderer.d.ts), with a [TypeScript example](../Examples/renderer-apis.ts). Compile TypeScript to JavaScript for the package's entry point.
+
+```js
+export function start(ctx) {
+    ctx.contextMenus.patch('user-context', (children, props) => {
+        children.push(ctx.contextMenus.item({
+            id: 'example-copy-user-id',
+            label: 'Copy User ID',
+            action: () => navigator.clipboard.writeText(props.user.id)
+        }));
+    });
+}
+```
+
+- `patch(navId, callback)` receives a mutable array of React children and the menu component's props. Menu IDs and props come from Discord; the user menu above supplies `props.user`.
+- `item({id, label, action, disabled?})` creates an ordinary command using Discord's menu item component. Call it inside a menu callback, after Bedrock has observed the component.
+- Callbacks run synchronously in registration order. A failed callback is logged and its changes are discarded. Existing sliders, submenus and other controls stay in the menu tree, including when Native Menus reads that tree.
+- Registration returns a disposer and is removed when the renderer context stops. Already open menus close through Discord's usual behavior; removing a hook affects subsequent renders.
+
+#### Sending and editing messages
+
+```js
+export function start(ctx) {
+    ctx.messages.beforeSend(async event => {
+        event.message.content = await transform(event.message.content);
+        if (!event.message.content.trim()) event.cancel();
+    });
+    ctx.messages.beforeEdit(event => {
+        event.message.content = event.message.content.replaceAll(':wave:', '\u{1F44B}');
+    });
+}
+```
+
+- Both events supply `channelId`, `message.content`, `signal` and `cancel()`. Edits also supply `messageId`.
+- Bedrock awaits callbacks in registration order and sends the final content after they finish. Other message fields and action arguments are preserved.
+- `cancel()` prevents the action and rejects it with `BedrockMessageCancelledError`. A thrown error also prevents the action and is logged with the plugin ID. Avoid waiting indefinitely in a hook, since the action waits with it.
+- Registration returns a disposer. If a hook is removed while awaiting work, its late changes and cancellation are ignored. Respect `event.signal` to cancel your own outstanding work when the context stops.
+
+These adapters observe Discord's send/edit and context-menu action exports as modules execute. They depend on those internal action shapes. Functions captured before Bedrock observes their exports, and frozen nonwritable data properties, cannot be intercepted this way.
+
+#### Source patches
+
+Export `patches` from a JavaScript renderer entry point when an ordinary wrapper cannot reach the code you need to change. Source patches require API **1.4.0**.
+
+```js
+export const patches = [{
+    id: 'example-label',
+    find: 'a distinctive string in the target module',
+    replacement: {
+        match: /label:"Original label"/,
+        replace: 'label:$self.label()'
+    }
+}];
+
+export function label() { return 'Replacement label'; }
+export function start(ctx) {}
+```
+
+The strings above illustrate the format; a real patch must match the current Discord source.
+
+- `find` is a literal substring used to select a Webpack module factory. By default, a patch attempts the first matching factory. Set `all: true` to attempt every matching factory.
+- `replacement` is one `{match, replace}` object or an array applied in order. Matches accept strings or regular expressions; replacements follow JavaScript's `String.replace` rules, including capture groups and replacement callbacks.
+- `$self` in the resulting source refers to the plugin's exported namespace. Export any helpers referenced by a patch.
+- Bedrock compiles each patch before accepting it. If a replacement misses or produces invalid code, that patch is discarded while earlier successful patches remain. Errors identify the plugin, patch and module.
+- The plugin details page lists waiting, applied, failed and restart-required patches under **Source patches**. `Bedrock.plugins.list()` also exposes these diagnostics. Waiting can be normal for modules Discord loads on demand.
+
+At startup, Bedrock imports enabled JavaScript renderer plugins and registers their patches before releasing queued Webpack startup callbacks. Settings are bound and the synchronous portion of `start(ctx)` runs first. Do not wait for Discord modules at module scope; use `ctx.webpack.waitFor()` inside `start()`. Startup continues after ten seconds if preparation stalls. A patch registered after its target factory has executed requires a restart.
+
+An applied source patch cannot be undone by removing its rule: Discord has already created functions and objects from the changed code. Disabling such a plugin shows **Restart to disable** and keeps its renderer context, helpers and hooks running until restart. Removal and replacement are also deferred; `stop()` and `unload()` are not called on that retained renderer context. A patch that has not applied can be disabled normally. This exception concerns the renderer entry point; a separate main entry point follows its normal lifecycle.
+
 Launch with `--devtools` to open renderer DevTools without editing Discord's settings or reopening the Node inspector. `Bedrock.debug.status()` reports settings hook counts, discovered React/layout types, and observed/cached module counts.
 
 ### Main APIs
@@ -281,9 +353,12 @@ node Runtime/tests/obj/node_modules/electron/install.js
 .\Runtime\tests\electron-smoke.ps1
 .\Runtime\tests\electron-smoke.ps1 -ThroughInspector
 .\Runtime\tests\addons-smoke.ps1
+& .\Runtime\tests\obj\node_modules\electron\dist\electron.exe .\Runtime\tests\renderer-apis-smoke.cjs
 ```
 
 The Electron fixture checks the real sandboxed preload/context bridge, preserved existing preload, settings layout injection, rendered React switches, plugin cleanup and re-enable, live package updates and reinstalls, relative imports, cross-process settings/events, Markdown, and origin restriction. The isolated Electron and React dependencies are test-only. Tests use temporary data and do not launch or alter Discord.
+
+The renderer API fixture checks early source patches with bound settings, async send/edit hooks, cancellation, React menu additions readable by Native Menus, and deferred removal of applied source patches.
 
 ## Initialization status
 

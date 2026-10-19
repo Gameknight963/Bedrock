@@ -83,7 +83,7 @@
     <PropertyGroup><AddonArchitecture>x64</AddonArchitecture></PropertyGroup>
     <Copy SourceFiles="$(ProjectDir)..\Native\Addons\bin\$(Platform)\$(Configuration)\addons.node" DestinationFolder="$(OutDir)Runtime\native\win32-$(AddonArchitecture)" SkipUnchangedFiles="true" />
     <Copy SourceFiles="$(ProjectDir)..\lib\node-api\LICENSE" DestinationFolder="$(OutDir)Runtime\native\win32-$(AddonArchitecture)" SkipUnchangedFiles="true" />
-    <ItemGroup><PublicHeader Include="$(ProjectDir)..\include\bedrock\*.h" /></ItemGroup>
+    <ItemGroup><PublicHeader Include="$(ProjectDir)..\include\bedrock\*.h;$(ProjectDir)..\include\bedrock\*.d.ts" /></ItemGroup>
     <ItemGroup><RuntimeFile Include="$(ProjectDir)..\Runtime\*.cjs;$(ProjectDir)..\Runtime\*.mjs" Exclude="$(ProjectDir)..\Runtime\build-modules.cjs;$(ProjectDir)..\Runtime\renderer-compiler.cjs" /></ItemGroup>
     <Copy SourceFiles="@(PublicHeader)" DestinationFolder="$(OutDir)include\bedrock" SkipUnchangedFiles="true" />
     <Copy Condition="'$(Platform)'=='x64'" SourceFiles="$(ProjectDir)..\Native\PluginHost\bin\$(Platform)\$(Configuration)\native-controller.exe;$(ProjectDir)..\Native\PluginHost\bin\$(Platform)\$(Configuration)\native-host.dll" DestinationFolder="$(OutDir)Runtime\native\win32-x64" SkipUnchangedFiles="true" />
