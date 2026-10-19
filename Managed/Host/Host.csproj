@@ -15,8 +15,10 @@
   </ItemGroup>
   <Target Name="CopyRuntimeNotices" AfterTargets="Publish">
     <ItemGroup>
-      <RuntimeNotice Include="$(NuGetPackageRoot)microsoft.netcore.app.runtime.mono.browser-wasm/$(BundledNETCoreAppPackageVersion)/LICENSE.TXT;$(NuGetPackageRoot)microsoft.netcore.app.runtime.mono.browser-wasm/$(BundledNETCoreAppPackageVersion)/THIRD-PARTY-NOTICES.TXT"/>
+      <_WasmRuntimePack Include="@(ResolvedRuntimePack)" Condition="'%(ResolvedRuntimePack.NuGetPackageId)' == 'Microsoft.NETCore.App.Runtime.Mono.browser-wasm'"/>
+      <RuntimeNotice Include="@(_WasmRuntimePack->'%(PackageDirectory)/LICENSE.TXT');@(_WasmRuntimePack->'%(PackageDirectory)/THIRD-PARTY-NOTICES.TXT')"/>
     </ItemGroup>
+    <Error Condition="'@(_WasmRuntimePack)' == ''" Text="The resolved WebAssembly runtime package was not found. Cannot package its license and notices."/>
     <Copy SourceFiles="@(RuntimeNotice)" DestinationFolder="$(PublishDir)wwwroot/licenses"/>
   </Target>
 </Project>
