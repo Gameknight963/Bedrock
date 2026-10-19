@@ -948,8 +948,25 @@ function installRenderer(configuration) {
         return result;
     }
     const wrappedFactories = new WeakSet();
+    const wrappedSchedulers = new WeakSet();
     function attachRequire(require) {
-        if (!require?.m || webpackRuntimes.has(require)) return;
+        if (!require?.m) return;
+        if (typeof require.O === 'function' && !wrappedSchedulers.has(require.O)) {
+            // Rspack also schedules its initial entry through require.O, outside chunk runtime callbacks.
+            const scheduler = new Proxy(require.O, { apply(target, receiver, args) {
+                if (typeof args[2] === 'function') {
+                    const callback = args[2];
+                    args[2] = function (...callbackArgs) {
+                        if (bootstrapsReady) return callback.apply(this, callbackArgs);
+                        pendingBootstraps.push(() => callback.apply(this, callbackArgs));
+                    };
+                }
+                return Reflect.apply(target, receiver, args);
+            } });
+            wrappedSchedulers.add(scheduler);
+            require.O = scheduler;
+        }
+        if (webpackRuntimes.has(require)) return;
         webpackRuntimes.add(require);
         chunkLoader?.register(require);
         webpackRequire ||= require;
