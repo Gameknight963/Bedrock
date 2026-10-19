@@ -89,13 +89,15 @@ export interface ReactRuntime {
     useRef<T>(initial: T): { current: T };
     useSyncExternalStore<T>(subscribe: (callback: () => void) => Disposer, getSnapshot: () => T): T;
 }
-export interface BeforeSendEvent {
+export interface BeforeMessageEvent {
     readonly channelId: string;
     readonly message: MessageDraft;
     readonly signal: AbortSignal;
     cancel(): void;
 }
-export interface BeforeEditEvent extends BeforeSendEvent { readonly messageId: string }
+export interface SendOptions { stickerIds?: string[] }
+export interface BeforeSendEvent extends BeforeMessageEvent { readonly options: SendOptions }
+export interface BeforeEditEvent extends BeforeMessageEvent { readonly messageId: string }
 export interface Messages {
     beforeSend(callback: (event: BeforeSendEvent) => void | Promise<void>): Disposer;
     beforeEdit(callback: (event: BeforeEditEvent) => void | Promise<void>): Disposer;

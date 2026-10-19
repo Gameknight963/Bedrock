@@ -66,6 +66,77 @@ test('disabling during an async hook discards its late changes', async () => {
     assert.equal(await result, 'original');
 });
 
+test('send options allow editing stickers while preserving caller options and other arguments', async () => {
+    const f = await fixture();
+    let sent, retained;
+    const reference = { message_id: 'reply' };
+    const actions = f.api.observe({ sendMessage(...args) { sent = args; }, editMessage() {} });
+    f.context('replace').messages.beforeSend(event => {
+        assert.deepEqual(event.options.stickerIds, ['original']);
+        event.options.stickerIds.splice(0, 1, 'replacement');
+        retained = event.options;
+    });
+    f.context('append').messages.beforeSend(event => {
+        assert.deepEqual(event.options.stickerIds, ['replacement']);
+        retained.stickerIds.push('stale');
+        event.options.stickerIds.push('second');
+    });
+    const options = { stickerIds: ['original'], messageReference: reference, tts: true };
+    await actions.sendMessage('channel', { content: 'text' }, 'wait', options);
+    assert.deepEqual(options.stickerIds, ['original']);
+    assert.deepEqual(sent[3].stickerIds, ['replacement', 'second']);
+    assert.equal(sent[3].messageReference, reference);
+    assert.equal(sent[3].tts, true);
+    assert.equal(sent[2], 'wait');
+    retained.stickerIds.push('later');
+    assert.deepEqual(sent[3].stickerIds, ['replacement', 'second']);
+});
+
+test('stickers can be added, cleared or omitted and edits have no send options', async () => {
+    const f = await fixture();
+    let sent;
+    const actions = f.api.observe({ sendMessage(...args) { sent = args; }, editMessage() {} });
+    const stop = f.context('add').messages.beforeSend(event => { event.options.stickerIds = ['new']; });
+    await actions.sendMessage('channel', { content: 'text' });
+    assert.deepEqual(sent[3], { stickerIds: ['new'] });
+    stop();
+    let clear = f.context('clear').messages.beforeSend(event => { event.options.stickerIds.length = 0; });
+    const original = { stickerIds: ['old'], nonce: '123' };
+    await actions.sendMessage('channel', { content: 'text' }, undefined, original);
+    assert.deepEqual(sent[3], { stickerIds: [], nonce: '123' });
+    assert.deepEqual(original.stickerIds, ['old']);
+    clear();
+    clear = f.context('omit').messages.beforeSend(event => { delete event.options.stickerIds; });
+    await actions.sendMessage('channel', { content: 'text' }, undefined, original);
+    assert.equal(sent[3].stickerIds, undefined);
+    clear();
+    f.context('noop').messages.beforeSend(() => {});
+    await actions.sendMessage('channel', { content: 'text' });
+    assert.equal(sent.length, 2);
+    f.context('edit').messages.beforeEdit(event => { assert.equal(Object.hasOwn(event, 'options'), false); });
+    await actions.editMessage('channel', 'message', { content: 'edit' });
+});
+
+test('cancelled, invalid and disabled hooks cannot leak sticker changes', async () => {
+    const f = await fixture();
+    let calls = 0, sent, finish;
+    const actions = f.api.observe({ sendMessage(...args) { calls++; sent = args; }, editMessage() {} });
+    const original = { stickerIds: ['old'] };
+    let remove = f.context('cancel').messages.beforeSend(event => { event.options.stickerIds.pop(); event.cancel(); });
+    await assert.rejects(actions.sendMessage('channel', { content: 'text' }, undefined, original), { name: 'BedrockMessageCancelledError' });
+    assert.deepEqual(original.stickerIds, ['old']); assert.equal(calls, 0); remove();
+    for (const invalid of [null, 'invalid', [123], new Array(1)]) {
+        remove = f.context('invalid').messages.beforeSend(event => { event.options.stickerIds = invalid; });
+        await assert.rejects(actions.sendMessage('channel', { content: 'text' }, undefined, original), /Sticker IDs must be an array of strings/);
+        assert.equal(calls, 0); remove();
+    }
+    const pause = new Promise(resolve => { finish = resolve; });
+    remove = f.context('waiting').messages.beforeSend(async event => { await pause; event.options.stickerIds.length = 0; });
+    const pending = actions.sendMessage('channel', { content: 'text' }, undefined, original);
+    remove(); finish(); await pending;
+    assert.deepEqual(sent[3].stickerIds, ['old']);
+});
+
 test('menu patches preserve original elements, user context, and item component identity', async () => {
     const f = await fixture();
     function Item() {} function Menu() {}

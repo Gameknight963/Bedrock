@@ -260,7 +260,9 @@ test('incompatible manifests are rejected before executing either entry point', 
     const root = fixture(t);
     const marker = path.join(root, 'executed');
     const source = `require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'yes');`;
-    plugin(root, 'test.newer', source, { entrypoints: { main: { runtime: 'javascript', path: 'main.js', requiresApi: '1.5.2' } } });
+    const available = require('../api-version.cjs').JAVASCRIPT_API_VERSION.split('.').map(Number);
+    const newer = `${available[0]}.${available[1]}.${available[2] + 1}`;
+    plugin(root, 'test.newer', source, { entrypoints: { main: { runtime: 'javascript', path: 'main.js', requiresApi: newer } } });
     plugin(root, 'test.major', source, { entrypoints: { main: { runtime: 'javascript', path: 'main.js', requiresApi: '2.0.0' } } });
     plugin(root, 'test.short', source, { entrypoints: { main: 'main.js' } });
     plugin(root, 'test.missing', source, { entrypoints: { main: { runtime: 'javascript', path: 'main.js' } } });
@@ -268,7 +270,7 @@ test('incompatible manifests are rejected before executing either entry point', 
     plugin(root, 'test.toplevel', source, { apiVersion: 1 });
     plugin(root, 'test.renderer', source, { entrypoints: {
         main: { runtime: 'javascript', path: 'main.js', requiresApi: '1.0.0' },
-        renderer: { runtime: 'javascript', path: 'main.js', requiresApi: '1.6.0' }
+        renderer: { runtime: 'javascript', path: 'main.js', requiresApi: newer }
     } });
     const manager = createPluginManager(root, quiet);
     manager.scan();

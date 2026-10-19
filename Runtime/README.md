@@ -57,7 +57,7 @@ The loader inspects only immediate plugin folders containing `plugin.json`. Ever
 
 Required: `manifestVersion`, `id`, `name`, `version`, `entrypoints`. IDs use lowercase letters, digits, dots, underscores or hyphens and must be unique. `description`, `readme`, and `icon` are optional. Main, renderer and GPU entry points are independently optional, but at least one is required. `.js` and `.mjs` entry points are supported. Prefer `main.js` and `renderer.js`, or `main/index.js` and `renderer/index.js`.
 
-Each JavaScript entry point must be an object declaring `runtime`, `path` and `requiresApi`. The current JavaScript API version is `1.5.1`. JavaScript entry points run in main or renderer environments.
+Each JavaScript entry point must be an object declaring `runtime`, `path` and `requiresApi`. The current JavaScript API version is `1.6.0`. JavaScript entry points run in main or renderer environments.
 
 `requiresApi` is a semantic version, not a version range. Bedrock accepts requirements with the same major version that are no newer than its API, comparing minor and patch versions in order. For example, API `1.3.2` accepts `1.2.0` and `1.3.2`, but rejects `1.3.3` and `2.0.0`. Prerelease versions follow semantic-version precedence; build metadata does not affect compatibility. Requirements are checked before executing any plugin code.
 
@@ -291,7 +291,9 @@ export function start(ctx) {
 ```
 
 - Both events supply `channelId`, `message.content`, `signal` and `cancel()`. Edits also supply `messageId`.
+- API **1.6.0** adds `options.stickerIds` to send events. Replace the array or edit it to change the selected stickers; set it to `[]` to send without stickers. Edit events do not have `options`.
 - Bedrock awaits callbacks in registration order and sends the final content after they finish. Other message fields and action arguments are preserved.
+- Each callback gets its own copy of the sticker array. Successful changes pass to subsequent callbacks and Discord without changing the caller's options.
 - `cancel()` prevents the action and rejects it with `BedrockMessageCancelledError`. A thrown error also prevents the action and is logged with the plugin ID. Avoid waiting indefinitely in a hook, since the action waits with it.
 - Registration returns a disposer. If a hook is removed while awaiting work, its late changes and cancellation are ignored. Respect `event.signal` to cancel your own outstanding work when the context stops.
 

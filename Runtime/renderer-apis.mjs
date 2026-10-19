@@ -78,15 +78,20 @@ export function createRendererApis({ react, report = () => {} }) {
         const index = kind === 'send' ? 1 : 2;
         if (!args[index] || typeof args[index].content !== 'string') return original.apply(receiver, args);
         let message = { ...args[index] };
+        let stickerIds = kind === 'send' && Array.isArray(args[3]?.stickerIds) ? [...args[3].stickerIds] : undefined;
         for (const hook of [...messageHooks[kind]]) {
             if (!hook.active) continue;
             let cancelled = false;
             const draft = { ...message };
+            const options = kind === 'send' ? { ...(stickerIds === undefined ? {} : { stickerIds: [...stickerIds] }) } : undefined;
             try {
                 await hook.callback({ channelId: args[0], ...(kind === 'edit' ? { messageId: args[1] } : {}),
-                    message: draft, signal: hook.signal, cancel() { cancelled = true; } });
+                    message: draft, ...(options ? { options } : {}), signal: hook.signal, cancel() { cancelled = true; } });
                 if (!hook.active) continue;
                 if (typeof draft.content !== 'string') throw new Error('Message content must be a string.');
+                if (options?.stickerIds !== undefined && (!Array.isArray(options.stickerIds) ||
+                    [...options.stickerIds].some(id => typeof id !== 'string')))
+                    throw new Error('Sticker IDs must be an array of strings.');
             } catch (error) {
                 if (!hook.active) continue;
                 const failure = new Error(`${hook.id}: ${kind} hook failed: ${error instanceof Error ? error.message : String(error)}`, { cause: error });
@@ -98,9 +103,12 @@ export function createRendererApis({ react, report = () => {} }) {
                 throw error;
             }
             message = draft;
+            if (options) stickerIds = options.stickerIds === undefined ? undefined : [...options.stickerIds];
         }
         if (callerSignal?.aborted) throw new Error('Plugin context has stopped.');
         const values = [...args]; values[index] = message;
+        if (kind === 'send' && (stickerIds !== undefined || Object.hasOwn(args[3] ?? {}, 'stickerIds')))
+            values[3] = { ...args[3], stickerIds };
         return original.apply(receiver, values);
     }
     function observe(exports) {
