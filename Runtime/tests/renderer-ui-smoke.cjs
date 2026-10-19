@@ -20,7 +20,8 @@ fs.writeFileSync(path.join(folder, 'renderer.js'), `
         ctx.messages.addAccessory('counter', Accessory);
         ctx.messages.addButton('translate', props => props.message.content ? {
             label: 'Fixture translate', icon: () => ctx.react.createElement('span', null, 'T'),
-            async onClick() { await Promise.resolve(); globalThis.fixtureTranslated = props.message.id; }
+            async onClick() { await Promise.resolve(); globalThis.fixtureTranslated = props.message.id; },
+            onContextMenu(event) { event.preventDefault(); event.stopPropagation(); globalThis.fixtureRightClicked = props.message.id; }
         } : null);
         ctx.chatBar.addButton('action', props => ctx.chatBar.button({ label: 'Fixture action', icon: '+', disabled: props.disabled,
             onClick: () => { globalThis.fixtureButtonChannel = props.channel.id; } }));
@@ -77,7 +78,7 @@ const fixture = `
         },
         toolbar(module, exports, require) {
             const React = require('react'), ui = { jsx: (type, props) => React.createElement(type, props) }, intl = { Lv7LxN: 'Message actions', string: ({id}) => id };
-            function NativeButton(props) { return React.createElement('button', { title: props.label, onClick: props.onClick, disabled: props.disabled }, React.createElement(props.icon)); }
+            function NativeButton(props) { return React.createElement('button', { title: props.label, onClick: props.onClick, onContextMenu: props.onContextMenu, disabled: props.disabled }, React.createElement(props.icon)); }
             module.exports = function Toolbar(props) {
                 const a = (0,ui.jsx)(NativeButton,{label:'Native reply',icon:()=>React.createElement('span',null,'R')}), b = null;
                 return (0,ui.jsx)('div',{title:intl.string({id:intl.Lv7LxN}),children:[a,b]});
@@ -133,6 +134,8 @@ app.whenReady().then(async () => {
         assert.equal(await evaluate(`document.querySelectorAll('[title="Native reply"]').length`), 2);
         await evaluate(`document.querySelector('[title="Fixture translate"]').click()`);
         await waitFor(`fixtureTranslated === 'message'`);
+        assert.equal(await evaluate(`document.querySelector('[title="Fixture translate"]').dispatchEvent(new MouseEvent('contextmenu', {bubbles:true,cancelable:true}))`), false);
+        assert.equal(await evaluate('fixtureRightClicked'), 'message');
         assert.equal(await evaluate(`document.querySelector('.fixture-composer').lastElementChild.textContent`), 'sticker');
         await evaluate('globalThis.fixtureDisposeLater = fixtureAddAccessory(); void 0');
         await waitFor(`!!document.querySelector('[data-later]')`);

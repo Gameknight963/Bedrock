@@ -57,7 +57,7 @@ The loader inspects only immediate plugin folders containing `plugin.json`. Ever
 
 Required: `manifestVersion`, `id`, `name`, `version`, `entrypoints`. IDs use lowercase letters, digits, dots, underscores or hyphens and must be unique. `description`, `readme`, and `icon` are optional. Main, renderer and GPU entry points are independently optional, but at least one is required. `.js` and `.mjs` entry points are supported. Prefer `main.js` and `renderer.js`, or `main/index.js` and `renderer/index.js`.
 
-Each JavaScript entry point must be an object declaring `runtime`, `path` and `requiresApi`. The current JavaScript API version is `1.7.0`. JavaScript entry points run in main or renderer environments.
+Each JavaScript entry point must be an object declaring `runtime`, `path` and `requiresApi`. The current JavaScript API version is `1.8.0`. JavaScript entry points run in main or renderer environments.
 
 `requiresApi` is a semantic version, not a version range. Bedrock accepts requirements with the same major version that are no newer than its API, comparing minor and patch versions in order. For example, API `1.3.2` accepts `1.2.0` and `1.3.2`, but rejects `1.3.3` and `2.0.0`. Prerelease versions follow semantic-version precedence; build metadata does not affect compatibility. Requirements are checked before executing any plugin code.
 
@@ -317,6 +317,8 @@ ctx.messages.addButton('translate', ({ message, channel, signal }) => {
 The factory receives the message, available channel and activation signal. Return `null` to hide the button. Definitions contain `label`, an icon component, `onClick` and an optional `disabled` flag. Bedrock uses Discord's toolbar button component and reports click errors through the plugin logger. Factories can use React hooks.
 
 Registration returns a disposer. Removing a registration updates open toolbars, and stale buttons cannot start new actions. Async handlers should respect `signal` to cancel their outstanding work. An optional `{order}` argument controls ordering among plugin buttons.
+
+API **1.8.0** adds an optional `onContextMenu(event)` handler for right-click actions. It supports async callbacks and uses the same error reporting and activation checks as `onClick`. Call `event.preventDefault()` to suppress the normal context menu; call `event.stopPropagation()` if the message should not also handle the event.
 
 API **1.5.0** adds React components to the message accessories area and the chat input's button row:
 

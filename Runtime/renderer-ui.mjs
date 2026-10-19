@@ -40,12 +40,16 @@ export function createRendererUi({ react, report = () => {}, document = globalTh
         if (options == null) return null;
         if (options.then || typeof options.label !== 'string' || !options.label.trim() || !options.icon || typeof options.onClick !== 'function')
             throw new TypeError('Message buttons need a label, icon component and click callback.');
+        if (options.onContextMenu !== undefined && typeof options.onContextMenu !== 'function')
+            throw new TypeError('A message button context-menu handler must be a function.');
+        const invoke = (callback, event) => {
+            if (!entry.active || entry.signal.aborted || options.disabled) return;
+            try { Promise.resolve(callback(event)).catch(error => report(entry.owner, error)); }
+            catch (error) { report(entry.owner, error); }
+        };
         return getReact().createElement(nativeMessageButton, { ...options, message: input.message, channel: input.channel,
-            onClick(event) {
-                if (!entry.active || entry.signal.aborted || options.disabled) return;
-                try { Promise.resolve(options.onClick(event)).catch(error => report(entry.owner, error)); }
-                catch (error) { report(entry.owner, error); }
-            } });
+            onClick: event => invoke(options.onClick, event),
+            onContextMenu: options.onContextMenu ? event => invoke(options.onContextMenu, event) : undefined });
     }
     function register(kind, owner, id, component, options, own, signal) {
         if (typeof id !== 'string' || !id || typeof component !== 'function') throw new TypeError('Expected an ID and React component.');

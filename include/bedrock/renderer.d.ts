@@ -103,6 +103,7 @@ export interface MessageButton {
     icon: unknown;
     disabled?: boolean;
     onClick(event: MenuActionEvent): void | Promise<void>;
+    onContextMenu?(event: MenuActionEvent): void | Promise<void>;
 }
 export interface MessageButtonProps extends MessageAccessoryProps {}
 export interface Messages {

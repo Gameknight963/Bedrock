@@ -141,3 +141,34 @@ test('message button registrations validate IDs and order and dispose by owner',
     assert.throws(() => f.ctx.addMessageButton('invalid', () => null, { order: NaN }), /finite/);
     f.dispose(); assert.equal(f.api.diagnostics().messageButtons, 0);
 });
+
+test('message right-click handlers preserve events, report failures and reject stale actions', async () => {
+    const { createRendererUi } = await import('../renderer-ui.mjs');
+    const errors = [], controller = new AbortController();
+    const React = { Component: class {}, useSyncExternalStore() {}, createElement: (type, props, ...children) => ({ type, props: { ...props, ...(children.length ? { children: children[0] } : {}) } }) };
+    const ui = createRendererUi({ react: () => React, report: (id, error) => errors.push({ id, error }) });
+    const ctx = ui.context('test.right-click', dispose => dispose, controller.signal);
+    const propsFor = () => {
+        const slots = ui.messageButtons([], { message: { id: 'message' } }, function NativeButton() {})[0];
+        const boundary = slots.type(slots.props)[0];
+        const element = boundary.props.children;
+        return element.type(element.props).props;
+    };
+    let calls = 0, received, disabled = false;
+    const dispose = ctx.addMessageButton('action', () => ({ label: 'Action', icon() {}, onClick() {}, disabled,
+        onContextMenu(event) { calls++; received = event; event.preventDefault(); event.stopPropagation(); } }));
+    const event = { prevented: false, stopped: false, preventDefault() { this.prevented = true; }, stopPropagation() { this.stopped = true; } };
+    const saved = propsFor().onContextMenu;
+    saved(event);
+    assert.equal(received, event); assert.equal(event.prevented, true); assert.equal(event.stopped, true);
+    disabled = true; propsFor().onContextMenu(event); assert.equal(calls, 1);
+    dispose(); saved(event); assert.equal(calls, 1);
+    let remove = ctx.addMessageButton('async-error', () => ({ label: 'Error', icon() {}, onClick() {}, async onContextMenu() { throw new Error('right-click failed'); } }));
+    propsFor().onContextMenu(event); await Promise.resolve(); await Promise.resolve();
+    assert.equal(errors[0].id, 'test.right-click'); assert.match(errors[0].error.message, /right-click failed/);
+    remove();
+    remove = ctx.addMessageButton('invalid', () => ({ label: 'Invalid', icon() {}, onClick() {}, onContextMenu: 42 }));
+    assert.throws(propsFor, /must be a function/); remove();
+    ctx.addMessageButton('aborted', () => ({ label: 'Aborted', icon() {}, onClick() {}, onContextMenu() { calls++; } }));
+    const aborted = propsFor().onContextMenu; controller.abort(); aborted(event); assert.equal(calls, 1);
+});
