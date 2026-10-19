@@ -234,7 +234,7 @@ function installRenderer(configuration) {
             },
             patches: Object.fromEntries(['before', 'after', 'instead'].map(kind => [kind, (object, method, callback) => own(patch(kind, object, method, callback))])),
             ...rendererContext,
-            messages: { ...rendererContext.messages, addAccessory: uiContext.addAccessory },
+            messages: { ...rendererContext.messages, addAccessory: uiContext.addAccessory, addButton: uiContext.addMessageButton },
             chatBar: uiContext.chatBar,
             commands: uiContext.commands,
             notifications: uiContext.notifications,

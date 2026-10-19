@@ -98,10 +98,18 @@ export interface BeforeMessageEvent {
 export interface SendOptions { stickerIds?: string[] }
 export interface BeforeSendEvent extends BeforeMessageEvent { readonly options: SendOptions }
 export interface BeforeEditEvent extends BeforeMessageEvent { readonly messageId: string }
+export interface MessageButton {
+    label: string;
+    icon: unknown;
+    disabled?: boolean;
+    onClick(event: MenuActionEvent): void | Promise<void>;
+}
+export interface MessageButtonProps extends MessageAccessoryProps {}
 export interface Messages {
     beforeSend(callback: (event: BeforeSendEvent) => void | Promise<void>): Disposer;
     beforeEdit(callback: (event: BeforeEditEvent) => void | Promise<void>): Disposer;
     addAccessory(id: string, component: (props: MessageAccessoryProps) => MenuChild | undefined, options?: ComponentOptions): Disposer;
+    addButton(id: string, factory: (props: MessageButtonProps) => MessageButton | null, options?: ComponentOptions): Disposer;
     send(channelId: string, message: MessageDraft): Promise<unknown>;
 }
 export interface SourceReplacement {

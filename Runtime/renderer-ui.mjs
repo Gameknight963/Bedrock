@@ -6,7 +6,7 @@ const buttonCss = `.bedrock-chat-button{display:inline-flex;align-items:center;j
 
 export function createRendererUi({ react, report = () => {}, document = globalThis.document } = {}) {
     const notifications = createNotifications({ document, report });
-    const registries = { accessories: new Map(), buttons: new Map() };
+    const registries = { accessories: new Map(), buttons: new Map(), messageButtons: new Map() };
     const listeners = new Set(), commandEntries = new Map(), commandLists = new Set();
     let revision = 0, sequence = 0, nextCommandId = -1000000000, Boundary, Slots;
     let patchStatus = [];
@@ -29,10 +29,23 @@ export function createRendererUi({ react, report = () => {}, document = globalTh
                 React.useSyncExternalStore(callback => { listeners.add(callback); return () => listeners.delete(callback); }, () => revision);
                 return [...registries[kind].values()].sort((a, b) => a.order - b.order || a.sequence - b.sequence)
                     .map(entry => React.createElement(Boundary, { key: entry.sequence, owner: entry.owner },
-                        React.createElement(entry.component, { ...input, signal: entry.signal })));
+                        React.createElement(kind === 'messageButtons' ? MessageButton : entry.component, { ...input, signal: entry.signal, ...(kind === 'messageButtons' ? { entry } : {}) })));
             };
         }
         return React.createElement(Slots, { key: `bedrock-${kind}`, kind, input: props || {} });
+    }
+    function MessageButton({ entry, nativeMessageButton, ...input }) {
+        if (!nativeMessageButton || !input.message) return null;
+        const options = entry.component(input);
+        if (options == null) return null;
+        if (options.then || typeof options.label !== 'string' || !options.label.trim() || !options.icon || typeof options.onClick !== 'function')
+            throw new TypeError('Message buttons need a label, icon component and click callback.');
+        return getReact().createElement(nativeMessageButton, { ...options, message: input.message, channel: input.channel,
+            onClick(event) {
+                if (!entry.active || entry.signal.aborted || options.disabled) return;
+                try { Promise.resolve(options.onClick(event)).catch(error => report(entry.owner, error)); }
+                catch (error) { report(entry.owner, error); }
+            } });
     }
     function register(kind, owner, id, component, options, own, signal) {
         if (typeof id !== 'string' || !id || typeof component !== 'function') throw new TypeError('Expected an ID and React component.');
@@ -40,8 +53,9 @@ export function createRendererUi({ react, report = () => {}, document = globalTh
         if (!Number.isFinite(order)) throw new TypeError('Component order must be a finite number.');
         const key = JSON.stringify([owner, id]);
         if (registries[kind].has(key)) throw new Error(`Component '${id}' is already registered by ${owner}.`);
-        registries[kind].set(key, { owner, component, signal, order, sequence: ++sequence });
-        const dispose = own(() => { registries[kind].delete(key); notify(); });
+        const entry = { owner, component, signal, order, sequence: ++sequence, active: true };
+        registries[kind].set(key, entry);
+        const dispose = own(() => { entry.active = false; registries[kind].delete(key); notify(); });
         notify(); return dispose;
     }
     function prepareOption(option) {
@@ -70,6 +84,16 @@ export function createRendererUi({ react, report = () => {}, document = globalTh
     const api = {
         // These hooks belong to Bedrock. Plugin registrations can disappear without undoing source patches.
         patches: [
+            { id: 'message-buttons', find: '.Lv7LxN', replacement: { match: /^[\s\S]*$/, replace(source) {
+                const marker = source.indexOf('.Lv7LxN');
+                const tail = source.slice(marker, marker + 400);
+                const children = /children:(\[[\w$]+,[\w$]+\])/.exec(tail);
+                const controls = [...source.slice(0, marker).matchAll(/(\(0,[\w$]+\.jsxs?\)\()([\w$]+(?:\.[\w$]+)?)(,\{label:)/g)];
+                if (!children || !controls.length) throw new Error('Could not locate the message toolbar or its button component.');
+                const control = controls.at(-1);
+                const offset = marker + children.index + 'children:'.length;
+                return source.slice(0, offset) + `${host}.messageButtons(${children[1]},arguments[0],${control[2]})` + source.slice(offset + children[1].length);
+            } } },
             { id: 'message-accessories', find: 'renderSuppressConfirmModal', all: true,
                 replacement: { match: /this\.renderSuppressConfirmModal\(\)/g,
                     replace: `${host}.accessories($&,this.props)` } },
@@ -95,7 +119,8 @@ export function createRendererUi({ react, report = () => {}, document = globalTh
                 } } }
         ],
         setPatchStatus(status) { patchStatus = status; },
-        diagnostics() { return { patches: patchStatus, accessories: registries.accessories.size, chatButtons: registries.buttons.size, commands: commandEntries.size, commandLists: commandLists.size }; },
+        diagnostics() { return { patches: patchStatus, accessories: registries.accessories.size, chatButtons: registries.buttons.size, messageButtons: registries.messageButtons.size, commands: commandEntries.size, commandLists: commandLists.size }; },
+        messageButtons(original, props, component) { return [slot('messageButtons', { ...props, nativeMessageButton: component }), ...original]; },
         accessories(original, props) { return [original, slot('accessories', props)]; },
         chatButtons(buttons, props) {
             if (!Array.isArray(buttons) || !buttons.length) return;
@@ -116,6 +141,7 @@ export function createRendererUi({ react, report = () => {}, document = globalTh
                 get react() { return getReact(); },
                 notifications: alerts,
                 addAccessory: (id, component, options) => register('accessories', owner, id, component, options, own, signal),
+                addMessageButton: (id, factory, options) => register('messageButtons', owner, id, factory, options, own, signal),
                 chatBar: {
                     addButton: (id, component, options) => register('buttons', owner, id, component, options, own, signal),
                     button(options) {

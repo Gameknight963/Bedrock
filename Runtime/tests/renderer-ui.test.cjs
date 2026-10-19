@@ -107,3 +107,37 @@ test('component registrations validate ownership and can be removed before React
     assert.throws(() => f.ctx.react, /not available yet/);
     f.dispose(); assert.equal(f.api.diagnostics().chatButtons, 0);
 });
+
+test('message toolbar adapter preserves native controls and captures the instance button type', async () => {
+    const { createRendererUi } = await import('../renderer-ui.mjs');
+    const { createSourcePatches } = await import('../source-patches.mjs');
+    const ui = createRendererUi({ react: () => null });
+    const source = createSourcePatches(); source.register('$ui', ui);
+    const previous = globalThis.Bedrock;
+    let received;
+    globalThis.Bedrock = { _rendererUi: { messageButtons(children, props, component) { received = { children, props, component }; return children; } } };
+    try {
+        const factory = function (module) {
+            const jsx = { jsx: (type, props) => ({ type, props }) }, intl = { Lv7LxN: 'Message actions' };
+            function NativeButton() {}
+            module.exports = function Toolbar(props) {
+                const a = props.hidden ? null : (0,jsx.jsx)(NativeButton,{label:'Reply'}), b = null;
+                return (0,jsx.jsx)('div',{label:intl.Lv7LxN,children:[a,b]});
+            };
+        };
+        const module = {}; source.apply('toolbar', factory)(module);
+        const props = { message: { id: 'message' }, channel: { id: 'channel' }, hidden: true };
+        assert.deepEqual(module.exports(props).props.children, [null, null]);
+        assert.equal(received.props, props);
+        assert.equal(received.component.name, 'NativeButton');
+    } finally { globalThis.Bedrock = previous; }
+});
+
+test('message button registrations validate IDs and order and dispose by owner', async () => {
+    const f = await fixture();
+    f.ctx.addMessageButton('translate', () => null);
+    assert.equal(f.api.diagnostics().messageButtons, 1);
+    assert.throws(() => f.ctx.addMessageButton('translate', () => null), /already registered/);
+    assert.throws(() => f.ctx.addMessageButton('invalid', () => null, { order: NaN }), /finite/);
+    f.dispose(); assert.equal(f.api.diagnostics().messageButtons, 0);
+});

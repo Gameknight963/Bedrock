@@ -18,6 +18,10 @@ fs.writeFileSync(path.join(folder, 'renderer.js'), `
             return ctx.react.createElement('button', { 'data-accessory': true, onClick: () => setCount(count + 1) }, props.message.id + ':' + count);
         }
         ctx.messages.addAccessory('counter', Accessory);
+        ctx.messages.addButton('translate', props => props.message.content ? {
+            label: 'Fixture translate', icon: () => ctx.react.createElement('span', null, 'T'),
+            async onClick() { await Promise.resolve(); globalThis.fixtureTranslated = props.message.id; }
+        } : null);
         ctx.chatBar.addButton('action', props => ctx.chatBar.button({ label: 'Fixture action', icon: '+', disabled: props.disabled,
             onClick: () => { globalThis.fixtureButtonChannel = props.channel.id; } }));
         ctx.notifications.show({ title: '<img src=x>', body: 'Literal text', timeout: 0,
@@ -71,6 +75,14 @@ const fixture = `
                 return 0===buttons.length ? null : React.createElement('div', { className: 'fixture-composer', children:buttons });
             };
         },
+        toolbar(module, exports, require) {
+            const React = require('react'), ui = { jsx: (type, props) => React.createElement(type, props) }, intl = { Lv7LxN: 'Message actions' };
+            function NativeButton(props) { return React.createElement('button', { title: props.label, onClick: props.onClick, disabled: props.disabled }, React.createElement(props.icon)); }
+            module.exports = function Toolbar(props) {
+                const a = (0,ui.jsx)(NativeButton,{label:'Native reply',icon:()=>React.createElement('span',null,'R')}), b = null;
+                return (0,ui.jsx)('div',{title:intl.Lv7LxN,children:[a,b]});
+            };
+        },
         commands(module) {
             const builtins = [{ name: 'shrug', id: '-1' }];
             const textCommands = builtins.filter(command => ["tableflip","unflip"].includes(command.name));
@@ -78,11 +90,13 @@ const fixture = `
         },
         entry(module, exports, require) {
             require('actions');
-            const React = require('react'), Accessories = require('accessories'), Composer = require('composer');
+            const React = require('react'), Accessories = require('accessories'), Composer = require('composer'), Toolbar = require('toolbar');
             globalThis.fixtureCommands = require('commands');
             globalThis.fixtureRoot = ReactDOM.createRoot(document.getElementById('root'));
             fixtureRoot.render(React.createElement('main', {},
                 React.createElement(Accessories, { message: { id: 'message' }, channel: { id: 'channel' } }),
+                React.createElement(Toolbar, { message: { id: 'message', content: 'Hello' }, channel: { id: 'channel' } }),
+                React.createElement(Toolbar, { message: { id: 'empty', content: '' }, channel: { id: 'channel' } }),
                 React.createElement(Composer, { channel: { id: 'channel' }, disabled: false })));
         }
     }, require => require('entry')]);
@@ -114,6 +128,11 @@ app.whenReady().then(async () => {
         await waitFor(`document.querySelector('[data-accessory]').textContent === 'message:1'`);
         await evaluate(`document.querySelector('[aria-label="Fixture action"]').click()`);
         assert.equal(await evaluate('fixtureButtonChannel'), 'channel');
+        await waitFor(`document.querySelector('[title="Fixture translate"]')`);
+        assert.equal(await evaluate(`document.querySelectorAll('[title="Fixture translate"]').length`), 1);
+        assert.equal(await evaluate(`document.querySelectorAll('[title="Native reply"]').length`), 2);
+        await evaluate(`document.querySelector('[title="Fixture translate"]').click()`);
+        await waitFor(`fixtureTranslated === 'message'`);
         assert.equal(await evaluate(`document.querySelector('.fixture-composer').lastElementChild.textContent`), 'sticker');
         await evaluate('globalThis.fixtureDisposeLater = fixtureAddAccessory(); void 0');
         await waitFor(`!!document.querySelector('[data-later]')`);
@@ -144,6 +163,7 @@ app.whenReady().then(async () => {
         console.log('PASS: local slash command execution, explicit sending, literal notification text, actions, expiry and command errors');
         await evaluate(`globalThis.fixtureStale = fixtureCommands.find(command => command.name === 'fixture-local'); Bedrock.plugins.setEnabled('test.renderer-ui', false)`);
         await waitFor(`!document.querySelector('[data-accessory]') && !document.querySelector('[aria-label="Fixture action"]') && fixtureUnmounts === 1`);
+        assert.equal(await evaluate(`document.querySelector('[title="Fixture translate"]')`), null);
         assert.equal(await evaluate(`document.querySelectorAll('.bedrock-notification').length`), 0);
         assert.equal(await evaluate('fixtureCommands.length'), 1); assert.equal(await evaluate('fixtureStops'), 1);
         assert.equal(await evaluate(`!!Bedrock.plugins.list()[0].restartReason`), false);
