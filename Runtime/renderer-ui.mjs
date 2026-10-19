@@ -84,8 +84,8 @@ export function createRendererUi({ react, report = () => {}, document = globalTh
     const api = {
         // These hooks belong to Bedrock. Plugin registrations can disappear without undoing source patches.
         patches: [
-            { id: 'message-buttons', find: '.Lv7LxN', replacement: { match: /^[\s\S]*$/, replace(source) {
-                const marker = source.indexOf('.Lv7LxN');
+            { id: 'message-buttons', find: '.Lv7LxN}),children', replacement: { match: /^[\s\S]*$/, replace(source) {
+                const marker = source.indexOf('.Lv7LxN}),children');
                 const tail = source.slice(marker, marker + 400);
                 const children = /children:(\[[\w$]+,[\w$]+\])/.exec(tail);
                 const controls = [...source.slice(0, marker).matchAll(/(\(0,[\w$]+\.jsxs?\)\()([\w$]+(?:\.[\w$]+)?)(,\{label:)/g)];

@@ -76,11 +76,11 @@ const fixture = `
             };
         },
         toolbar(module, exports, require) {
-            const React = require('react'), ui = { jsx: (type, props) => React.createElement(type, props) }, intl = { Lv7LxN: 'Message actions' };
+            const React = require('react'), ui = { jsx: (type, props) => React.createElement(type, props) }, intl = { Lv7LxN: 'Message actions', string: ({id}) => id };
             function NativeButton(props) { return React.createElement('button', { title: props.label, onClick: props.onClick, disabled: props.disabled }, React.createElement(props.icon)); }
             module.exports = function Toolbar(props) {
                 const a = (0,ui.jsx)(NativeButton,{label:'Native reply',icon:()=>React.createElement('span',null,'R')}), b = null;
-                return (0,ui.jsx)('div',{title:intl.Lv7LxN,children:[a,b]});
+                return (0,ui.jsx)('div',{title:intl.string({id:intl.Lv7LxN}),children:[a,b]});
             };
         },
         commands(module) {

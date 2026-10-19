@@ -118,11 +118,11 @@ test('message toolbar adapter preserves native controls and captures the instanc
     globalThis.Bedrock = { _rendererUi: { messageButtons(children, props, component) { received = { children, props, component }; return children; } } };
     try {
         const factory = function (module) {
-            const jsx = { jsx: (type, props) => ({ type, props }) }, intl = { Lv7LxN: 'Message actions' };
+            const jsx = { jsx: (type, props) => ({ type, props }) }, intl = { Lv7LxN: 'Message actions', string: ({ id }) => id };
             function NativeButton() {}
             module.exports = function Toolbar(props) {
                 const a = props.hidden ? null : (0,jsx.jsx)(NativeButton,{label:'Reply'}), b = null;
-                return (0,jsx.jsx)('div',{label:intl.Lv7LxN,children:[a,b]});
+                return (0,jsx.jsx)('div',{label:intl.string({id:intl.Lv7LxN}),children:[a,b]});
             };
         };
         const module = {}; source.apply('toolbar', factory)(module);
