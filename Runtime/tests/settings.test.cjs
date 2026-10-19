@@ -14,6 +14,27 @@ test('definitions validate defaults, choices and numeric ranges', () => {
     assert.throws(() => definePluginSettings(JSON.parse('{"__proto__":{"type":"boolean","description":"","default":true}}')));
 });
 
+test('settings observers refresh while activation callbacks are disabled', async () => {
+    let active = false;
+    const values = { count: 0 }, changes = [], observed = [];
+    const settings = definePluginSettings({ count: { type: OptionType.NUMBER, default: 0, onChange: value => changes.push(value) } });
+    const binding = bindPluginSettings(settings, {
+        get: key => values[key],
+        async set(key, value) { values[key] = value; binding.refresh(); },
+        callbacksEnabled: () => active, signal: new AbortController().signal, log(error) { throw error; }
+    });
+    const dispose = settings.subscribe((key, value) => observed.push(value));
+    await settings.set('count', 1);
+    assert.deepEqual(changes, []);
+    active = true;
+    await settings.set('count', 2);
+    active = false;
+    await settings.set('count', 3);
+    assert.deepEqual(changes, [2]);
+    assert.deepEqual(observed, [1, 2, 3]);
+    dispose(); binding.dispose();
+});
+
 test('store writes serialize, roll back failures, and stop callbacks and queued work when disposed', async () => {
     const values = {};
     const controller = new AbortController();

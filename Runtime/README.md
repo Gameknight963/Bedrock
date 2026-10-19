@@ -228,6 +228,27 @@ The exported object is bound before `start()` and unbound when the context stops
 
 Definitions contain the UI data, while callbacks stay in JavaScript. Only values are saved in the plugin's `data/<id>/settings.json`. This boundary lets a future native owner or another language use the same definitions and UI.
 
+### Custom settings editors
+
+JavaScript API **1.10.0** lets a renderer export a `Settings` React component. It appears below the ordinary controls in the plugin's Settings tab, including when the plugin is disabled.
+
+```js
+export function Settings({ ctx }) {
+    const { count } = settings.use(['count']);
+    return ctx.react.createElement('button', {
+        onClick: () => settings.set('count', count + 1)
+    }, `Count: ${count}`);
+}
+```
+
+- `ctx` belongs to this editor. It provides `id`, `manifest`, `react`, `log`, `settings`, `styles`, `webpack`, `events`, `requireRestart` and `signal`. TypeScript types are `RendererSettingsProps` and `RendererSettingsContext`.
+- Closing the tab aborts its signal and disposes its owned styles, event subscriptions and pending module waits. Use React effects to manage other UI resources.
+- Opening settings imports the renderer module, but does not call `start()` or register its source patches. Keep activation work in `start()` rather than at module scope.
+- Defined settings remain readable and editable while disabled. Their `onChange` callbacks run while the renderer activation is running; `settings.use()` and subscriptions still receive edits while disabled.
+- Use `ctx.settings` for editor data that does not have an ordinary control, such as a list of replacement rules. Validate that data in the plugin.
+
+An error in the editor is shown in its settings panel. Other settings remain usable.
+
 ## CSS themes
 
 Open **Bedrock → Themes**, then choose **Open themes folder**. Copy your CSS files into `BedrockData\themes` and enable the themes you want. New files appear automatically and start disabled. Enabled themes apply in filename order, so later files can override earlier ones.

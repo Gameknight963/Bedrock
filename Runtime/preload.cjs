@@ -186,6 +186,47 @@ function installRenderer(configuration) {
             }
         };
     }
+    function settingsFor(record) {
+        const id = record.info.manifest.id;
+        return {
+            get: (key, fallback) => Object.hasOwn(record.info.settings, key) ? structuredClone(record.info.settings[key]) : fallback,
+            async set(key, value) { update(await native.request('settingsSet', id, key, value)); },
+            async delete(key) { update(await native.request('settingsDelete', id, key)); },
+            all: () => structuredClone(record.info.settings)
+        };
+    }
+    async function loadRenderer(record) {
+        if (record.moduleWork) return record.moduleWork;
+        record.moduleWork = (async () => {
+            await apiReady;
+            record.module ||= record.info.manifest.entrypoints.renderer.runtime === 'dotnet-wasm'
+                ? await (await import('bedrock://api/dotnet.mjs')).loadPlugin(record.info)
+                : await (await modulesReady).import(record.info.renderer);
+            if (record.unloading || records.get(record.info.manifest.id) !== record) throw new Error('Plugin is being removed');
+            if (typeof record.module.start !== 'function') throw new Error('Renderer entry point must export start(context)');
+            if (record.module.Settings !== undefined && typeof record.module.Settings !== 'function') throw new Error('Settings must be a React component function');
+            if (record.module.settings && !record.settingsBinding) {
+                update(await native.request('settingsDefine', record.info.manifest.id, record.module.settings.definitions));
+                if (record.unloading || records.get(record.info.manifest.id) !== record) throw new Error('Plugin is being removed');
+                record.settingsController = new AbortController();
+                record.settingsBinding = settingsAPI.bindPluginSettings(record.module.settings, {
+                    ...settingsFor(record), signal: record.settingsController.signal,
+                    callbacksEnabled: () => !!record.instance && !record.instance.context.signal.aborted,
+                    log: error => log(record.info.manifest.id, error), react: renderingReact
+                });
+            }
+            return record.module;
+        })();
+        try { return await record.moduleWork; }
+        catch (error) { record.moduleWork = null; throw error; }
+    }
+    function disposeSettings(record) {
+        for (const close of record.settingsViews || []) close();
+        record.settingsViews?.clear();
+        record.settingsController?.abort();
+        record.settingsBinding?.dispose();
+        record.settingsBinding = null;
+    }
     function contextFor(record) {
         const disposers = new Set();
         let active = true;
@@ -204,12 +245,7 @@ function installRenderer(configuration) {
             reportStatus(message) { if (active) { record.statusMessage = String(message); notify(); } },
             id, signal: controller.signal, manifest: structuredClone(record.info.manifest),
             log: Object.fromEntries(['info', 'warn', 'error'].map(level => [level, (...args) => console[level](`[Bedrock:${id}]`, ...args)])),
-            settings: {
-                get: (key, fallback) => Object.hasOwn(record.info.settings, key) ? structuredClone(record.info.settings[key]) : fallback,
-                async set(key, value) { update(await native.request('settingsSet', id, key, value)); },
-                async delete(key) { update(await native.request('settingsDelete', id, key)); },
-                all: () => structuredClone(record.info.settings)
-            },
+            settings: settingsFor(record),
             cleanup: own,
             requireRestart(reason) {
                 record.restartReason = String(reason); notify();
@@ -282,24 +318,12 @@ function installRenderer(configuration) {
             let instance;
             try {
                 await importsReady;
-                record.module ||= record.info.manifest.entrypoints.renderer.runtime === 'dotnet-wasm'
-                    ? await (await import('bedrock://api/dotnet.mjs')).loadPlugin(record.info)
-                    : await (await modulesReady).import(record.info.renderer);
-                if (typeof record.module.start !== 'function') throw new Error('Renderer entry point must export start(context)');
+                await loadRenderer(record);
                 sourcePatches.register(record.info.manifest.id, record.module);
-                if (record.module.settings) update(await native.request('settingsDefine', record.info.manifest.id, record.module.settings.definitions));
                 if (!record.info.enabled) { record.status = 'stopped'; notify(); return; }
                 instance = contextFor(record);
                 record.instance = instance;
                 instance.context.cleanup(() => sourcePatches.disable(record.info.manifest.id));
-                if (record.module.settings) {
-                    const binding = settingsAPI.bindPluginSettings(record.module.settings, {
-                        ...instance.context.settings, signal: instance.context.signal,
-                        log: error => log(record.info.manifest.id, error), react: renderingReact
-                    });
-                    record.settingsBinding = binding;
-                    instance.context.cleanup(() => { binding.dispose(); record.settingsBinding = null; });
-                }
                 const work = record.module.start(instance.context);
                 record.prepare();
                 await Promise.race([Promise.resolve(work), new Promise(resolve =>
@@ -335,6 +359,8 @@ function installRenderer(configuration) {
         if (!record) return;
         if (!record.unloadPromise) {
             record.unloading = true;
+            for (const close of record.settingsViews || []) close();
+            record.settingsViews?.clear();
             record.info = { ...record.info, enabled: false };
             if (!deferSourceDisable(record)) record.instance?.dispose();
             record.unloadPromise = (async () => {
@@ -342,6 +368,7 @@ function installRenderer(configuration) {
                     await record.restartWork;
                     return { requiresRestart: true, reason: record.restartReason };
                 }
+                await record.moduleWork?.catch(() => {});
                 await record.pending;
                 await reconcile(record);
                 if (deferSourceDisable(record)) {
@@ -364,6 +391,7 @@ function installRenderer(configuration) {
                 await record.restartWork;
                 if (result.requiresRestart) record.restartReason = result.reason;
                 else {
+                    disposeSettings(record);
                     sourcePatches?.forget(id);
                     if (record.info.manifest.entrypoints.renderer?.runtime === 'javascript') {
                         const loader = await modulesReady;
@@ -371,6 +399,7 @@ function installRenderer(configuration) {
                         for (const [url] of loader.entries()) if (url.startsWith(prefix)) loader.delete(url);
                     }
                     record.module = null;
+                    record.moduleWork = null;
                     record.status = 'stopped';
                 }
                 if (result.error) log(id, result.reason);
@@ -388,6 +417,7 @@ function installRenderer(configuration) {
             record.info = { ...record.info, enabled: false };
             if (deferSourceDisable(record)) continue;
             record.instance?.dispose();
+            disposeSettings(record);
             records.delete(id);
             record.pending = record.pending.catch(error => log(id, error)).then(() => reconcile(record));
         }
@@ -640,20 +670,51 @@ function installRenderer(configuration) {
                 h('button', { className: 'bedrock-button', 'aria-busy': busy, disabled: busy || JSON.stringify(saved) === JSON.stringify(definition.default),
                     onClick: () => save(definition.default), 'aria-label': `Reset ${definition.label || settingKey}` }, 'Reset')));
     }
+    let SettingsBoundary;
     function PluginSettings({ plugin }) {
         const h = React.createElement;
+        const record = records.get(plugin.manifest.id);
+        const [editor, setEditor] = React.useState(null);
+        React.useEffect(() => {
+            let closed = false, instance;
+            setEditor(null);
+            if (!record?.info.renderer || plugin.updatePending || record.unloading) return;
+            const close = () => { closed = true; instance?.dispose(); setEditor(null); };
+            record.settingsViews ||= new Set();
+            record.settingsViews.add(close);
+            loadRenderer(record).then(namespace => {
+                if (closed) return;
+                if (namespace.Settings) instance = contextFor(record);
+                const ctx = instance && Object.freeze(Object.fromEntries(
+                    ['id', 'manifest', 'signal', 'react', 'log', 'settings', 'styles', 'webpack', 'events', 'requireRestart']
+                        .map(key => [key, instance.context[key]])));
+                setEditor({ record, Component: namespace.Settings, ctx });
+            }).catch(error => { if (!closed) setEditor({ record, error: error.message }); });
+            return () => { closed = true; instance?.dispose(); record.settingsViews.delete(close); };
+        }, [record, plugin.renderer, plugin.updatePending, record?.unloading]);
         const definitions = Object.entries(plugin.settingsDefinitions || {});
         if (plugin.updatePending) return h('p', { className: 'bedrock-muted' }, 'Restart Discord to load this version and its settings.');
         if (!settingsAPI) return h('p', { className: 'bedrock-muted' }, 'Loading settings...');
-        if (!definitions.length) return h('p', { className: 'bedrock-muted' },
-            plugin.enabled ? 'This plugin has no settings.' : 'Enable this plugin to load its settings, if it provides any.');
+        const current = editor?.record === record ? editor : null;
+        if (!SettingsBoundary) {
+            SettingsBoundary = class extends React.Component {
+                state = { error: null };
+                static getDerivedStateFromError(error) { return { error: error.message || String(error) }; }
+                componentDidCatch(error) { log(this.props.id, error); }
+                render() { return this.state.error ? h('p', { className: 'bedrock-error', role: 'alert' }, this.state.error) : this.props.children; }
+            };
+        }
         let section;
-        return definitions.map(([key, definition]) => {
+        const controls = definitions.map(([key, definition]) => {
             const heading = definition.section && definition.section !== section;
             section = definition.section;
             return h(React.Fragment, { key }, heading && h('h3', { className: 'bedrock-setting-section' }, section),
                 h(SettingControl, { plugin, settingKey: key, definition }));
         });
+        return h(React.Fragment, null, ...controls,
+            current?.error ? h('p', { className: 'bedrock-error', role: 'alert' }, current.error) :
+            current?.Component ? h(SettingsBoundary, { id: plugin.manifest.id }, h(current.Component, { ctx: current.ctx })) :
+            !definitions.length && h('p', { className: 'bedrock-muted' }, record?.info.renderer && !current ? 'Loading settings...' : 'This plugin has no settings.'));
     }
     function RemovePluginDialog({ plugin, busy, error, cancel, confirm }) {
         const h = React.createElement;

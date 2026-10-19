@@ -170,6 +170,10 @@ export interface SettingDefinition {
     max?: number;
     step?: number;
 }
+export type RendererSettingsContext = Pick<RendererContext,
+    'id' | 'manifest' | 'signal' | 'react' | 'log' | 'settings' | 'styles' | 'webpack' | 'events' | 'requireRestart'>;
+export interface RendererSettingsProps { readonly ctx: RendererSettingsContext }
+export type RendererSettingsComponent = (props: RendererSettingsProps) => MenuChild | undefined;
 export interface PluginSettings<Definitions extends Record<string, SettingDefinition>> {
     readonly definitions: Definitions;
     readonly store: { [Key in keyof Definitions]: Definitions[Key]['default'] };

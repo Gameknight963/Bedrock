@@ -162,7 +162,7 @@ export function bindPluginSettings(settings, services) {
                 const value = services.get(key, schema[key].default);
                 if (equal(previous[key], value)) continue;
                 previous[key] = structuredClone(value);
-                try { Promise.resolve(settings._callbacks[key].onChange?.(structuredClone(value))).catch(services.log); }
+                try { if (services.callbacksEnabled?.() !== false) Promise.resolve(settings._callbacks[key].onChange?.(structuredClone(value))).catch(services.log); }
                 catch (error) { services.log(error); }
                 for (const callback of subscribers) {
                     try { callback(key, structuredClone(value)); } catch (error) { services.log(error); }
