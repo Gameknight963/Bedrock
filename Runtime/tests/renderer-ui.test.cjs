@@ -1,6 +1,47 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
+test('shared color picker capture composes with plugin hooks and guards stale callbacks', async () => {
+    const { createRendererUi } = await import('../renderer-ui.mjs');
+    const { createSourcePatches } = await import('../source-patches.mjs');
+    const React = {
+        useSyncExternalStore: (_subscribe, snapshot) => snapshot(), useState: value => [value, () => {}], useEffect() {},
+        createElement: (type, props) => ({ type, props })
+    };
+    for (const reverse of [false, true]) {
+        const errors = [], ui = createRendererUi({ react: () => React, report: (id, error) => errors.push([id, error.message]) });
+        let pluginPicker;
+        const plugin = { capture(component) { pluginPicker = component; }, patches: [{ find: '.Qp04hK}),focusProps:', replacement: {
+            match: /(?=function ([A-Za-z_$][\w$]*)\([A-Za-z_$][\w$]*\)\{let\{onChange:[A-Za-z_$][\w$]*,onClose:[A-Za-z_$][\w$]*,[^}]+?showEyeDropper:)/,
+            replace: '$self.capture($1);'
+        } }] };
+        const source = createSourcePatches();
+        for (const [id, namespace] of reverse ? [['plugin', plugin], ['$ui', ui]] : [['$ui', ui], ['plugin', plugin]]) source.register(id, namespace);
+        const previous = globalThis.Bedrock;
+        globalThis.Bedrock = { _rendererUi: ui, _sourcePlugin: id => source.namespace(id) };
+        try {
+            const factory = function(module) {
+                const marker = '.Qp04hK}),focusProps:';
+                function picker(e){let{onChange:n,onClose:c,color:r,showEyeDropper:d}=e;return r;}
+                module.exports = picker;
+            };
+            const module = {}; source.apply('native-picker', factory)(module);
+            assert.equal(pluginPicker, module.exports);
+            const abort = new AbortController(), ctx = ui.context('test.picker', value => value, abort.signal);
+            let selected;
+            const props = { color: 0x313338, suggestedColors: ['#112233'], onChange: color => { selected = color; } };
+            const element = ctx.components.ColorPicker(props);
+            assert.equal(element.type, module.exports); assert.equal(element.props.color, 0x313338); assert.equal(element.props.showEyeDropper, false);
+            element.props.onChange(0xabcdef); assert.equal(selected, 0xabcdef);
+            element.props.onChange(-1); assert.match(errors[0][1], /invalid color: -1/);
+            assert.throws(() => ctx.components.ColorPicker({ ...props, color: 'not a color' }), /Invalid ColorPicker color: "not a color"/);
+            assert.throws(() => ctx.components.ColorPicker({ ...props, suggestedColors: ['bad'] }), /suggestedColors: \["bad"\]/);
+            abort.abort(); element.props.onChange(0); assert.equal(selected, 0xabcdef);
+            assert.equal(ctx.components.ColorPicker(props), null);
+        } finally { globalThis.Bedrock = previous; }
+    }
+});
+
 async function fixture() {
     const { createRendererUi } = await import('../renderer-ui.mjs');
     const errors = [], disposers = [];

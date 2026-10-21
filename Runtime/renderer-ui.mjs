@@ -4,10 +4,12 @@ const host = 'globalThis.Bedrock._rendererUi';
 const optionTypes = { string: 3, integer: 4, boolean: 5, user: 6, channel: 7, role: 8, mentionable: 9, number: 10, attachment: 11 };
 const buttonCss = `.bedrock-chat-button{display:inline-flex;align-items:center;justify-content:center;flex:none;width:32px;height:32px;padding:4px;border:0;border-radius:4px;background:transparent;color:var(--interactive-normal,#b5bac1);cursor:pointer}.bedrock-chat-button:hover{color:var(--interactive-hover,#dbdee1);background:var(--background-modifier-hover,#ffffff0f)}.bedrock-chat-button:disabled{opacity:.5;cursor:default}.bedrock-chat-button:focus-visible{outline:2px solid var(--focus-primary,#00a8fc);outline-offset:-2px}.bedrock-chat-button svg{width:24px;height:24px}`;
 
-export function createRendererUi({ react, report = () => {}, document = globalThis.document } = {}) {
+export function createRendererUi({ react, report = () => {}, document = globalThis.document, loadColorPicker } = {}) {
     const notifications = createNotifications({ document, report });
     const registries = { accessories: new Map(), buttons: new Map(), messageButtons: new Map() };
     const listeners = new Set(), commandEntries = new Map(), commandLists = new Set();
+    const colorPickerListeners = new Set();
+    let colorPicker, colorPickerWork;
     let revision = 0, sequence = 0, nextCommandId = -1000000000, Boundary, Slots;
     let patchStatus = [];
     const notify = () => { revision++; for (const listener of [...listeners]) listener(); };
@@ -15,6 +17,54 @@ export function createRendererUi({ react, report = () => {}, document = globalTh
         const React = react();
         if (!React) throw new Error('Discord React is not available yet. Access ctx.react inside a component or after waiting for React.');
         return React;
+    }
+    function prepareColorPicker() {
+        if (colorPicker) return Promise.resolve();
+        if (!colorPickerWork) colorPickerWork = (async () => {
+            if (!loadColorPicker) throw new Error("Discord's color-picker module loader is unavailable.");
+            await loadColorPicker(AbortSignal.timeout(15000));
+            if (!colorPicker) throw new Error("Discord's color-picker module loaded without exposing its color-picker component.");
+        })().finally(() => { colorPickerWork = null; });
+        return colorPickerWork;
+    }
+    function components(owner, signal) {
+        function ColorPicker({ color, onChange, suggestedColors, showEyeDropper = false }) {
+            const React = getReact();
+            const Component = React.useSyncExternalStore(callback => {
+                colorPickerListeners.add(callback);
+                signal.addEventListener('abort', callback, { once: true });
+                return () => { colorPickerListeners.delete(callback); signal.removeEventListener('abort', callback); };
+            }, () => signal.aborted ? false : colorPicker);
+            const [failure, setFailure] = React.useState(null);
+            const [attempt, setAttempt] = React.useState(0);
+            React.useEffect(() => {
+                if (Component || signal.aborted) return;
+                let mounted = true;
+                setFailure(null);
+                prepareColorPicker().catch(error => { if (mounted && !signal.aborted) setFailure(error.message || String(error)); });
+                return () => { mounted = false; };
+            }, [Component, attempt]);
+            if (signal.aborted) return null;
+            if (!Number.isInteger(color) || color < 0 || color > 0xffffff)
+                throw new TypeError(`Invalid ColorPicker color: ${JSON.stringify(color)}. Expected an integer from 0 to 16777215.`);
+            if (typeof onChange !== 'function') throw new TypeError('ColorPicker requires an onChange callback.');
+            if (typeof showEyeDropper !== 'boolean') throw new TypeError(`Invalid ColorPicker showEyeDropper: ${JSON.stringify(showEyeDropper)}. Expected a boolean.`);
+            if (suggestedColors !== undefined && (!Array.isArray(suggestedColors) || suggestedColors.some(value => typeof value !== 'string' || !/^#[a-f0-9]{6}$/i.test(value))))
+                throw new TypeError(`Invalid ColorPicker suggestedColors: ${JSON.stringify(suggestedColors)}. Expected an array of #RRGGBB colors.`);
+            if (!Component) return failure
+                ? React.createElement('div', null, React.createElement('p', { className: 'bedrock-error', role: 'alert' }, failure),
+                    React.createElement('button', { type: 'button', className: 'bedrock-button', onClick: () => setAttempt(value => value + 1) }, 'Retry color picker'))
+                : React.createElement('span', { className: 'bedrock-muted', role: 'status' }, 'Loading color picker...');
+            return React.createElement(Component, { color, suggestedColors, showEyeDropper, onChange(value) {
+                if (signal.aborted) return;
+                try {
+                    if (!Number.isInteger(value) || value < 0 || value > 0xffffff)
+                        throw new TypeError(`Discord's color picker returned an invalid color: ${JSON.stringify(value)}. Expected an integer from 0 to 16777215.`);
+                    Promise.resolve(onChange(value)).catch(error => report(owner, error));
+                } catch (error) { report(owner, error); }
+            } });
+        }
+        return Object.freeze({ ColorPicker });
     }
     function slot(kind, props) {
         const React = getReact();
@@ -88,6 +138,10 @@ export function createRendererUi({ react, report = () => {}, document = globalTh
     const api = {
         // These hooks belong to Bedrock. Plugin registrations can disappear without undoing source patches.
         patches: [
+            { id: 'color-picker', find: '.Qp04hK}),focusProps:', replacement: {
+                match: /(?=function ([A-Za-z_$][\w$]*)\([A-Za-z_$][\w$]*\)\{let\{onChange:[A-Za-z_$][\w$]*,onClose:[A-Za-z_$][\w$]*,[^}]+?showEyeDropper:)/,
+                replace: `${host}.captureColorPicker($1);`
+            } },
             { id: 'message-buttons', find: '.Lv7LxN}),children', replacement: { match: /^[\s\S]*$/, replace(source) {
                 const marker = source.indexOf('.Lv7LxN}),children');
                 const tail = source.slice(marker, marker + 400);
@@ -123,6 +177,11 @@ export function createRendererUi({ react, report = () => {}, document = globalTh
                 } } }
         ],
         setPatchStatus(status) { patchStatus = status; },
+        captureColorPicker(component) {
+            if (typeof component !== 'function') throw new TypeError(`Invalid Discord color-picker component: ${String(component)}. Expected a function.`);
+            colorPicker = component;
+            for (const callback of [...colorPickerListeners]) callback();
+        },
         diagnostics() { return { patches: patchStatus, accessories: registries.accessories.size, chatButtons: registries.buttons.size, messageButtons: registries.messageButtons.size, commands: commandEntries.size, commandLists: commandLists.size }; },
         messageButtons(original, props, component) { return [slot('messageButtons', { ...props, nativeMessageButton: component }), ...original]; },
         accessories(original, props) { return [original, slot('accessories', props)]; },
@@ -143,6 +202,7 @@ export function createRendererUi({ react, report = () => {}, document = globalTh
             const alerts = notifications.context(owner, own);
             return {
                 get react() { return getReact(); },
+                components: components(owner, signal),
                 notifications: alerts,
                 addAccessory: (id, component, options) => register('accessories', owner, id, component, options, own, signal),
                 addMessageButton: (id, factory, options) => register('messageButtons', owner, id, factory, options, own, signal),

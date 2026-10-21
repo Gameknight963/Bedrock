@@ -8,6 +8,9 @@ test('API requirements accept older versions in the same major and reject newer 
     for (const version of ['0.9.0', '2.0.0', '1.3.3', '1.4.0', '1.10.0'])
         assert.equal(supportsApi(version, '1.3.2'), false, version);
     assert.equal(supportsApi('1.9.0', '1.10.0'), true);
+    assert.equal(supportsApi('1.11.0', '1.10.0'), false);
+    assert.equal(supportsApi('1.10.0'), true);
+    assert.equal(supportsApi('1.11.0'), true);
 });
 
 test('API versions validate semantic syntax and compare prereleases', () => {

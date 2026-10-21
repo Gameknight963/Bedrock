@@ -89,8 +89,14 @@ const fixture = `
             const textCommands = builtins.filter(command => ["tableflip","unflip"].includes(command.name));
             module.exports = builtins;
         },
+        colorPicker(module) {
+            const marker = '.Qp04hK}),focusProps:';
+            function picker(e){let{onChange:n,onClose:c,color:r,showEyeDropper:d}=e;return null;}
+            module.exports = picker;
+        },
         entry(module, exports, require) {
             require('actions');
+            require('colorPicker');
             const React = require('react'), Accessories = require('accessories'), Composer = require('composer'), Toolbar = require('toolbar');
             globalThis.fixtureCommands = require('commands');
             globalThis.fixtureRoot = ReactDOM.createRoot(document.getElementById('root'));

@@ -76,6 +76,13 @@ export interface NotificationOptions {
     actions?: ReadonlyArray<{ label: string; onClick(): void | Promise<void> }>;
 }
 export interface Notifications { show(options: NotificationOptions): { close: Disposer } }
+export interface ColorPickerProps {
+    color: number;
+    onChange(color: number): void | Promise<void>;
+    suggestedColors?: readonly string[];
+    showEyeDropper?: boolean;
+}
+export interface Components { ColorPicker(props: ColorPickerProps): MenuElement | null }
 export interface ReactRuntime {
     readonly Fragment: unknown;
     createElement(type: unknown, props?: Record<string, unknown> | null, ...children: (MenuChild | undefined)[]): MenuElement;
@@ -140,6 +147,7 @@ export interface RendererContext {
     readonly chatBar: ChatBar;
     readonly commands: Commands;
     readonly notifications: Notifications;
+    readonly components: Components;
     readonly log: { info(...values: unknown[]): void; warn(...values: unknown[]): void; error(...values: unknown[]): void };
     readonly settings: { get<T>(key: string, fallback: T): T; set(key: string, value: unknown): Promise<void>; delete(key: string): Promise<void>; all(): Record<string, unknown> };
     readonly styles: { add(css: string): Disposer };
@@ -171,7 +179,7 @@ export interface SettingDefinition {
     step?: number;
 }
 export type RendererSettingsContext = Pick<RendererContext,
-    'id' | 'manifest' | 'signal' | 'react' | 'log' | 'settings' | 'styles' | 'webpack' | 'events' | 'requireRestart'>;
+    'id' | 'manifest' | 'signal' | 'react' | 'components' | 'log' | 'settings' | 'styles' | 'webpack' | 'events' | 'requireRestart'>;
 export interface RendererSettingsProps { readonly ctx: RendererSettingsContext }
 export type RendererSettingsComponent = (props: RendererSettingsProps) => MenuChild | undefined;
 export interface PluginSettings<Definitions extends Record<string, SettingDefinition>> {

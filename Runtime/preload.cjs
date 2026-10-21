@@ -39,7 +39,29 @@ function installRenderer(configuration) {
         .then(([api, source, ui, chunks]) => {
             chunkLoader = chunks.createChunkLoader({ original: factory => originalFactories.get(factory) || factory });
             for (const runtime of webpackRuntimes) chunkLoader.register(runtime);
-            rendererUi = ui.createRendererUi({ react: () => renderingReact() || React, report: log });
+            rendererUi = ui.createRendererUi({ react: () => renderingReact() || React, report: log,
+                async loadColorPicker(signal) {
+                    const marker = '.Qp04hK}),focusProps:';
+                    function execute() {
+                        const matches = new Map();
+                        for (const runtime of webpackRuntimes) for (const [id, factory] of Object.entries(runtime.m || {})) {
+                            if (typeof factory !== 'function') continue;
+                            const original = originalFactories.get(factory) || factory;
+                            if (Function.prototype.toString.call(original).includes(marker)) matches.set(original, { runtime, id });
+                        }
+                        if (!matches.size) return false;
+                        if (matches.size !== 1) throw new Error(`Discord's color-picker marker ${JSON.stringify(marker)} matches ${matches.size} modules; expected one.`);
+                        signal.throwIfAborted();
+                        const { runtime, id } = matches.values().next().value;
+                        try { runtime(id); }
+                        catch (error) { throw new Error(`Discord's color-picker module ${id} failed: ${error.message || String(error)}`, { cause: error }); }
+                        return true;
+                    }
+                    if (execute()) return;
+                    await chunkLoader.load({ find: 'type:"USER_SETTINGS_MODAL_OPEN"' }, signal);
+                    if (!execute()) throw new Error(`Discord's settings chunks did not provide a color-picker module containing ${JSON.stringify(marker)}.`);
+                }
+            });
             rendererApis = api.createRendererApis({ react: () => renderingReact() || React, report: log });
             sourcePatches = source.createSourcePatches({
                 report(id, patches) {
@@ -277,6 +299,7 @@ function installRenderer(configuration) {
             chatBar: uiContext.chatBar,
             commands: uiContext.commands,
             notifications: uiContext.notifications,
+            components: uiContext.components,
             get react() { return uiContext.react; },
             webpack: {
                 find: findModule,
@@ -686,7 +709,7 @@ function installRenderer(configuration) {
                 if (closed) return;
                 if (namespace.Settings) instance = contextFor(record);
                 const ctx = instance && Object.freeze(Object.fromEntries(
-                    ['id', 'manifest', 'signal', 'react', 'log', 'settings', 'styles', 'webpack', 'events', 'requireRestart']
+                    ['id', 'manifest', 'signal', 'react', 'components', 'log', 'settings', 'styles', 'webpack', 'events', 'requireRestart']
                         .map(key => [key, instance.context[key]])));
                 setEditor({ record, Component: namespace.Settings, ctx });
             }).catch(error => { if (!closed) setEditor({ record, error: error.message }); });

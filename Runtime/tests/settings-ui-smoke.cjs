@@ -10,7 +10,7 @@ fs.mkdirSync(folder, { recursive: true });
 fs.writeFileSync(path.join(root, 'settings.json'), JSON.stringify({ plugins: { 'test.settings-ui': { enabled: false } } }));
 fs.writeFileSync(path.join(folder, 'plugin.json'), JSON.stringify({ manifestVersion: 3,
     id: 'test.settings-ui', name: 'Settings fixture', version: '1.0.0',
-    entrypoints: { renderer: { runtime: 'javascript', path: 'renderer.js', requiresApi: '1.10.0' } } }));
+    entrypoints: { renderer: { runtime: 'javascript', path: 'renderer.js', requiresApi: '1.11.0' } } }));
 fs.writeFileSync(path.join(folder, 'renderer.js'), `
     export const settings = Bedrock.definePluginSettings({ count: { type: Bedrock.OptionType.NUMBER,
         label: 'Count', default: 0, onChange() { globalThis.fixtureChanges++; } } });
@@ -28,6 +28,7 @@ fs.writeFileSync(path.join(folder, 'renderer.js'), `
         if (failed) throw new Error('Fixture settings failed');
         return React.createElement('section', { 'data-custom-settings': true },
             React.createElement('output', null, count),
+            React.createElement(ctx.components.ColorPicker, { color: count, suggestedColors: ['#313338'], onChange: () => settings.set('count', count + 1) }),
             React.createElement('button', { id: 'fixture-increment', onClick: () => settings.set('count', count + 1) }, 'Increment'),
             React.createElement('button', { id: 'fixture-fail', onClick: () => setFailed(true) }, 'Fail'));
     }
@@ -37,7 +38,7 @@ fs.writeFileSync(path.join(folder, 'renderer.js'), `
 `);
 require('../bootstrap.cjs').install({ root, allowURL: url => url.origin === 'https://settings.test' });
 const fixture = `
-    for (const name of ['Starts', 'Stops', 'Unloads', 'Changes', 'Mounts', 'Unmounts', 'Aborts']) globalThis['fixture' + name] = 0;
+    for (const name of ['Starts', 'Stops', 'Unloads', 'Changes', 'Mounts', 'Unmounts', 'Aborts', 'PickerLoads', 'PickerChunks']) globalThis['fixture' + name] = 0;
     globalThis.webpackChunkdiscord_app = [];
     const modules = {};
     function require(id) {
@@ -47,11 +48,22 @@ const fixture = `
         return module.exports;
     }
     require.m = {}; require.c = modules;
+    require.e = async id => {
+        if (String(id) !== '7') throw new Error('Unexpected chunk: ' + id);
+        globalThis.fixturePickerChunks++;
+        webpackChunkdiscord_app.push([['colors'], { picker: function(module) {
+            const marker = '.Qp04hK}),focusProps:';
+            globalThis.fixturePickerLoads++;
+            function picker(e){let{onChange:n,onClose:c,color:r,showEyeDropper:d}=e;globalThis.fixturePickerProps=e;return React.createElement('button',{id:'fixture-color-picker',onClick:()=>n(0x112233)},String(r));}
+            module.exports = {};
+        }, settings: module => { module.exports = {}; } }]);
+    };
     webpackChunkdiscord_app.push = function (chunk) { Object.assign(require.m, chunk[1]); if (chunk[2]) return chunk[2](require); };
     webpackChunkdiscord_app.push([['fixture'], {
         react(module) { module.exports = React; },
         types(module) { module.exports = { SECTION: 1, SIDEBAR_ITEM: 2, PANEL: 3, CATEGORY: 5, CUSTOM: 19 }; },
         subject(module) { const marker = 'SETTINGS_INACTIVE_PATCH'; module.exports = 'ORIGINAL'; },
+        settingsLoader(module, exports, require) { const marker = 'type:"USER_SETTINGS_MODAL_OPEN"'; module.exports = () => require.e(7).then(require.bind(require, 'settings')); },
         entry(module, exports, require) {
             require('react'); require('types');
             const section = Bedrock._settingsLayout({ key: '$Root', buildLayout: () => [] }).find(node => node.key === 'bedrock_section');
@@ -77,7 +89,7 @@ app.whenReady().then(async () => {
                 if (await evaluate(source)) return;
                 await new Promise(resolve => setTimeout(resolve, 20));
             }
-            throw new Error('Timed out: ' + source);
+            throw new Error('Timed out: ' + source + '\n' + await evaluate('document.body.innerText'));
         }
         await window.loadURL('https://settings.test');
         await wait('document.querySelector(".bedrock-name")');
@@ -85,9 +97,13 @@ app.whenReady().then(async () => {
         await wait('document.getElementById("bedrock-settings-tab")');
         await evaluate('document.getElementById("bedrock-settings-tab").click();void 0');
         await wait('document.getElementById("fixture-increment")');
+        await wait('document.getElementById("fixture-color-picker")');
         assert.equal(await evaluate('fixtureStarts'), 0);
+        assert.equal(await evaluate('fixturePickerLoads'), 1);
+        assert.equal(await evaluate('fixturePickerChunks'), 1);
+        assert.deepEqual(await evaluate('fixturePickerProps.suggestedColors'), ['#313338']);
         assert.deepEqual(await evaluate('Bedrock.plugins.list()[0].sourcePatches'), []);
-        await evaluate('document.getElementById("fixture-increment").click();void 0');
+        await evaluate('document.getElementById("fixture-color-picker").click();void 0');
         await wait('document.querySelector("[data-custom-settings] output").textContent==="1"');
         assert.equal(await evaluate('fixtureChanges'), 0);
         assert.equal(await evaluate('document.querySelector("input[type=number]").value'), '1');
@@ -102,6 +118,7 @@ app.whenReady().then(async () => {
         assert.equal(await evaluate('fixtureChanges'), 1);
         await evaluate('document.getElementById("bedrock-details-tab").click();void 0');
         await wait('fixtureAborts===1&&fixtureUnmounts===1');
+        await evaluate('fixturePickerProps.onChange(0xabcdef);void 0');
         assert.equal(await evaluate('[...document.querySelectorAll("style")].some(style=>style.textContent.includes("fixture-settings-style"))'), false);
         await evaluate('document.getElementById("bedrock-settings-tab").click();void 0');
         await wait('fixtureMounts===2');
@@ -112,7 +129,7 @@ app.whenReady().then(async () => {
         await wait('fixtureAborts===2&&fixtureUnloads===1&&!document.querySelector("[data-custom-settings]")');
         const values = JSON.parse(fs.readFileSync(path.join(root, 'data/test.settings-ui/settings.json')));
         assert.equal(values.count, 3);
-        console.log('PASS: disabled custom and ordinary settings, no passive source patches or start(), activation-only change callbacks, live enable/disable, UI cleanup, error isolation and unloading an inspected plugin.');
+        console.log('PASS: disabled custom and ordinary settings, shared native picker captured without plugin activation, stale picker callbacks, no passive plugin source patches or start(), activation-only change callbacks, live enable/disable, UI cleanup, error isolation and unloading an inspected plugin.');
         app.exit(0);
     } catch (error) { console.error(error); app.exit(1); }
 });

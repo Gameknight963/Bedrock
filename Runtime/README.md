@@ -241,13 +241,36 @@ export function Settings({ ctx }) {
 }
 ```
 
-- `ctx` belongs to this editor. It provides `id`, `manifest`, `react`, `log`, `settings`, `styles`, `webpack`, `events`, `requireRestart` and `signal`. TypeScript types are `RendererSettingsProps` and `RendererSettingsContext`.
+- `ctx` belongs to this editor. It provides `id`, `manifest`, `react`, `components`, `log`, `settings`, `styles`, `webpack`, `events`, `requireRestart` and `signal`. TypeScript types are `RendererSettingsProps` and `RendererSettingsContext`.
 - Closing the tab aborts its signal and disposes its owned styles, event subscriptions and pending module waits. Use React effects to manage other UI resources.
 - Opening settings imports the renderer module, but does not call `start()` or register its source patches. Keep activation work in `start()` rather than at module scope.
 - Defined settings remain readable and editable while disabled. Their `onChange` callbacks run while the renderer activation is running; `settings.use()` and subscriptions still receive edits while disabled.
 - Use `ctx.settings` for editor data that does not have an ordinary control, such as a list of replacement rules. Validate that data in the plugin.
 
 An error in the editor is shown in its settings panel. Other settings remain usable.
+
+### Shared controls
+
+JavaScript API **1.11.0** adds `ctx.components.ColorPicker`, which uses Discord's color picker. It works in renderer components and custom Settings components, including while the plugin is disabled.
+
+```js
+export function Settings({ ctx }) {
+    const [color, setColor] = ctx.react.useState(() => ctx.settings.get('color', 0x313338));
+    return ctx.react.createElement(ctx.components.ColorPicker, {
+        color,
+        async onChange(value) {
+            await ctx.settings.set('color', value);
+            setColor(value);
+        },
+        suggestedColors: ['#313338', '#172019'],
+        showEyeDropper: false
+    });
+}
+```
+
+- `color` is an integer from `0x000000` to `0xffffff`. `onChange` receives the selected integer and can return a promise.
+- `suggestedColors` is an optional array of `#RRGGBB` strings. `showEyeDropper` defaults to `false`.
+- Bedrock loads the control when needed. Loading errors appear beside a retry button. Closing the editor or stopping its context prevents further change callbacks.
 
 ## CSS themes
 
