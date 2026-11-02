@@ -62,7 +62,7 @@ function installRenderer(configuration) {
                     if (!execute()) throw new Error(`Discord's settings chunks did not provide a color-picker module containing ${JSON.stringify(marker)}.`);
                 }
             });
-            rendererApis = api.createRendererApis({ react: () => renderingReact() || React, report: log });
+            rendererApis = api.createRendererApis({ react: () => renderingReact() || React, report: log, moduleFilter: searchableModule });
             sourcePatches = source.createSourcePatches({
                 report(id, patches) {
                     if (id === '$bedrock.renderer-ui') {
@@ -128,12 +128,33 @@ function installRenderer(configuration) {
             catch (error) { log('events', error); }
         }
     };
+    const ignoredModuleValues = new WeakSet();
+    const moduleProbe = '__bedrock_module_probe_6b5c4d972a81__';
+    function searchableModule(value) {
+        if (value == null) return false;
+        if (typeof value !== 'object' && typeof value !== 'function') return true;
+        if (ignoredModuleValues.has(value)) return false;
+        try {
+            const tag = value[Symbol.toStringTag];
+            if (value === globalThis || value === document || value === document.documentElement || tag === 'IntlMessagesProxy' || tag === 'DOMTokenList') {
+                ignoredModuleValues.add(value);
+                return false;
+            }
+            // Translation proxies fabricate missing exports, which otherwise satisfy arbitrary property filters.
+            if (value[moduleProbe] !== undefined) {
+                Reflect.deleteProperty(value, moduleProbe);
+                ignoredModuleValues.add(value);
+                return false;
+            }
+            return true;
+        } catch { ignoredModuleValues.add(value); return false; }
+    }
     function candidates(exports) {
-        if (!exports) return [];
+        if (!searchableModule(exports)) return [];
         const values = [exports];
         if (typeof exports === 'object' || typeof exports === 'function') {
             for (const key of Object.keys(exports)) {
-                try { values.push(exports[key]); } catch {}
+                try { const value = exports[key]; if (searchableModule(value)) values.push(value); } catch {}
             }
         }
         return values;

@@ -1,4 +1,4 @@
-export function createRendererApis({ react, report = () => {} }) {
+export function createRendererApis({ react, report = () => {}, moduleFilter = () => true }) {
     const menuHooks = new Map();
     const messageHooks = { send: [], edit: [] };
     const proxies = new WeakMap();
@@ -113,6 +113,7 @@ export function createRendererApis({ react, report = () => {} }) {
     }
     function observe(exports) {
         if (!exports || (typeof exports !== 'object' && typeof exports !== 'function')) return exports;
+        if (!moduleFilter(exports)) return exports;
         if (proxies.has(exports)) return proxies.get(exports);
         let messages = false, menus = false;
         try {
@@ -123,7 +124,7 @@ export function createRendererApis({ react, report = () => {} }) {
             const nested = Object.keys(exports).some(key => {
                 try {
                     const value = exports[key];
-                    return value && typeof value === 'object' &&
+                    return value && typeof value === 'object' && moduleFilter(value) &&
                         ((typeof value.sendMessage === 'function' && typeof value.editMessage === 'function') ||
                             typeof value.openContextMenu === 'function' || typeof value.openContextMenuLazy === 'function');
                 } catch { return false; }

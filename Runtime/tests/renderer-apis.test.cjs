@@ -1,6 +1,20 @@
 const test = require('node:test');
 const assert = require('node:assert/strict');
 
+test('excluded module proxies cannot replace message actions through direct or nested exports', async () => {
+    const { createRendererApis } = await import('../renderer-apis.mjs');
+    let reads = 0;
+    const excluded = new Proxy({}, { get() { reads++; return () => ({ locale: 'en-US', ast: [] }); } });
+    const api = createRendererApis({ react: () => null, moduleFilter: value => value !== excluded });
+    api.observe({ sendMessage(_channel, message) { return message.content; }, editMessage() {} });
+    assert.equal(api.observe(excluded), excluded);
+    const nested = { translation: excluded };
+    assert.equal(api.observe(nested), nested);
+    const ctx = api.context('test.module-filter', callback => callback, new AbortController().signal);
+    assert.equal(await ctx.messages.send('channel', { content: 'native-message' }), 'native-message');
+    assert.equal(reads, 0);
+});
+
 async function fixture() {
     const { createRendererApis } = await import('../renderer-apis.mjs');
     const errors = [], disposers = [];

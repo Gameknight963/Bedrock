@@ -29,6 +29,9 @@ fs.writeFileSync(path.join(folder, 'renderer.js'), `
             else event.message.content += '-sent';
         });
         ctx.messages.beforeEdit(event => { event.message.content += '-edited'; });
+        const store = await ctx.webpack.waitFor(value => typeof value?.fixtureLookupMethod === 'function');
+        globalThis.fixtureLookupResult = store.fixtureLookupMethod();
+        globalThis.fixtureNestedLookupResult = ctx.webpack.find(value => typeof value?.fixtureNestedMethod === 'function').fixtureNestedMethod();
         await ctx.webpack.waitFor(value => value?.fixtureBooted === true);
         globalThis.fixturePluginReady = true;
     }
@@ -58,6 +61,22 @@ const fixture = `
                 openContextMenu: { enumerable: true, get: () => openContextMenu }
             });
         },
+        translations(module) {
+            const target = {};
+            globalThis.fixtureTranslationTarget = target;
+            module.exports = new Proxy(target, { get(object, key) {
+                if (key === Symbol.toStringTag) return undefined;
+                return object[key] ??= () => ({ locale: 'en-US', ast: [] });
+            } });
+            for (const key of ['getChannel', 'getDMFromUserId', 'fixtureLookupMethod']) void module.exports[key];
+        },
+        lookup(module) {
+            module.exports = { fixtureLookupMethod() { return 'native-store'; } };
+        },
+        nestedLookup(module) {
+            module.exports = { translations: new Proxy({}, { get() { return () => ({ locale: 'en-US', ast: [] }); } }),
+                native: { fixtureNestedMethod() { return 'nested-native'; } } };
+        },
         entry(module, exports, require) {
             const marker = 'EARLY_SOURCE_FIXTURE';
             globalThis.fixtureStartupValue = 'original value';
@@ -71,6 +90,7 @@ const fixture = `
             ] }); }
             globalThis.menuRoot = ReactDOM.createRoot(document.getElementById('root'));
             globalThis.fixtureActions = require('actions');
+            require('translations'); require('lookup'); require('nestedLookup');
             globalThis.fixtureOpen = () => fixtureActions.openContextMenu({}, () => h(UserMenu, { user: { id: 'fixture-user' } }));
             module.exports = { fixtureBooted: true };
         }
@@ -98,6 +118,9 @@ app.whenReady().then(async () => {
         window.webContents.on('console-message', event => { if (event.message?.includes('[Bedrock:')) console.log(event.message); });
         await window.loadURL('https://renderer-api.test');
         await waitFor('globalThis.fixturePluginReady === true');
+        assert.equal(await evaluate('fixtureLookupResult'), 'native-store');
+        assert.equal(await evaluate('fixtureNestedLookupResult'), 'nested-native');
+        assert.equal(await evaluate('Object.keys(fixtureTranslationTarget).some(key => key.startsWith("__bedrock_module_probe_"))'), false);
         assert.equal(await evaluate('fixtureStartupValue'), 'patched-helper', 'source patches and settings are ready before the startup factory');
         assert.equal(await evaluate('Bedrock.plugins.list()[0].sourcePatches[0].state'), 'applied');
         await evaluate('fixtureOpen()');
